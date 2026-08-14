@@ -5,6 +5,10 @@ it must be trustworthy on a machine we've never seen. The tooling (matcher,
 diagnostic, pass) ships alongside at whatever maturity it honestly has, each
 labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 
+Sections are not strictly in execution order. **Next up is the bound review**
+under "honesty debts", ahead of the remaining library items: it can move the
+error contract, and the rest of 1.0 is written on top of that contract.
+
 ## Blocking 1.0 — library
 
 - [x] **License file.** MIT, added 2026-08-15.
@@ -25,21 +29,50 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 - [ ] **Float support decision.** Everything is double-only. Either add
       `log_value_f`/templates or state "double only, by design" in the
       header contract. Deciding is the deliverable; implementing is optional.
+      *Rests on the bound review, and is close to settled by it.* The
+      contract is written in double-specific constants: u = 2⁻⁵³, the ~745
+      log-unit vanishing window (the subnormal floor at 2⁻¹⁰⁷⁴), and
+      test_accuracy's double-double reference. Float is not a typedef — it
+      means re-deriving at u = 2⁻²⁴, re-basing that reference, and a rescue
+      window of ~103 log units (2⁻¹⁴⁹). The pass already declines float
+      accumulators, so double-only is also the coherent answer for the
+      toolchain. Decide in the same pass that restates the bound.
 - [ ] **Second-machine benchmark run.** All numbers come from one Ryzen
       5800X. Criterion 2's "within noise" claim deserves one confirmation on
       different hardware (any second machine; the harness measures its own
-      noise floor, so this is cheap to do credibly).
+      noise floor, so this is cheap to do credibly). The CI runners became
+      that second machine when the Linux jobs landed. Open question is
+      whether a shared cloud vCPU's noise floor is low enough for the
+      harness to say anything — the harness reports its own spread, so it
+      can answer that itself rather than being assumed either way.
 - [ ] **Install/packaging story.** `cmake --install` rules + config so
       `find_package(LogRange)` works; verify the README quickstart compiles
       as written from a clean clone.
 
 ## Blocking 1.0 — honesty debts
 
-- [ ] **Bound review pass.** The (3k+4)·u derivation is a sketch reviewed by
-      its author. Re-derive it cold (or have someone else read it) before
-      the contract is called 1.0. Special attention: rescale-error
-      correlation between pos and neg (currently bounded independently) and
-      the n·u² small-print threshold.
+- [ ] **Bound review pass. Do this before the remaining library items.** The
+      (3k+4)·u derivation is a sketch reviewed by its author. Re-derive it
+      cold before the contract is called 1.0. Special attention:
+      rescale-error correlation between pos and neg (currently bounded
+      independently) and the n·u² small-print threshold.
+
+      *Why it goes first.* The bound is the thing this library claims that
+      every hand-rolled logsumexp lacks; it is the product. The header
+      contract, README, CHANGELOG, and BENCHMARKS.md all inherit from it, so
+      a bound that moves moves them with it. Work finished before the review
+      may have to be redone; work finished after it will not.
+
+      *Why re-derivation alone is the weak form.* It is the author
+      reproducing the author's own reasoning, blind in the same places —
+      including, specifically, the two items flagged above. Pair it with
+      adversarial search. `test_accuracy` asserts six fixed scenarios, while
+      the bound is a universal claim over all inputs, orderings, and k.
+      Sweep condition number, rescale count, term ordering, and pos/neg
+      correlation structure to maximize observed/bound, and report the worst
+      ratio found. Failing to break the bound across a wide search is
+      evidence independent of whether the algebra is right; breaking it is
+      the most valuable single result available here.
 - [ ] **BENCHMARKS.md refresh at 1.0 flags.** If anything above changes
       flags or code paths, the published numbers must be re-run, not edited.
 
