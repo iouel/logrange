@@ -3,7 +3,7 @@
 *Intent v0.3 "Fallback Product": a static lint that says "this reduction may
 leave representable range — consider log-domain accumulation, here is the
 header." It turns raw matcher scan output into a human report and a CI
-signal. Zero runtime overhead, pointing at a concrete fix.*
+signal. Zero runtime overhead.*
 
 ## Producing input
 
@@ -36,7 +36,7 @@ Raw lines other than `LOOP,...` / `HIT,...` records are ignored. HIT lines
 in the old 8-column format (no risk/reasons columns) are skipped with a
 warning rather than misread — regenerate the scan instead.
 
-## Scope limits, stated honestly
+## Scope limits
 
 - **This is a source-shape lint, not a range proof.** It reports that a
   reduction has the sum-of-products shape plus static risk signals
@@ -59,4 +59,4 @@ warning rather than misread — regenerate the scan instead.
 
 `include/logrange/log_math.h` — `pos_accum` for positive-term sums,
 `rp_accum` for signed sums, both with stated worst-case error bounds
-(header contract). BENCHMARKS.md has the honest cost numbers.
+(header contract). BENCHMARKS.md has the cost numbers.

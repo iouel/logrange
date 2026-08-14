@@ -21,7 +21,7 @@
 
 #include <math.h>
 
-/* The marquee shape from the matcher study: the softmax denominator.
+/* The HIGH-risk shape from the matcher study: the softmax denominator.
  * softmax_denom is renamed per compilation via -D (see header comment). */
 double softmax_denom(const double *x, int n) {
   double s = 0.0;
