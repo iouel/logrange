@@ -185,18 +185,30 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // exp + one log1p per term) and keeps positive/negative mass separated,
 // which makes cancellation observable rather than silent.
 //
-// Error contract (v0.2, to be formalized per intent Deliverable 1):
-//   - pos/neg are Neumaier-compensated sums: each partial sum is exact to
-//     ~eps relative regardless of length, so the dominant error under
-//     cancellation is the eps/2 rounding of each term's exp() scaling,
-//     amplified by the sum's condition number (sum|x_i| / |sum x_i|) at
-//     the final subtraction — i.e. relative error ~ cond·O(eps),
-//     independent of n to first order. Measured (BENCHMARKS.md): the
-//     uncompensated version sat at ~cond·10eps under heavy cancellation
-//     and a plain log_add fold looked better only when cancelling pairs
-//     were adjacent in the input; compensation beats both in every
-//     ordering tested, at two additions per term — within benchmark noise
-//     next to the exp().
+// Error contract (v0.2, formal). Definitions:
+//   u    = unit roundoff = 2^-53 ~ 1.11e-16
+//   cond = sum|x_i| / |sum x_i|  (condition number of the summation)
+//   k    = rescale events: adds that strictly raise m_log after the first
+//          term. Worst case n-1 (sorted ascending input); expected O(ln n)
+//          for randomly ordered input.
+//   rho  = pos==neg reset events; A_j = largest |term| before reset j.
+// Assuming std::exp within 1 ulp (true of MSVC/glibc/libm current), and
+// n < ~1e7 so O(n*u^2) terms are negligible:
+//
+//   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4) * u
+//     + (absolute) sum_j A_j * u          discarded by resets (see below)
+//     + terms > ~745 log-units below the running m_log vanish entirely.
+//
+// Derivation sketch: each term's scaled ratio carries <= 2u from its exp();
+// each rescale event multiplies the standing sums by a factor carrying
+// <= 2u (exp) + u (multiply); Neumaier compensation makes summation itself
+// contribute <= u regardless of length. Total coefficient perturbation
+// <= (3k+4)*u on a mass of sum|x_i|, amplified by cond at the final
+// subtraction. Without compensation the summation term is O(n*u) and
+// dominates — measured at ~300x worse on cond=2.3e9 data (BENCHMARKS.md;
+// a log_add fold is NOT a fix: its apparent accuracy there was an
+// ordering artifact that collapses under shuffling).
+// The bound is asserted against measured data in test_accuracy.cpp.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior:
@@ -326,9 +338,16 @@ private:
 // would hide a bug at the call site. Zero terms (either sign of zero) are
 // the additive identity and are no-ops.
 //
-// Error contract (v0.1, same as rp_accum):
-//   - sum is an uncompensated double: O(n·eps) relative error in the scaled
-//     domain, which maps to O(n·eps) absolute error in log_abs.
+// Error contract (v0.2, formal; u and k as defined at rp_accum):
+//
+//   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3) * u
+//
+// The n*u term is the uncompensated running sum — kept deliberately: this
+// is the speed path, positive terms cannot cancel, so cond == 1 and there
+// is no amplification for compensation to suppress. Typical randomly-signed
+// rounding lands near sqrt(n)*u. Callers needing epsilon-level accuracy on
+// very long positive sums should use rp_accum (compensated) and pay the
+// ~1.5x per-term cost.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior (mirrors rp_accum):

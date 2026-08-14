@@ -88,23 +88,34 @@ Conclusions, now encoded in code and tests (`test_accuracy` scenario 2b):
   `rp_accum` ships with compensated pos/neg sums; `pos_accum` stays
   uncompensated because positive-only sums have no cancellation to amplify.
 
+## The formal bound (v0.2 header contract)
+
+Stated in `log_math.h` and machine-checked in `test_accuracy` (k recomputed
+from the input data; the accumulator carries no instrumentation):
+
+> **rp_accum worst-case relative error ≤ cond · (3k + 4) · u**, u = 2⁻⁵³,
+> where k = rescale events (expected O(ln n) for random order, worst n−1);
+> plus the documented per-reset discard (≤ Σ Aⱼ·u absolute) and the ~745
+> log-unit vanishing contract. `pos_accum`: ≤ (n + 3k + 3)·u, no cond term
+> (positive sums cannot cancel) — the n·u summation drift is the accepted
+> price of the fast path.
+
 ## Accuracy vs double-double reference (v0.2, `test_accuracy`)
 
-| scenario | n | v0.1 observed | v0.2 observed | contract bound |
+| scenario | n | v0.1 observed | v0.2 observed | formal bound |
 |---|---|---|---|---|
-| long positive sum (rel err) | 10⁶ | 1.5e-14 | **9.3e-16** | 1e-8 |
-| heavy cancellation, cond = 2.3e9 (rel err) | 2×10⁴ | 4.8e-6 | **1.6e-8** | 0.47 |
-| same data shuffled | 2×10⁴ | — | **4.4e-10** | 0.47 |
-| `log_add` fold, paired / shuffled | 2×10⁴ | 2.8e-8 | 2.8e-8 / 4.1e-6 | 0.47 |
-| magnitude staircase (log-abs err) | 461 | 0.0 | 0.0 | 1e-12 |
-| forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 1.0e64 | 4.4e65 (k·A·ε) |
+| long positive sum (rel err), k=21 | 10⁶ | 1.5e-14 | **9.3e-16** | 7.4e-15 |
+| heavy cancellation, cond = 2.3e9 (rel err) | 2×10⁴ | 4.8e-6 | **1.6e-8** | 1.6e-5 |
+| same data shuffled | 2×10⁴ | — | **4.4e-10** | 5.7e-6 |
+| `log_add` fold, paired / shuffled (no contract) | 2×10⁴ | 2.8e-8 | 2.8e-8 / 4.1e-6 | — |
+| magnitude staircase (log-abs err) | 461 | 0.0 | 0.0 | (below resolution) |
+| forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 1.0e64 | 4.4e65 (k·A·u) |
 
-Long sums are now ε-level and n-independent — the residual error is the
-per-term `exp()` rounding, not summation drift. The documented reset contract
-holds unchanged.
+Long sums are ε-level and n-independent — the residual error is the per-term
+`exp()` rounding, not summation drift. Observed sits 5–1000× under the formal
+bound, consistent with worst-case-vs-random-signs slack; the bound is tight
+enough to be falsifiable and holds on every scenario.
 
 ## Next
 
-Formal statement of the worst-case cancellation bound in the header (the
-empirics above say the target shape is cond·O(ε)), then the Deliverable 2
-matcher study.
+Deliverable 2 gate: the LLVM matcher hit-rate study.
