@@ -1,7 +1,8 @@
-# Test suite on push/PR. Windows + MSVC deliberately: it is the flag set
-# (/W4 /WX /fp:precise) every local run has been verified against; a second
-# toolchain belongs in a separate change so its warnings can be dealt with
-# on purpose, not as CI noise.
+# Test suite on push/PR, across both flag branches of CMakeLists:
+# MSVC (/W4 /WX /fp:precise /permissive-) and gcc/clang
+# (-Wall -Wextra -Werror -ffp-contract=off). The library is header-only and
+# claims a machine-independent error bound, so it has to hold on a libm we
+# do not control: the accuracy suite runs on glibc here, not just msvcrt.
 name: tests
 on:
   push:
@@ -10,12 +11,30 @@ on:
 
 jobs:
   test:
-    runs-on: windows-latest
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-msvc
+            os: windows-latest
+            configure: cmake -S . -B build
+          - name: ubuntu-gcc
+            os: ubuntu-latest
+            configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+          - name: ubuntu-clang
+            os: ubuntu-latest
+            configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S . -B build
+        run: ${{ matrix.configure }}
       - name: Build
         run: cmake --build build --config Release
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      # The observed-vs-bound table is the point of the second toolchain:
+      # a bound that only holds on one libm is not a bound.
+      - name: Accuracy table (observed vs bound)
+        run: ctest --test-dir build -C Release -R accuracy -V

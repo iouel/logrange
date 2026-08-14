@@ -8,12 +8,13 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 ## Blocking 1.0 — library
 
 - [x] **License file.** MIT, added 2026-08-15.
-- [ ] **Second toolchain, in CI.** Everything is verified under MSVC only;
-      the gcc/clang flag branch in CMakeLists has never actually run for the
-      library tests (the WSL clang work only built the matcher/pass). Add a
-      ubuntu-latest CI job, fix what `-Wall -Wextra -Werror` surfaces, and
-      re-run test_accuracy there — the formal bound assumes exp() within
-      1 ulp, and that assumption should be *checked* on glibc, not assumed.
+- [x] **Second toolchain, in CI.** Done 2026-08-15. CI matrix is now
+      windows-msvc + ubuntu-gcc + ubuntu-clang. The gcc/clang flag branch
+      (`-Wall -Wextra -Werror -ffp-contract=off`) needed no code fixes:
+      clean under gcc 15.2 and clang 21.1. test_accuracy holds on glibc with
+      4.5×–5100× slack, so the bound's 1-ulp `exp()` assumption survives a
+      second libm (BENCHMARKS.md, "Second toolchain"). Local verification
+      used gcc 15 / clang 21; the runners ship older majors.
 - [ ] **Version identity in the header.** `LOGRANGE_VERSION` macros and a
       CHANGELOG.md, so a vendored copy can be identified in the wild.
 - [ ] **Float support decision.** Everything is double-only. Either add
