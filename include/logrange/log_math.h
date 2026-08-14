@@ -1,4 +1,4 @@
-// log_math.h — LogRange seed runtime, v0.1
+// log_math.h — LogRange runtime, v0.2.0
 // Signed log-domain values and accumulation.
 //
 // Inherited from NativeConv; refactored per LogRange intent v0.3, First Action:
@@ -14,7 +14,7 @@
 //   sign    ∈ {+1.0, -1.0}
 //   log_abs = log(|x|);  -inf encodes x == 0;  +inf encodes |x| == inf.
 //
-// Known, documented limitations (accepted for v0.1, revisit with error analysis):
+// Known, documented limitations (accepted; bounds stated at the accumulators):
 //   - Terms more than ~745 log-units below the accumulator's reference
 //     exponent scale to 0.0 and contribute nothing. Correct for sums whose
 //     result is dominated by the largest terms; stated here so it is a
@@ -23,10 +23,24 @@
 //     struct comment for why and for the measured effect); pos_accum's
 //     single sum is deliberately uncompensated — it is the speed path, and
 //     positive-only sums have no cancellation to amplify its O(n·eps) error.
-//     A formally stated worst-case bound is future work (intent doc,
-//     Deliverable 1).
+//     Worst-case bounds for both are stated at the accumulators below and
+//     machine-checked in tests/test_accuracy.cpp.
 
 #pragma once
+
+// Version identity, so a vendored copy can be recognized in the wild.
+// This header is the single source of truth: CMakeLists.txt parses these
+// three macros rather than carrying its own copy of the number.
+//   LOGRANGE_VERSION is ordered and comparable: MAJOR*10000 + MINOR*100 + PATCH.
+//   #if LOGRANGE_VERSION >= 200   // 0.2.0 or newer
+#define LOGRANGE_VERSION_MAJOR 0
+#define LOGRANGE_VERSION_MINOR 2
+#define LOGRANGE_VERSION_PATCH 0
+#define LOGRANGE_VERSION \
+  (LOGRANGE_VERSION_MAJOR * 10000 + LOGRANGE_VERSION_MINOR * 100 + \
+   LOGRANGE_VERSION_PATCH)
+#define LOGRANGE_VERSION_STRING "0.2.0"
+
 #include <cmath>
 #include <algorithm>
 #include <limits>

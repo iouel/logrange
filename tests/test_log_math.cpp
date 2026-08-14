@@ -5,6 +5,8 @@
 #include <cmath>
 #include <limits>
 #include <algorithm>
+#include <cstdio>
+#include <cstring>
 
 using namespace logrange;
 
@@ -148,11 +150,29 @@ static void test_log_add() {
   }
 }
 
+// ------------------------------------------------------------------ version
+// The header is the single source of truth for the version (CMakeLists parses
+// it). Nothing keeps LOGRANGE_VERSION_STRING in step with the numeric macros
+// except this check.
+static void test_version_macros() {
+  static_assert(LOGRANGE_VERSION == LOGRANGE_VERSION_MAJOR * 10000 +
+                                    LOGRANGE_VERSION_MINOR * 100 +
+                                    LOGRANGE_VERSION_PATCH,
+                "LOGRANGE_VERSION disagrees with its MAJOR/MINOR/PATCH parts");
+  static_assert(LOGRANGE_VERSION > 0, "version must be non-zero");
+
+  char expect[32];
+  std::snprintf(expect, sizeof expect, "%d.%d.%d", LOGRANGE_VERSION_MAJOR,
+                LOGRANGE_VERSION_MINOR, LOGRANGE_VERSION_PATCH);
+  NC_CHECK(std::strcmp(expect, LOGRANGE_VERSION_STRING) == 0);
+}
+
 int main() {
   test_log_value_struct();
   test_logsumexp2_edges();
   test_log_mul_div();
   test_log_add();
+  test_version_macros();
   std::puts("test_log_math passed");
   return 0;
 }

@@ -16,8 +16,12 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
       second libm (BENCHMARKS.md, "Second toolchain"). Verified green on the
       runners (gcc 13.3, clang 18.1) as well as locally (gcc 15.2, clang
       21.1); the accuracy table is bit-identical across all four.
-- [ ] **Version identity in the header.** `LOGRANGE_VERSION` macros and a
-      CHANGELOG.md, so a vendored copy can be identified in the wild.
+- [x] **Version identity in the header.** Done 2026-08-15.
+      `LOGRANGE_VERSION_MAJOR/_MINOR/_PATCH`, ordered `LOGRANGE_VERSION`, and
+      `LOGRANGE_VERSION_STRING` in log_math.h, plus CHANGELOG.md. The header
+      is the source of truth: CMake parses it (the hardcoded `project(VERSION
+      0.1)` had already drifted a release behind), and test_log_math checks
+      the string against the numeric parts. Both guards negative-tested.
 - [ ] **Float support decision.** Everything is double-only. Either add
       `log_value_f`/templates or state "double only, by design" in the
       header contract. Deciding is the deliverable; implementing is optional.
