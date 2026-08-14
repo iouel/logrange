@@ -1,3 +1,13 @@
+# Predecessor baseline (NativeConv) — historical record only
+
+Raw benchmark output inherited from the NativeConv project, kept as the
+starting-point reference for LogRange. CAUTION: these numbers came from the
+predecessor's harness, which showed 8x run-to-run swings on identical
+binaries — the failure that made LogRange's measured-noise-floor requirement
+a deliverable (see BENCHMARKS.md for trustworthy numbers). Do not cite these.
+
+---
+
 Bulk-step scaling sweeps:
 NativeConv Benchmark Summary
 Micro (single-run means):
@@ -14,4 +24,3 @@ Scaling best (contraction plugin):
   Pinch: best_us/step=0.0021 at size=6144 (max_abs_err=5.805e-01)
   Relative: Log vs Linear = 0.16x
   Relative: Pinch vs Linear = 1.19x
-
