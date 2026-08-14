@@ -139,8 +139,19 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    are mostly benign-range dot products; the rescue-worthy transcendental
    subset is small but includes exactly the shapes this project targets.
 
+8. ✅ Pass prototype (pass/): the softmax-denominator shape rewritten at
+   IR level to streaming logsumexp, behind explicit opt-in (fast-math
+   attribute or force parameter), verified end to end — benign inputs
+   agree to 1.4e-15, the underflowing case exports a correct finite
+   log-magnitude where the original returns 0.0, NaN propagates, and
+   negative controls are untouched. Known limits in pass/PROTOTYPE.md:
+   single shape, log form exported via a side global (downstream
+   propagation of the log value is the real win and remains open), no
+   profitability gating wired in yet.
+
 Remaining:
 
-8. Pass prototype: rewrite matched reductions to log-domain accumulation
-   behind explicit reassociation opt-in, gated on a profitability signal,
-   starting from the matcher's shape analysis.
+9. Connect the pieces: drive the pass from the matcher's HIGH-risk
+   triage (3 sites across 3 real codebases), propagate the log form to
+   downstream users instead of a side global, and decide the shipping
+   posture (diagnostic-first, with the pass as the power tool).
