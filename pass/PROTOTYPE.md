@@ -118,7 +118,7 @@ surgery, visible in the build commands). Output, verbatim:
 
 ```
 == 1. build plugin ==
-plugin: /home/chels/logrange-pass/build/LogRewrite.so
+plugin: ~/logrange-pass/build/LogRewrite.so
 == 2. compile kernels to IR (identical source, two names) ==
 == 3. rewrite (force=1: the explicit reassociation grant) ==
 REWRITE,test_softmax.c,29,softmax_denom_rw
