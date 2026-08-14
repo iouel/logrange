@@ -114,11 +114,18 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    requirement), and an accuracy suite (test_accuracy) validates against a
    double-double reference.
 
+5. ✅ (empirical half) The 170× cancellation-accuracy gap explained and
+   closed. The `log_add` fold's advantage was an ordering artifact (adjacent
+   pairs annihilating at matched magnitude); shuffled, it lost to even the
+   uncompensated accumulator. v0.2 `rp_accum` ships Neumaier-compensated
+   pos/neg sums: up to 5000× more accurate under cancellation, robust to
+   input ordering, ~2–3 ns/term — still 1.5–2.5× faster than hand-rolled
+   logsumexp. `pos_accum` stays uncompensated (no cancellation to amplify).
+   Full investigation: BENCHMARKS.md.
+
 Remaining, in order:
 
-5. Formalize the worst-case cancellation error bound in the header. The
-   accuracy suite surfaced the open question: a plain `log_add` fold was
-   ~170× more accurate than `rp_accum` on heavy cancellation (one dataset;
-   see BENCHMARKS.md) — explain the gap, close it (compensated pos/neg
-   sums), or document when to prefer which primitive.
-6. Deliverable 2 gate: the matcher hit-rate study.
+6. Formal statement of the worst-case cancellation bound in the header —
+   the empirics say the target shape is cond·O(eps); derive and state it
+   as a contract, replacing the current qualitative description.
+7. Deliverable 2 gate: the matcher hit-rate study.

@@ -76,8 +76,9 @@ static void report_row(const char* name, std::size_t n, double observed, double 
 // ---------------------------------------------------------------------------
 // Scenario 1 — long positive accumulation.
 // n in {1e3, 1e5, 1e6}, log_abs ~ normal(0, 3), all positive. rp_accum's
-// pos partial sum is an uncompensated double sum: expect O(n*eps)-ish
-// relative error. Generous assert: rel < n * 1e-14.
+// pos partial sum is Neumaier-compensated (v0.2), so the residual error is
+// the per-term exp() rounding, not summation drift. Generous assert
+// (predates compensation, kept as a regression tripwire): rel < n * 1e-14.
 // ---------------------------------------------------------------------------
 static void test_long_positive_sum() {
   const std::size_t sizes[] = {1000, 100000, 1000000};
@@ -192,6 +193,39 @@ static void test_log_add_chain(const cancel_data& d) {
 }
 
 // ---------------------------------------------------------------------------
+// Scenario 2b — ordering sensitivity on the same cancellation data.
+// Finding recorded 2026-08-15 (BENCHMARKS.md): a log_add fold's apparent
+// accuracy advantage on this dataset was an ordering artifact — each +/- pair
+// annihilated while adjacent. Shuffled, the fold degrades by ~2 orders while
+// compensated rp_accum does not (it landed *better* shuffled than paired in
+// the recorded run). This scenario pins both behaviors: rp_accum must stay
+// order-robust, and the fold's fragility is documented data, not folklore.
+// ---------------------------------------------------------------------------
+static void test_ordering_sensitivity(const cancel_data& d) {
+  std::vector<log_value> shuffled = d.terms;
+  std::mt19937_64 rng(0x0B5C0DE0ULL);
+  std::shuffle(shuffled.begin(), shuffled.end(), rng);
+
+  rp_accum acc;
+  for (const log_value& v : shuffled) acc.add(v);
+  const double rp_rel = std::fabs(acc.to_log_value().to_linear() - d.truth) / std::fabs(d.truth);
+
+  log_value r;
+  for (const log_value& v : shuffled) r = log_add(r, v);
+  const double fold_rel = std::fabs(r.to_linear() - d.truth) / std::fabs(d.truth);
+
+  const double n     = static_cast<double>(d.terms.size());
+  const double bound = d.cond * n * 1e-14;
+  report_row("rp_accum heavy cancel SHUFFLED (rel err)", d.terms.size(), rp_rel, bound);
+  report_row("log_add fold heavy cancel SHUFFLED (rel err)", d.terms.size(), fold_rel, bound);
+  NC_CHECK(rp_rel < bound);
+  NC_CHECK(fold_rel < bound);
+  // Order-robustness: shuffling must not cost rp_accum more than ~an order
+  // of magnitude relative to cond*eps territory.
+  NC_CHECK(rp_rel < 100.0 * d.cond * std::numeric_limits<double>::epsilon());
+}
+
+// ---------------------------------------------------------------------------
 // Scenario 3 — magnitude staircase. Integer log_abs from -230 to +230 in
 // shuffled order: every time a new maximum arrives, rp_accum rescales its
 // partial sums (the rescale-on-new-max path), so a shuffle exercises that
@@ -300,6 +334,7 @@ int main() {
   const cancel_data d = make_cancel_data();
   test_heavy_cancellation(d);
   test_log_add_chain(d);
+  test_ordering_sensitivity(d);
   test_magnitude_staircase();
   test_reset_cost();
 
