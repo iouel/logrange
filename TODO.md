@@ -13,8 +13,9 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
       (`-Wall -Wextra -Werror -ffp-contract=off`) needed no code fixes:
       clean under gcc 15.2 and clang 21.1. test_accuracy holds on glibc with
       4.5×–5100× slack, so the bound's 1-ulp `exp()` assumption survives a
-      second libm (BENCHMARKS.md, "Second toolchain"). Local verification
-      used gcc 15 / clang 21; the runners ship older majors.
+      second libm (BENCHMARKS.md, "Second toolchain"). Verified green on the
+      runners (gcc 13.3, clang 18.1) as well as locally (gcc 15.2, clang
+      21.1); the accuracy table is bit-identical across all four.
 - [ ] **Version identity in the header.** `LOGRANGE_VERSION` macros and a
       CHANGELOG.md, so a vendored copy can be identified in the wild.
 - [ ] **Float support decision.** Everything is double-only. Either add
