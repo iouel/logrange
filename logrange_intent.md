@@ -105,11 +105,20 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    `rp_accum` poisoning is sticky and queryable; `add_scaled` poisons on
    invalid scale instead of silently ignoring.
 
-Remaining:
+4. ✅ Benchmark harness built and run (see BENCHMARKS.md). Noise floor
+   measured at ~1%; success criteria 1–3 all met — the underflowing mixture
+   returns the exact answer where linear returns 0.0, the runtime beats
+   hand-rolled logsumexp by 1.9–4.1× rather than merely matching it, and
+   exponent-tracking wins pure products as predicted. A `pos_accum`
+   positive-only fast path was added to the header (Deliverable 1's missing
+   requirement), and an accuracy suite (test_accuracy) validates against a
+   double-double reference.
 
-4. Build the benchmark harness — warmup, pinned cores, reported variance —
-   then run the runtime at trip counts 10–10⁶ against linear,
-   exponent-tracking, and hand-rolled logsumexp.
+Remaining, in order:
 
-Every downstream decision — pass, diagnostic, or stop — depends on numbers
-step 4 produces.
+5. Formalize the worst-case cancellation error bound in the header. The
+   accuracy suite surfaced the open question: a plain `log_add` fold was
+   ~170× more accurate than `rp_accum` on heavy cancellation (one dataset;
+   see BENCHMARKS.md) — explain the gap, close it (compensated pos/neg
+   sums), or document when to prefer which primitive.
+6. Deliverable 2 gate: the matcher hit-rate study.
