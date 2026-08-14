@@ -1,5 +1,6 @@
 # LogRange
 
+WIP
 Correct sums when terms underflow or overflow in linear floating point.
 
 **Status:** v0.2, pre-1.0 — the header is complete and benchmarked; the
