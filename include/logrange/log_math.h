@@ -271,4 +271,102 @@ private:
   void poison() { m_log = detail::POS_INF; pos = detail::QNAN; neg = detail::QNAN; }
 };
 
+// ---------------------------------------------------------------------------
+// pos_accum — reference-exponent accumulator for positive-only log-domain
+// sums (intent Deliverable 1: the positive-only fast path).
+//
+// Same design as rp_accum — reference log-magnitude m_log tracking the
+// largest term, one exp() per term into a linear scaled sum, one log() at
+// reduction — minus everything sign-related. Relative to rp_accum this drops:
+//   - sign tracking (one branch and one store per add),
+//   - the separate neg partial sum (cancellation cannot occur, so there is
+//     no cancellation visibility to preserve),
+//   - the pos == neg cancellation reset and its per-event error decision.
+// That is the entire source of the speedup; the numerics are otherwise
+// identical.
+//
+// Contract: terms are nonnegative. A negative-signed nonzero term is a
+// contract violation and poisons — silently absorbing it (or folding it in)
+// would hide a bug at the call site. Zero terms (either sign of zero) are
+// the additive identity and are no-ops.
+//
+// Error contract (v0.1, same as rp_accum):
+//   - sum is an uncompensated double: O(n·eps) relative error in the scaled
+//     domain, which maps to O(n·eps) absolute error in log_abs.
+//   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
+//
+// Edge behavior (mirrors rp_accum):
+//   - Adding zero (log_abs == -inf) is a no-op.
+//   - Adding NaN or +inf log_abs poisons the accumulator: sticky, queryable
+//     via poisoned(), every subsequent to_log_value() returns NaN.
+//
+// add_log(log_abs) is the raw fast path for callers who never materialize a
+// log_value; add(log_value) validates sign and forwards to it. Both are part
+// of the interface.
+// ---------------------------------------------------------------------------
+struct pos_accum {
+  double m_log = detail::NEG_INF; // reference log-magnitude
+  double sum   = 0.0;             // sum of scaled terms
+
+  void clear() { m_log = detail::NEG_INF; sum = 0.0; }
+
+  bool empty()    const { return m_log == detail::NEG_INF; }
+  bool poisoned() const { return std::isnan(sum); }
+
+  // Raw fast path: add a term given directly as log|x|.
+  //   NaN or +inf poisons; -inf (zero) is a no-op.
+  void add_log(double log_abs) {
+    if (poisoned()) return;
+    if (std::isnan(log_abs) || log_abs == detail::POS_INF) { poison(); return; }
+    if (log_abs == detail::NEG_INF) return;
+
+    if (empty()) {
+      m_log = log_abs;
+      sum   = 1.0;
+      return;
+    }
+    if (log_abs > m_log) {
+      // New dominant term: rescale the existing sum down to the new reference.
+      sum *= std::exp(m_log - log_abs);
+      m_log = log_abs;
+    }
+    sum += std::exp(log_abs - m_log);
+  }
+
+  // Validated path: negative-signed nonzero terms poison (contract
+  // violation — see struct comment); zero is a no-op regardless of sign.
+  void add(const log_value& v) {
+    if (poisoned()) return;
+    if (v.is_nan() || v.is_inf()) { poison(); return; }
+    if (v.is_zero()) return;
+    if (v.sign < 0.0) { poison(); return; }
+    add_log(v.log_abs);
+  }
+
+  // Add c * v for a linear scalar c > 0. (c <= 0 or NaN c poisons —
+  // silently ignoring a bad scale would violate NaN-in/NaN-out.)
+  void add_scaled(const log_value& v, double c) {
+    if (poisoned()) return;
+    if (std::isnan(c) || !(c > 0.0)) { poison(); return; }
+    if (v.is_nan() || v.is_inf())    { poison(); return; }
+    if (v.is_zero()) return;
+    if (v.sign < 0.0) { poison(); return; }
+    add_log(v.log_abs + std::log(c));
+  }
+
+  // Reduce to a single log_value. NaN if poisoned; zero if empty; the
+  // result's sign is always +1.
+  log_value to_log_value() const {
+    log_value out;
+    if (poisoned()) { out.log_abs = detail::QNAN; return out; }
+    if (empty())    return out;                  // zero
+    out.sign    = 1.0;
+    out.log_abs = m_log + std::log(sum);
+    return out;
+  }
+
+private:
+  void poison() { m_log = detail::POS_INF; sum = detail::QNAN; }
+};
+
 } // namespace logrange

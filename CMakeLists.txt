@@ -27,3 +27,18 @@ add_test(NAME log_math COMMAND test_log_math)
 add_executable(test_rp_accum tests/test_rp_accum.cpp)
 target_link_libraries(test_rp_accum PRIVATE logrange)
 add_test(NAME rp_accum COMMAND test_rp_accum)
+
+add_executable(test_pos_accum tests/test_pos_accum.cpp)
+target_link_libraries(test_pos_accum PRIVATE logrange)
+add_test(NAME pos_accum COMMAND test_pos_accum)
+
+add_executable(test_accuracy tests/test_accuracy.cpp)
+target_link_libraries(test_accuracy PRIVATE logrange)
+add_test(NAME accuracy COMMAND test_accuracy)
+
+# Benchmark harness (intent Deliverable 1 / First Action step 4). Not a test:
+# timing runs are manual and only meaningful in the Release config (/O2).
+# Inherits the global /W4 /WX /fp:precise flags deliberately — the harness
+# measures the library as shipped, not a fast-math variant of it.
+add_executable(bench_logrange bench/bench_main.cpp)
+target_link_libraries(bench_logrange PRIVATE logrange)
