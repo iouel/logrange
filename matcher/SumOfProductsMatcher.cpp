@@ -61,7 +61,12 @@ struct ChainInfo {
 // side-effecting calls, another phi — a nested reduction) fails the chain.
 void walkChain(Value *V, const Loop &L, ChainInfo &CI,
                SmallPtrSetImpl<Value *> &Visited, unsigned Budget = 64) {
-  if (!CI.ok || CI.depth > Budget) { CI.ok = CI.depth <= Budget; return; }
+  // A rejection is FINAL — never reset ok on entry. (Earlier version wrote
+  // "CI.ok = CI.depth <= Budget" here, silently un-rejecting a dirty chain
+  // whenever a sibling operand was visited next; caught when a supposedly
+  // more permissive matcher produced fewer hits.)
+  if (!CI.ok) return;
+  if (CI.depth > Budget) { CI.ok = false; return; }
   auto *I = dyn_cast<Instruction>(V);
   if (!I || !L.contains(I)) return; // loop-invariant / constant / argument: leaf
   if (!Visited.insert(V).second) return;
@@ -69,6 +74,8 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
 
   switch (I->getOpcode()) {
   case Instruction::FMul:
+  case Instruction::FDiv: // a/b is a product with a reciprocal factor —
+                          // exactly what log_div handles; in scope
     ++CI.nMul;
     [[fallthrough]];
   case Instruction::FAdd:
@@ -83,6 +90,13 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
     return;
   case Instruction::Load:
     return; // memory read: leaf (the address computation is not FP shape)
+  case Instruction::PHI:
+    // A DIFFERENT loop-carried value feeding the term (e.g. a recurrence
+    // variable) is just an input from the term's point of view: leaf. It
+    // cannot be the accumulator phi — that has exactly one in-loop user,
+    // its spine consumer, checked at the call site. (Audit finding: cheb
+    // series error accumulators were missed without this.)
+    return;
   case Instruction::Call: {
     auto *CB = cast<CallBase>(I);
     if (auto *II = dyn_cast<IntrinsicInst>(CB)) {

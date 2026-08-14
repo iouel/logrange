@@ -130,6 +130,17 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    scenario. Deliverable 1 is functionally complete: the header now has
    the stated-error-bound property every hand-rolled version lacks.
 
+7. ✅ Matcher hit-rate study complete (matcher/RESULTS.md): 781 hits
+   across 2859 innermost FP loops in GSL, darknet, and libsvm (27%),
+   including the softmax-denominator and Dirichlet-likelihood shapes by
+   name. Recall audit clean; decision rule cleared decisively. Verdict:
+   the pass prototype proceeds, with profitability analysis (range/
+   underflow risk) required in front of any rewrite — the abundant hits
+   are mostly benign-range dot products; the rescue-worthy transcendental
+   subset is small but includes exactly the shapes this project targets.
+
 Remaining:
 
-7. Deliverable 2 gate: the matcher hit-rate study.
+8. Pass prototype: rewrite matched reductions to log-domain accumulation
+   behind explicit reassociation opt-in, gated on a profitability signal,
+   starting from the matcher's shape analysis.
