@@ -94,18 +94,18 @@ If the pass proves impractical, the same analysis supports a lint: *"this reduct
 
 Steps 1–3 complete (v0.1 refactor of the seed header):
 
-1. ✅ `logsumexp2` edge semantics fixed — NaN propagates, +inf propagates,
+1.  `logsumexp2` edge semantics fixed — NaN propagates, +inf propagates,
    -inf acts as log-zero identity. `log_add` matched, including
    inf + (-inf) → NaN per IEEE. Tests written against the contract table.
-2. ✅ The `pos == neg` reset documented as an explicit error-bound decision
+2.  The `pos == neg` reset documented as an explicit error-bound decision
    at the reset site: discards residual up to |largest term| · eps per reset
    event, in exchange for re-arming the reference exponent. Kept.
-3. ✅ Predecessor baggage stripped: pinch helpers, approximation toggles,
+3.  Predecessor baggage stripped: pinch helpers, approximation toggles,
    polynomial paths, instrumentation counters. Namespace is now `logrange`.
    `rp_accum` poisoning is sticky and queryable; `add_scaled` poisons on
    invalid scale instead of silently ignoring.
 
-4. ✅ Benchmark harness built and run (see BENCHMARKS.md). Noise floor
+4.  Benchmark harness built and run (see BENCHMARKS.md). Noise floor
    measured at ~1%; success criteria 1–3 all met — the underflowing mixture
    returns the exact answer where linear returns 0.0, the runtime beats
    hand-rolled logsumexp by 1.9–4.1× rather than merely matching it, and
@@ -114,7 +114,7 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    requirement), and an accuracy suite (test_accuracy) validates against a
    double-double reference.
 
-5. ✅ (empirical half) The 170× cancellation-accuracy gap explained and
+5.  (empirical half) The 170× cancellation-accuracy gap explained and
    closed. The `log_add` fold's advantage was an ordering artifact (adjacent
    pairs annihilating at matched magnitude); shuffled, it lost to even the
    uncompensated accumulator. v0.2 `rp_accum` ships Neumaier-compensated
@@ -123,14 +123,14 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    logsumexp. `pos_accum` stays uncompensated (no cancellation to amplify).
    Full investigation: BENCHMARKS.md.
 
-6. ✅ Formal worst-case bound derived and stated as a header contract:
+6.  Formal worst-case bound derived and stated as a header contract:
    rp_accum rel err ≤ cond·(3k+4)·u (k = rescale events, u = 2⁻⁵³);
    pos_accum ≤ (n+3k+3)·u. Machine-checked against measured data in
    test_accuracy — observed sits 5–1000× under the bound on every
    scenario. Deliverable 1 is functionally complete: the header now has
    the stated-error-bound property every hand-rolled version lacks.
 
-7. ✅ Matcher hit-rate study complete (matcher/RESULTS.md): 781 hits
+7.  Matcher hit-rate study complete (matcher/RESULTS.md): 781 hits
    across 2859 innermost FP loops in GSL, darknet, and libsvm (27%),
    including the softmax-denominator and Dirichlet-likelihood shapes by
    name. Recall audit clean; decision rule cleared decisively. Verdict:
@@ -139,7 +139,7 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    are mostly benign-range dot products; the rescue-worthy transcendental
    subset is small but includes exactly the shapes this project targets.
 
-8. ✅ Pass prototype (pass/): the softmax-denominator shape rewritten at
+8.  Pass prototype (pass/): the softmax-denominator shape rewritten at
    IR level to streaming logsumexp, behind explicit opt-in (fast-math
    attribute or force parameter), verified end to end — benign inputs
    agree to 1.4e-15, the underflowing case exports a correct finite
