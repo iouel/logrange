@@ -34,6 +34,19 @@ bool isTranscendentalName(StringRef Name) {
          Name.contains("pow") || Name.contains("sqrt");
 }
 
+// Known libm calls accepted in the chain even though they may write errno
+// (the errno store makes them non-readonly at IR level; it is irrelevant to
+// the reduction's shape). Exact names only — substring would admit anything.
+bool isKnownLibmCall(StringRef N) {
+  return N == "exp" || N == "expf" || N == "exp2" || N == "exp2f" ||
+         N == "expm1" || N == "expm1f" || N == "log" || N == "logf" ||
+         N == "log2" || N == "log2f" || N == "log10" || N == "log10f" ||
+         N == "log1p" || N == "log1pf" || N == "pow" || N == "powf" ||
+         N == "sqrt" || N == "sqrtf" || N == "fabs" || N == "fabsf" ||
+         N == "sin" || N == "sinf" || N == "cos" || N == "cosf" ||
+         N == "tanh" || N == "tanhf" || N == "erf" || N == "erfc";
+}
+
 struct ChainInfo {
   unsigned depth = 0;          // instructions visited in the term chain
   unsigned nMul = 0;           // fmul / fmuladd count
@@ -80,11 +93,14 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
         return;
       }
     }
-    if (CB->onlyReadsMemory() && !CB->isIndirectCall()) {
-      if (Function *Callee = CB->getCalledFunction())
-        if (isTranscendentalName(Callee->getName())) CI.transcendental = true;
-      for (Use &U : CB->args()) walkChain(U.get(), L, CI, Visited, Budget);
-      return;
+    if (!CB->isIndirectCall()) {
+      Function *Callee = CB->getCalledFunction();
+      StringRef Name = Callee ? Callee->getName() : StringRef();
+      if (CB->onlyReadsMemory() || isKnownLibmCall(Name)) {
+        if (isTranscendentalName(Name)) CI.transcendental = true;
+        for (Use &U : CB->args()) walkChain(U.get(), L, CI, Visited, Budget);
+        return;
+      }
     }
     CI.ok = false;
     return;
@@ -92,6 +108,63 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
   default:
     CI.ok = false;
     return;
+  }
+}
+
+// Trace the additive spine from the backedge value down to the accumulator
+// phi: the update may be a tree of fadd/fsub/fneg whose leaves are the phi
+// and the reduction terms, and at -O1 clang folds "acc += a*b" into
+// llvm.fmuladd(a, b, acc) — the phi then sits in the addend slot. Collects
+// every term (non-spine operand) and counts spine fmuladds as multiplies.
+// fsub only continues through its left operand: fsub(term, acc) alternates
+// the accumulator's sign each iteration and is not a reduction.
+// Nodes are appended to Spine only on the successful path (deepest first).
+bool spineToPhi(Value *V, PHINode *Phi, const Loop &L,
+                SmallVectorImpl<Value *> &Terms,
+                SmallVectorImpl<Instruction *> &Spine, unsigned &SpineMuls,
+                unsigned Depth = 8) {
+  if (V == Phi) return true;
+  if (Depth == 0) return false;
+  auto *I = dyn_cast<Instruction>(V);
+  if (!I || !L.contains(I)) return false;
+
+  switch (I->getOpcode()) {
+  case Instruction::FAdd:
+    for (unsigned a = 0; a < 2; ++a)
+      if (spineToPhi(I->getOperand(a), Phi, L, Terms, Spine, SpineMuls,
+                     Depth - 1)) {
+        Terms.push_back(I->getOperand(1 - a));
+        Spine.push_back(I);
+        return true;
+      }
+    return false;
+  case Instruction::FSub:
+    if (spineToPhi(I->getOperand(0), Phi, L, Terms, Spine, SpineMuls,
+                   Depth - 1)) {
+      Terms.push_back(I->getOperand(1));
+      Spine.push_back(I);
+      return true;
+    }
+    return false;
+  case Instruction::FNeg:
+    return false; // -acc as the running value flips sign: not a reduction
+  case Instruction::Call:
+    if (auto *II = dyn_cast<IntrinsicInst>(I)) {
+      if (II->getIntrinsicID() == Intrinsic::fmuladd ||
+          II->getIntrinsicID() == Intrinsic::fma) {
+        if (spineToPhi(II->getArgOperand(2), Phi, L, Terms, Spine, SpineMuls,
+                       Depth - 1)) {
+          ++SpineMuls;
+          Terms.push_back(II->getArgOperand(0));
+          Terms.push_back(II->getArgOperand(1));
+          Spine.push_back(I);
+          return true;
+        }
+      }
+    }
+    return false;
+  default:
+    return false;
   }
 }
 
@@ -125,7 +198,14 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
           }
       if (!hasFP) continue;
 
+      // Anchor the LOOP line on the first debug-located instruction so the
+      // line number is usable (header phis typically carry no debug loc).
       Instruction *Anchor = &*L->getHeader()->begin();
+      for (BasicBlock *BB : L->blocks()) {
+        for (Instruction &I : *BB)
+          if (I.getDebugLoc()) { Anchor = &I; break; }
+        if (Anchor->getDebugLoc()) break;
+      }
       errs() << "LOOP,";
       printLoc(errs(), Anchor, F);
       errs() << "\n";
@@ -138,30 +218,46 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
       for (PHINode &Phi : L->getHeader()->phis()) {
         if (!Phi.getType()->isFloatingPointTy()) continue;
         Value *Back = Phi.getIncomingValueForBlock(Latch);
-        auto *Upd = dyn_cast<BinaryOperator>(Back);
+        auto *Upd = dyn_cast<Instruction>(Back);
         if (!Upd || !L->contains(Upd)) continue;
-        if (Upd->getOpcode() != Instruction::FAdd &&
-            Upd->getOpcode() != Instruction::FSub)
-          continue;
-        Value *Term = nullptr;
-        if (Upd->getOperand(0) == &Phi)      Term = Upd->getOperand(1);
-        else if (Upd->getOperand(1) == &Phi &&
-                 Upd->getOpcode() == Instruction::FAdd)
-          Term = Upd->getOperand(0); // fsub(term, acc) is not a reduction
-        if (!Term) continue;
 
-        // The accumulator's only in-loop user must be its own update —
-        // a mid-loop read would change semantics under a log rewrite.
-        bool cleanUses = true;
-        for (User *U : Phi.users()) {
-          auto *UI = dyn_cast<Instruction>(U);
-          if (UI && L->contains(UI) && UI != Upd) { cleanUses = false; break; }
+        SmallVector<Value *, 8> Terms;
+        SmallVector<Instruction *, 8> Spine;
+        unsigned SpineMuls = 0;
+        if (!spineToPhi(Upd, &Phi, *L, Terms, Spine, SpineMuls)) continue;
+
+        // Every running value of the accumulator — the phi AND each spine
+        // node — must have exactly one in-loop user (its consumer on the
+        // spine; the root's consumer is the phi itself). Any other in-loop
+        // user is a mid-loop read of the running sum, which a log rewrite
+        // would change (e.g. prefix-sum stores).
+        auto soleInLoopUser = [&](const Value *V2) -> const User * {
+          const User *Found = nullptr;
+          for (const User *U : V2->users()) {
+            auto *UI = dyn_cast<Instruction>(U);
+            if (UI && L->contains(UI)) {
+              if (Found) return nullptr; // more than one
+              Found = U;
+            }
+          }
+          return Found;
+        };
+        bool cleanUses = soleInLoopUser(&Phi) != nullptr;
+        for (size_t s = 0; cleanUses && s < Spine.size(); ++s) {
+          const User *U = soleInLoopUser(Spine[s]);
+          // Deepest-first order: consumer of Spine[s] is Spine[s+1], and the
+          // root's consumer is the phi.
+          const User *Expected =
+              (s + 1 < Spine.size()) ? cast<User>(Spine[s + 1])
+                                     : cast<User>(&Phi);
+          cleanUses = (U == Expected);
         }
         if (!cleanUses) continue;
 
         ChainInfo CI;
+        CI.nMul = SpineMuls;
         SmallPtrSet<Value *, 32> Visited;
-        walkChain(Term, *L, CI, Visited);
+        for (Value *T : Terms) walkChain(T, *L, CI, Visited);
         if (!CI.ok || CI.nMul == 0) continue; // plain sum or dirty chain: miss
 
         const char *Trip = "unknown";
