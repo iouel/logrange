@@ -39,13 +39,17 @@ scan() {
 
 summarize() {
   local raw="$1" label="$2"
-  local loops hits trans const_trip
+  local loops hits trans const_trip high med low
   loops=$(grep -c '^LOOP,' "$raw" || true)
   hits=$(grep -c '^HIT,' "$raw" || true)
-  trans=$(grep -c '^HIT,.*,transcendental$' "$raw" || true)
+  trans=$(grep -c '^HIT,.*,transcendental,' "$raw" || true)
   const_trip=$(grep -c '^HIT,.*,constant,' "$raw" || true)
-  printf '%-12s  fp-loops=%-5s hits=%-4s transcendental=%-3s const-trip=%s\n' \
-    "$label" "$loops" "$hits" "$trans" "$const_trip"
+  # Risk is the second-to-last column; reasons (last) never contain commas.
+  high=$(grep -c '^HIT,.*,HIGH,[^,]*$' "$raw" || true)
+  med=$(grep -c '^HIT,.*,MED,[^,]*$' "$raw" || true)
+  low=$(grep -c '^HIT,.*,LOW,[^,]*$' "$raw" || true)
+  printf '%-12s  fp-loops=%-5s hits=%-4s transcendental=%-3s const-trip=%-4s high=%-3s med=%-4s low=%s\n' \
+    "$label" "$loops" "$hits" "$trans" "$const_trip" "$high" "$med" "$low"
 }
 
 case "${1:-}" in
@@ -58,12 +62,16 @@ selftest)
   cat "$WORK/raw-selftest.txt"
   hits=$(grep -c '^HIT,' "$WORK/raw-selftest.txt" || true)
   loops=$(grep -c '^LOOP,' "$WORK/raw-selftest.txt" || true)
-  trans=$(grep -c 'transcendental$' "$WORK/raw-selftest.txt" || true)
-  # Labels in selftest.c: 4 hits out of 6 examined FP loops, 1 transcendental.
-  if [ "$hits" = 4 ] && [ "$loops" = 6 ] && [ "$trans" = 1 ]; then
-    echo "SELFTEST PASS (4 hits / 6 fp-loops / 1 transcendental)"
+  trans=$(grep -c ',transcendental,' "$WORK/raw-selftest.txt" || true)
+  # Labels in selftest.c: 4 hits out of 6 examined FP loops, 1 transcendental;
+  # the mixture_likelihood hit must triage HIGH with exp-chain in its reasons.
+  ml_ok=0
+  grep '^HIT,.*,mixture_likelihood,' "$WORK/raw-selftest.txt" \
+    | grep ',HIGH,' | grep -q 'exp-chain' && ml_ok=1
+  if [ "$hits" = 4 ] && [ "$loops" = 6 ] && [ "$trans" = 1 ] && [ "$ml_ok" = 1 ]; then
+    echo "SELFTEST PASS (4 hits / 6 fp-loops / 1 transcendental / mixture_likelihood HIGH exp-chain)"
   else
-    echo "SELFTEST FAIL: hits=$hits (want 4) loops=$loops (want 6) trans=$trans (want 1)"
+    echo "SELFTEST FAIL: hits=$hits (want 4) loops=$loops (want 6) trans=$trans (want 1) mixture-high=$ml_ok (want 1)"
     exit 1
   fi
   ;;
