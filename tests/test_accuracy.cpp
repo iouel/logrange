@@ -66,6 +66,32 @@ struct dd_sum {
 };
 
 // ---------------------------------------------------------------------------
+// Formal-bound helpers (header error contract, rp_accum v0.2):
+//   rel err <= cond * (3k + 4) * u,   u = 2^-53,
+// where k counts rescale events — adds that strictly raise the running max
+// of log_abs after the first nonzero term. Recomputed here from the input
+// data (the accumulator deliberately carries no instrumentation counters).
+// ---------------------------------------------------------------------------
+static const double U = 0x1p-53; // unit roundoff
+
+static std::size_t count_rescales(const std::vector<log_value>& terms) {
+  std::size_t k = 0;
+  double m = -std::numeric_limits<double>::infinity();
+  for (const log_value& v : terms) {
+    if (v.is_zero()) continue;
+    if (v.log_abs > m) {
+      if (m != -std::numeric_limits<double>::infinity()) ++k;
+      m = v.log_abs;
+    }
+  }
+  return k;
+}
+
+static double formal_bound(double cond, std::size_t k) {
+  return cond * (3.0 * static_cast<double>(k) + 4.0) * U;
+}
+
+// ---------------------------------------------------------------------------
 // Observed-error table. Rows are printed as scenarios run; the header goes
 // out first from main(). This output is a deliverable, not debug noise.
 // ---------------------------------------------------------------------------
@@ -88,20 +114,24 @@ static void test_long_positive_sum() {
 
     rp_accum acc;
     dd_sum ref;
+    std::size_t k = 0; // rescale events, tracked from the data
+    double m = -std::numeric_limits<double>::infinity();
     for (std::size_t i = 0; i < n; ++i) {
       log_value v;
       v.log_abs = logmag(rng);
       v.sign = 1.0;
+      if (v.log_abs > m) { if (i > 0) ++k; m = v.log_abs; }
       acc.add(v);
       ref.add(std::exp(v.log_abs)); // same linear term the accumulator sees
     }
     const double got   = acc.to_log_value().to_linear();
     const double truth = ref.value();
     const double rel   = std::fabs(got - truth) / std::fabs(truth);
-    const double bound = static_cast<double>(n) * 1e-14;
+    // Positive-only sum: cond == 1 exactly. Assert the header's formal bound.
+    const double bound = formal_bound(1.0, k);
 
     char label[64];
-    std::snprintf(label, sizeof label, "rp_accum long +sum n=%zu (rel err)", n);
+    std::snprintf(label, sizeof label, "rp_accum long +sum n=%zu (rel err, k=%zu)", n, k);
     report_row(label, n, rel, bound);
     NC_CHECK(rel < bound);
   }
@@ -168,7 +198,7 @@ static void test_heavy_cancellation(const cancel_data& d) {
 
   const double got   = acc.to_log_value().to_linear();
   const double rel   = std::fabs(got - d.truth) / std::fabs(d.truth);
-  const double bound = d.cond * static_cast<double>(d.terms.size()) * 1e-14;
+  const double bound = formal_bound(d.cond, count_rescales(d.terms));
 
   char label[64];
   std::snprintf(label, sizeof label, "rp_accum heavy cancel (rel err, cond=%.1e)", d.cond);
@@ -214,15 +244,14 @@ static void test_ordering_sensitivity(const cancel_data& d) {
   for (const log_value& v : shuffled) r = log_add(r, v);
   const double fold_rel = std::fabs(r.to_linear() - d.truth) / std::fabs(d.truth);
 
-  const double n     = static_cast<double>(d.terms.size());
-  const double bound = d.cond * n * 1e-14;
-  report_row("rp_accum heavy cancel SHUFFLED (rel err)", d.terms.size(), rp_rel, bound);
-  report_row("log_add fold heavy cancel SHUFFLED (rel err)", d.terms.size(), fold_rel, bound);
-  NC_CHECK(rp_rel < bound);
-  NC_CHECK(fold_rel < bound);
-  // Order-robustness: shuffling must not cost rp_accum more than ~an order
-  // of magnitude relative to cond*eps territory.
-  NC_CHECK(rp_rel < 100.0 * d.cond * std::numeric_limits<double>::epsilon());
+  // rp_accum answers to the formal contract bound with k from THIS ordering;
+  // the fold has no such contract — it keeps the old generous sanity bound.
+  const double rp_bound   = formal_bound(d.cond, count_rescales(shuffled));
+  const double fold_bound = d.cond * static_cast<double>(d.terms.size()) * 1e-14;
+  report_row("rp_accum heavy cancel SHUFFLED (rel err)", d.terms.size(), rp_rel, rp_bound);
+  report_row("log_add fold heavy cancel SHUFFLED (rel err)", d.terms.size(), fold_rel, fold_bound);
+  NC_CHECK(rp_rel < rp_bound);
+  NC_CHECK(fold_rel < fold_bound);
 }
 
 // ---------------------------------------------------------------------------

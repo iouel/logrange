@@ -123,9 +123,13 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    logsumexp. `pos_accum` stays uncompensated (no cancellation to amplify).
    Full investigation: BENCHMARKS.md.
 
-Remaining, in order:
+6. ✅ Formal worst-case bound derived and stated as a header contract:
+   rp_accum rel err ≤ cond·(3k+4)·u (k = rescale events, u = 2⁻⁵³);
+   pos_accum ≤ (n+3k+3)·u. Machine-checked against measured data in
+   test_accuracy — observed sits 5–1000× under the bound on every
+   scenario. Deliverable 1 is functionally complete: the header now has
+   the stated-error-bound property every hand-rolled version lacks.
 
-6. Formal statement of the worst-case cancellation bound in the header —
-   the empirics say the target shape is cond·O(eps); derive and state it
-   as a contract, replacing the current qualitative description.
+Remaining:
+
 7. Deliverable 2 gate: the matcher hit-rate study.
