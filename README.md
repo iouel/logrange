@@ -42,8 +42,23 @@ Benchmarks (Release only; prints a measured noise floor first):
 ./build/Release/bench_logrange
 ```
 
+## Beyond the header
+
+- `matcher/` — LLVM opt plugin that recognizes sum-of-products reductions in
+  real code, with a three-codebase hit-rate study ([RESULTS.md](matcher/RESULTS.md))
+  and profitability triage (781 shape hits → 3 genuinely underflow-prone sites).
+- `matcher/diagnose.sh` — the range lint: plain-English findings pointing at
+  this header as the fix ([DIAGNOSTIC.md](matcher/DIAGNOSTIC.md)).
+- `pass/` — prototype LLVM pass rewriting the softmax-denominator idiom to
+  streaming logsumexp at IR level, behind explicit opt-in
+  ([PROTOTYPE.md](pass/PROTOTYPE.md)).
+
+The matcher and pass build on Linux/WSL against LLVM 21 (`llvm-dev`); the
+library and tests need only a C++17 compiler.
+
 ## Project documents
 
 - [logrange_intent.md](logrange_intent.md) — aims, honest cost model, deliverables, status
 - [BENCHMARKS.md](BENCHMARKS.md) — measured results against the success criteria
+- [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules, fixed before counting
 - [BASELINE.md](BASELINE.md) — historical predecessor numbers (do not cite)
