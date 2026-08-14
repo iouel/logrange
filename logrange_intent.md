@@ -107,6 +107,9 @@ would establish where the diagnostic should take over.
 This is a stretch goal, not a requirement for the runtime or the first
 compiler release.
 
+potential first milestone:
+Determine whether a single, real softmax computation can carry the log representation from the denominator through its natural consumer to the final observable result.
+
 ## Fallback Product — The Diagnostic
 
 If the pass proves impractical, the same analysis supports a lint: *"this reduction will leave representable range for inputs like X — consider log-domain accumulation, here is the header."* Less glorious than a rewrite, and more honest if the rewrite does not pay.
