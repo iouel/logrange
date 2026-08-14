@@ -1,20 +1,29 @@
 # LogRange
 
-A small, well-specified C++17 header-only library for **signed log-domain
-accumulation**: correct sums of terms whose magnitudes exceed floating-point
-range, where linear arithmetic silently degrades to 0.0, inf, or NaN.
+Correct sums when the terms leave floating-point range.
 
-Values are carried as `{sign, log|x|}`. The library provides pairwise
-log-domain arithmetic (`logsumexp2`, `log_add`, `log_mul`, `log_div`) and two
+**Status:** v0.2, pre-1.0 — the header is complete and benchmarked; the
+compiler tooling is a working prototype. Gaps are tracked in [TODO.md](TODO.md).
+
+## What it is
+
+Some sums are structurally doomed in linear floating point: mixture
+likelihoods, forward-algorithm recursions, softmax denominators — anything
+summing terms that individually underflow or overflow. The linear loop
+returns 0.0, inf, or NaN, silently.
+
+LogRange is a small C++17 header-only library for **signed log-domain
+accumulation**. Values are carried as `{sign, log|x|}`; the header provides
+pairwise arithmetic (`logsumexp2`, `log_add`, `log_mul`, `log_div`) and two
 reference-exponent accumulators — `pos_accum` (positive-only fast path) and
-`rp_accum` (signed, cancellation-aware) — with documented error contracts and
-IEEE-faithful edge semantics: NaN in means NaN out, infinities propagate,
-zeros are handled deliberately.
+`rp_accum` (signed, compensated, cancellation-aware) — with **stated
+worst-case error bounds** and IEEE-faithful edge semantics: NaN in means NaN
+out, infinities propagate, zeros are handled deliberately.
 
-Slower than a linear loop, always (each term costs an `exp`). What that buys:
-the computation finishes with a correct answer in the regime where the linear
-loop returns garbage. Measured numbers, including the cases where other
-approaches win, are in [BENCHMARKS.md](BENCHMARKS.md).
+The honest cost: each term pays an `exp()`, so this is always slower than a
+linear loop (~2–3×, measured). What that buys is a correct answer in the
+regime where the linear loop returns garbage. Numbers — including the cases
+where other approaches win — are in [BENCHMARKS.md](BENCHMARKS.md).
 
 ## Use
 
@@ -36,29 +45,30 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-Benchmarks (Release only; prints a measured noise floor first):
+Benchmarks (Release only; prints its measured noise floor first):
 
 ```
 ./build/Release/bench_logrange
 ```
 
-## Beyond the header
+## Repository map
 
-- `matcher/` — LLVM opt plugin that recognizes sum-of-products reductions in
-  real code, with a three-codebase hit-rate study ([RESULTS.md](matcher/RESULTS.md))
-  and profitability triage (781 shape hits → 3 genuinely underflow-prone sites).
-- `matcher/diagnose.sh` — the range lint: plain-English findings pointing at
-  this header as the fix ([DIAGNOSTIC.md](matcher/DIAGNOSTIC.md)).
-- `pass/` — prototype LLVM pass rewriting the softmax-denominator idiom to
-  streaming logsumexp at IR level, behind explicit opt-in
-  ([PROTOTYPE.md](pass/PROTOTYPE.md)).
+| path | what | maturity |
+|---|---|---|
+| `include/logrange/log_math.h` | the library — the product | benchmarked, formal error bound |
+| `tests/` | unit, contract, and accuracy suites (double-double reference) | run in CI |
+| `bench/` | trustworthy-by-construction benchmark harness | see BENCHMARKS.md |
+| `matcher/` | LLVM plugin recognizing sum-of-products reductions + 3-codebase hit-rate study | study published in [RESULTS.md](matcher/RESULTS.md) |
+| `matcher/diagnose.sh` | the range lint: flags underflow-prone reductions, points here as the fix | working ([DIAGNOSTIC.md](matcher/DIAGNOSTIC.md)) |
+| `pass/` | prototype LLVM pass rewriting softmax-style sums to streaming logsumexp, opt-in | verified prototype ([PROTOTYPE.md](pass/PROTOTYPE.md)) |
 
 The matcher and pass build on Linux/WSL against LLVM 21 (`llvm-dev`); the
 library and tests need only a C++17 compiler.
 
-## Project documents
+## Documents
 
-- [logrange_intent.md](logrange_intent.md) — aims, honest cost model, deliverables, status
+- [logrange_intent.md](logrange_intent.md) — aims, honest cost model, deliverables, status ladder
 - [BENCHMARKS.md](BENCHMARKS.md) — measured results against the success criteria
 - [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules, fixed before counting
+- [TODO.md](TODO.md) — road to 1.0
 - [BASELINE.md](BASELINE.md) — historical predecessor numbers (do not cite)
