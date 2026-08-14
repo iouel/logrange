@@ -74,41 +74,33 @@ Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform 
 
 ## Stretch Goal — End-to-End Log-Form Propagation
 
-The pass prototype currently computes the rescued result in log form but
-exports it through a side global. Converting that result back to linear
-representation immediately loses the numerical rescue in the regime where
-the original computation underflows.
+*Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
 
-The stretch goal is to determine whether the compiler can propagate the log
-form into downstream consumers where the algebra permits it, without
-requiring source-level changes. The first target is the softmax family:
+The pass prototype computes the rescued result in log form but exports it through a side global. Converting that result back to linear representation immediately loses the numerical rescue in the regime where the original computation underflows.
 
-    s = Σᵢ exp(xᵢ)
-    y = exp(xⱼ) / s
+The question is whether the compiler can propagate the log form into downstream consumers where the algebra permits it, without source-level changes. The first target is the softmax family:
+
+```
+s = Σᵢ exp(xᵢ)
+y = exp(xⱼ) / s
+```
 
 where the transformed computation retains
 
-    L = log(Σᵢ exp(xᵢ))
-    y = exp(xⱼ - L)
+```
+L = log(Σᵢ exp(xᵢ))
+y = exp(xⱼ - L)
+```
 
 instead of reconstructing `s` in linear floating point.
 
-This is not a proposal to compile arbitrary programs into log space. Log-
-domain arithmetic and log-sum-exp are established techniques; the research
-question is whether a compiler can introduce the representation selectively
-at a range-unsafe reduction and carry it through compatible consumers far
-enough that the numerical rescue survives to the observable result.
+This is not a proposal to compile arbitrary programs into log space. Log-domain arithmetic and log-sum-exp are established techniques; the research question is whether a compiler can introduce the representation selectively at a range-unsafe reduction and carry it through compatible consumers far enough that the numerical rescue survives to the observable result.
 
-Propagation may stop where no safe or profitable log-domain representation
-exists. An end-to-end transformation on real code would establish the
-technique as a viable compiler capability; a clear propagation boundary
-would establish where the diagnostic should take over.
+**First milestone.** One real softmax computation carries the log representation from the denominator, through its natural consumer, to the final observable result.
 
-This is a stretch goal, not a requirement for the runtime or the first
-compiler release.
+**Stopping rule.** Propagation may stop where no safe or profitable log-domain representation exists. An end-to-end transformation on real code establishes the technique as a viable compiler capability; a clear propagation boundary establishes where the diagnostic takes over instead. A negative result that fixes that boundary is a valid outcome and a valid place to stop.
 
-potential first milestone:
-Determine whether a single, real softmax computation can carry the log representation from the denominator through its natural consumer to the final observable result.
+**Precondition on implementation.** This section gets the treatment the other deliverables have before any code is written: target transformation and legality conditions, success criteria and tests, representative positive and negative controls, profitability conditions, known propagation boundaries, and the outcomes that justify continuing or stopping. The failure mode to avoid is a sequence of ad hoc propagation cases with no research question and no stopping rule.
 
 ## Fallback Product — The Diagnostic
 
@@ -183,13 +175,14 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    agree to 1.4e-15, the underflowing case exports a correct finite
    log-magnitude where the original returns 0.0, NaN propagates, and
    negative controls are untouched. Known limits in pass/PROTOTYPE.md:
-   single shape, log form exported via a side global (downstream
-   propagation of the log value is the real win and remains open), no
-   profitability gating wired in yet.
+   single shape, log form exported via a side global (propagating it to
+   downstream users is the Stretch Goal), no profitability gating wired
+   in yet.
 
 Remaining:
 
 9. Connect the pieces: drive the pass from the matcher's HIGH-risk
-   triage (3 sites across 3 real codebases), propagate the log form to
-   downstream users instead of a side global, and decide the shipping
+   triage (3 sites across 3 real codebases), and decide the shipping
    posture (diagnostic-first, with the pass as the power tool).
+   Propagating the log form to downstream users instead of the side
+   global is the Stretch Goal above, deliberately outside this step.

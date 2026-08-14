@@ -101,7 +101,7 @@ in the rescue regime it **re-underflows at the very last step**: for
 inputs near −800, `m + log(s) ≈ −792.6` is a perfectly healthy double
 while `exp(−792.6)` is 0.0. The real win requires propagating the *log
 form* downstream (e.g. into the softmax divide, which becomes a subtract).
-That is future work; this prototype makes the log form observable through
+That is the stretch goal; this prototype makes the log form observable through
 a documented hook: each rewrite stores `m + log(s)` to the external global
 `@__logrange_logsum` (created as an external declaration on demand — the
 consuming link must define it; last rewrite executed wins). The test
@@ -172,7 +172,8 @@ consumed, and the benign case shows 1.37e-15.
 - **No downstream log propagation.** The linear replacement re-underflows
   exactly when the rescue matters; the win is only observable through the
   export hook. Propagating `m + log(s)` into downstream users (softmax's
-  divide → subtract) is the actual product and is future work.
+  divide → subtract) is the stretch goal in logrange_intent.md, outside both
+  the runtime and the first compiler release.
 - **The export hook is a prototype.** One process-global external symbol,
   last-rewrite-wins, and any module the pass rewrites must be linked
   against something defining `__logrange_logsum`.

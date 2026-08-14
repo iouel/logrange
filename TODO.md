@@ -47,11 +47,6 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 
 - [ ] **Wire triage → pass** (intent step 9): the pass should consume the
       matcher's HIGH-risk verdict instead of rewriting every matched shape.
-- [ ] **Downstream log propagation.** The rescue currently exits through the
-      `__logrange_logsum` side global; the real win is rewriting the
-      *consumers* (e.g. softmax's divide) to use the log form. This is the
-      hard remaining compiler work and it is allowed to miss 1.0 — the
-      diagnostic is the shipping front door.
 - [ ] **Diagnostic ergonomics.** One-command entry point (point it at a
       compile_commands.json or a build dir) instead of the manual
       cc-bc.sh/run_study.sh two-step; package the three tools' WSL/LLVM-21
@@ -62,31 +57,19 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
       docs stay the answer.
-- [ ] **Stretch goal — end-to-end log-form propagation.** Determine whether
-      the compiler can selectively introduce a rescued logarithmic
-      representation at a range-unsafe reduction and propagate it through
-      compatible downstream consumers far enough that the numerical rescue
-      survives to the observable result, without source-level intervention.
-      The first target is the softmax denominator: preserve
-      `log(Σ exp(x))` into the downstream divide/subtract instead of
-      reconstructing the linear denominator.
-      Before implementation, flesh this out in `logrange_intent.md` to the
-      same standard as the other deliverables: define the target
-      transformation and legality conditions, success criteria and tests,
-      representative positive and negative controls, profitability
-      conditions, known propagation boundaries, and the outcomes that would
-      justify continuing or stopping. Do not let the stretch goal become a
-      sequence of ad hoc propagation cases without an explicit research
-      question and stopping rule.
-      Success does not require arbitrary log-domain program conversion.
-      A useful result is a demonstrated end-to-end transformation on real
-      code, together with a clear boundary where propagation must stop or
-      become unprofitable. A negative result that establishes such a boundary
-      is a valid outcome.
-      
+
 ## Explicitly not blocking 1.0
 
 - LLVM version breadth (21-only is fine for a research tool).
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,
   documented, not worth chasing).
+- **Downstream log-form propagation** — the stretch goal, and the one item
+  here with a research question attached. The rescue currently exits through
+  the `__logrange_logsum` side global; the win is rewriting the *consumers*
+  (softmax's divide → subtract) to use the log form. Full statement, first
+  milestone, and stopping rule: `logrange_intent.md`, "Stretch Goal —
+  End-to-End Log-Form Propagation". That section needs fleshing out to the
+  standard of the other deliverables before any code is written. The
+  diagnostic is the shipping front door either way, so nothing in 1.0 waits
+  on this.
