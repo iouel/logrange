@@ -7,9 +7,7 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 
 ## Blocking 1.0 — library
 
-- [ ] **License file.** The repo has none, so nobody can legally use the
-      header. Owner's call: MIT or BSD-3 fit the stb-library economics the
-      intent cites; Apache-2.0 if patent language matters. One file, pick one.
+- [x] **License file.** MIT, added 2026-08-15.
 - [ ] **Second toolchain, in CI.** Everything is verified under MSVC only;
       the gcc/clang flag branch in CMakeLists has never actually run for the
       library tests (the WSL clang work only built the matcher/pass). Add a

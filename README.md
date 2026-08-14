@@ -72,3 +72,7 @@ library and tests need only a C++17 compiler.
 - [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules, fixed before counting
 - [TODO.md](TODO.md) — road to 1.0
 - [BASELINE.md](BASELINE.md) — historical predecessor numbers (do not cite)
+
+## License
+
+MIT — see [LICENSE](LICENSE). Vendor the header freely; keep the notice.
