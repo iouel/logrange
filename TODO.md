@@ -66,10 +66,19 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
       The first target is the softmax denominator: preserve
       `log(Σ exp(x))` into the downstream divide/subtract instead of
       reconstructing the linear denominator.
+      Before implementation, flesh this out in `logrange_intent.md` to the
+      same standard as the other deliverables: define the target
+      transformation and legality conditions, success criteria and tests,
+      representative positive and negative controls, profitability
+      conditions, known propagation boundaries, and the outcomes that would
+      justify continuing or stopping. Do not let the stretch goal become a
+      sequence of ad hoc propagation cases without an explicit research
+      question and stopping rule.
       Success does not require arbitrary log-domain program conversion.
       A useful result is a demonstrated end-to-end transformation on real
       code, together with a clear boundary where propagation must stop or
-      become unprofitable.
+      become unprofitable. A negative result that establishes such a boundary
+      is a valid outcome.
       
 ## Explicitly not blocking 1.0
 
