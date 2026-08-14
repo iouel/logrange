@@ -18,10 +18,9 @@ The matcher passed its labeled ground-truth gate (selftest.c: 4 hits / 6 FP
 loops / 1 transcendental, exact) before any of these numbers were collected,
 and the scan is deterministic across repeat runs.
 
-## The marquee hits
+## Transcendental-chain hits
 
-The five transcendental-chain hits are precisely the underflow-prone shapes
-this project exists for:
+The five transcendental-chain hits are the target shapes:
 
 - `darknet/src/blas.c:315` — **`softmax_cpu`**: the softmax denominator
   `sum += exp(input[i] - largest)`, named as a target shape in the intent doc.
@@ -59,13 +58,12 @@ All HIGH-risk sites:
 | GSL `filter/gaussian.c:205` | `gsl_filter_gaussian_kernel` | exp-chain;deep-chain |
 
 Three rows, one shared source line (darknet's softmax denominator, matched
-in two functions). That shortness is the finding: of 781 shape-hits, the
-static signal marks only the softmax-denominator idiom and a Gaussian-kernel
-construction as plausibly underflow-prone — consistent with the qualifier
-below, and with a diagnostic that flags a handful of sites rather than a
-rewrite that touches hundreds. The MED tier is all deep-chain (libsvm's
-`svm_train` 4–5-factor products; 54 GSL sites, none log-chain). The
-`dirichlet.c:147` pair from the marquee list triages LOW under this rule:
+in two functions). Of 781 shape-hits, the static signal marks two source
+sites: the softmax-denominator idiom and a Gaussian-kernel construction.
+That count supports a diagnostic flagging a handful of sites over a rewrite
+touching hundreds. The MED tier is all deep-chain (libsvm's `svm_train`
+4–5-factor products; 54 GSL sites, none log-chain). The `dirichlet.c:147`
+pair triages LOW under this rule:
 its chain is `(alpha-1)*log(theta)` — a log-domain factor of linearly
 bounded magnitude, not an unbounded exp factor (nmul = 1, `log-chain`
 recorded but below the MED bar).
@@ -92,18 +90,16 @@ pre-fix scans were discarded.
 
 ## Decision (rule fixed in advance: <10 hits or recall <50% → pivot)
 
-**781 hits and clean recall clear the gate decisively — the shape survives
-real codebases in recognizable form. The pass prototype proceeds.**
+**781 hits and clean recall clear the gate. The shape survives real
+codebases in recognizable form. The pass prototype proceeds.**
 
-Honest qualifier the numbers force: shape-abundance ≠ profitability. The
-overwhelming bulk of hits are benign-range dot products where a log rewrite
-would only cost speed. The rescue-worthy subset (transcendental chains,
-likelihood/softmax shapes) is small — 5 sites here — but real, and it
-includes the exact softmax-denominator idiom named in the intent. The pass
-therefore needs the profitability/range analysis in front of the rewrite,
-exactly as the intent's opt-in legality stance already requires; a
-diagnostic-first posture (flag the 5, not the 781) remains the likely
-shipping shape.
+Qualifier the numbers force: shape-abundance is not profitability. The bulk
+of hits are benign-range dot products where a log rewrite would only cost
+speed. The rescue-worthy subset (transcendental chains, likelihood/softmax
+shapes) is 5 sites, and includes the softmax-denominator idiom named in the
+intent. The pass needs the profitability/range analysis in front of the
+rewrite. Diagnostic-first (flag the 5, not the 781) is the likely shipping
+shape.
 
 ## Reproduce
 

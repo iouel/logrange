@@ -1,14 +1,14 @@
 # pass/ — log-rewrite, the first rewrite prototype
 
-*LogRange intent, step 8 — deliberately narrow: one shape, done honestly,
-with verification. Everything in this directory is prototype-grade; the
-matcher study (matcher/RESULTS.md) is the evidence base it stands on.*
+*LogRange intent, step 8. Deliberately narrow: one shape, with verification.
+Everything in this directory is prototype-grade; the matcher study
+(matcher/RESULTS.md) is the evidence base it stands on.*
 
 ## What it does
 
 `LogRewritePass.cpp` is an LLVM 21 new-PM `opt` plugin (pipeline name
-`log-rewrite`) that recognizes exactly one loop shape — the softmax
-denominator idiom, the marquee hit of the matcher study:
+`log-rewrite`) that recognizes exactly one loop shape: the softmax
+denominator idiom, a HIGH-risk hit of the matcher study:
 
 ```c
 double s = 0.0;
@@ -35,7 +35,7 @@ other in-loop users (the matcher's mid-loop-read guard); at least one
 out-of-loop user of the sum. One stderr line per rewrite:
 `REWRITE,<file>,<line>,<function>`.
 
-## The select-based (actually: maxnum-based) derivation
+## The maxnum-based derivation
 
 The textbook streaming update branches:
 
@@ -145,26 +145,24 @@ run_pass_test: PASS
 - **Benign** (n=1000, ~N(0,1)): linear results agree to 1.4e-15 relative
   (bound: 1e-12); exported logsum matches an independent max-shift
   reference.
-- **Rescue** (values ≈ −800): the original sum is exactly 0.0 — the silent
-  failure this project exists to repair — while the exported log form is
-  −792.6197…, matching the reference to 1e-12 relative. The rw *linear*
-  value is also 0.0, as predicted above.
+- **Rescue** (values ≈ −800): the original sum is exactly 0.0, while the
+  exported log form is −792.6197…, matching the reference to 1e-12 relative.
+  The rw *linear* value is also 0.0.
 - **NaN**: one NaN input poisons original, rewritten, and exported values.
 - **Negative controls** (same module): plain sum, dot product, and
   loop-invariant-`exp` sum are declined — the script asserts *exactly one*
   `REWRITE` line and the harness checks their orig/rw results bit-identical.
 
-A war story worth keeping: the first working version passed every test
-while silently never wiring in the linear replacement — `SplitEdge`'s
-LCSSA preservation inserts pass-through phis that stale-ify user lists
-snapshotted before the split, and all three original scenarios happen to
-produce identical linear values either way. The tell was the benign case's
-relative error being *exactly* 0 (bitwise-identical results). Fixed by
-redirecting users strictly after the split; the script now structurally
-asserts the replacement value is consumed, and the benign case shows an
-honest 1.37e-15.
+Bug worth keeping on record: the first working version passed every test
+while never wiring in the linear replacement. `SplitEdge`'s LCSSA
+preservation inserts pass-through phis that stale-ify user lists snapshotted
+before the split, and all three original scenarios produce identical linear
+values either way. The tell was the benign case's relative error being
+*exactly* 0 (bitwise-identical results). Fixed by redirecting users strictly
+after the split; the script now structurally asserts the replacement value is
+consumed, and the benign case shows 1.37e-15.
 
-## Limitations (honest list)
+## Limitations
 
 - **Single shape.** Plain `fadd` + direct `exp` only: no `fmuladd`, no
   `sum += w[i]*exp(t)` (the mixture-likelihood shape), no float

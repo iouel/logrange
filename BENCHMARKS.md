@@ -19,7 +19,7 @@ The identical streaming-logsumexp kernel registered twice, n = 10⁴: medians
 differed by **0.98%** and **0.27%** across the two recorded runs (per-cell
 spreads mostly 0.02–0.2). The predecessor's harness showed 8× swings; this one
 supports percent-level claims. **Deltas ≲ 1–2% are not evidence; the ratios
-cited below are 1.5×–3.8× and clear the floor comfortably.**
+cited below are 1.5×–3.8× and clear the floor.**
 
 ## Success criteria — verdicts
 
@@ -37,9 +37,9 @@ loop; it is faster (ns/term, median, n = 10⁶, v0.2 compensated rp_accum):
 | uniform (log_abs ~ N(0,1)) | 23.9 | **6.5** (3.7× faster) | 9.6 (2.5× faster) |
 | wide (log_abs ~ U[−600,600]) | 25.7 | **14.5** (1.8× faster) | 17.6 (1.5× faster) |
 
-This is the reference-exponent design doing what it claimed: one `exp` per
-term with the `log` deferred to reduction, versus the textbook stream's `exp`
-+ `log1p` every term. Ratios are stable from n = 10² through 10⁶.
+Mechanism: the reference-exponent design spends one `exp` per term with the
+`log` deferred to reduction, versus the textbook stream's `exp` + `log1p`
+every term. Ratios are stable from n = 10² through 10⁶.
 (Pre-compensation v0.1 rp_accum measured 7.3/14.2 ns/term on these shapes —
 compensation costs ~2–3 ns/term and buys the accuracy documented below.)
 
@@ -49,7 +49,7 @@ Pure product of lognormal factors, n = 10⁶ (ns/term, median): exponent-trackin
 (fastest, but leaves double range around n ~ 10⁵ — by design). Products are
 exponent-tracking's territory; this library's case is sums.
 
-## Honest cost (intent: "slower-but-right versus fast-but-meaningless")
+## Cost (intent: "slower-but-right versus fast-but-meaningless")
 
 Against the naive linear loop on benign inputs (uniform shape, n = 10⁶):
 linear 3.4 ns/term, pos_accum 6.5 (1.9×), rp_accum 9.6 (2.8×). That is the

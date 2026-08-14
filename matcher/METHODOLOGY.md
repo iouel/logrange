@@ -3,7 +3,7 @@
 *Intent v0.3, Deliverable 2 precondition: "Hit rate is measured before the
 rewrite is built. Write the matcher only, run it over real numeric codebases,
 count." This file fixes the rules before the counting starts, so the numbers
-can't be quietly gerrymandered after the fact.*
+cannot be adjusted after the fact.*
 
 ## What counts as a hit
 
