@@ -1,0 +1,23 @@
+# Synthetic raw-scan fixture for diagnose.sh — exercises every report branch:
+# all three risk levels, multi-token and single-token reasons, "none",
+# every trip kind, transcendental and plain chains, a LOW-only source file,
+# LOOP lines with no matching HIT, and non-record lines (this comment).
+LOOP,src/blas.c,101,gemm_nn
+LOOP,src/blas.c,315,softmax_cpu
+HIT,src/blas.c,315,softmax_cpu,runtime,2,1,transcendental,HIGH,exp-chain
+LOOP,src/blas.c,412,dot_cpu
+HIT,src/blas.c,412,dot_cpu,runtime,1,1,plain,LOW,none
+LOOP,randist/dirichlet.c,147,gsl_ran_dirichlet_pdf
+HIT,randist/dirichlet.c,147,gsl_ran_dirichlet_pdf,unknown,4,3,transcendental,HIGH,exp-chain;deep-chain;unknown-trip
+LOOP,randist/dirichlet.c,160,dirichlet_norm
+HIT,randist/dirichlet.c,160,dirichlet_norm,constant,3,2,plain,MED,deep-chain
+LOOP,linalg/cov.c,55,covariance
+HIT,linalg/cov.c,55,covariance,unknown,1,1,plain,MED,unknown-trip
+LOOP,linalg/cov.c,60,log_weighted_mean
+HIT,linalg/cov.c,60,log_weighted_mean,runtime,2,1,transcendental,MED,log-chain
+LOOP,lowonly/sums.c,10,plain_dot
+HIT,lowonly/sums.c,10,plain_dot,constant,1,1,plain,LOW,none
+LOOP,lowonly/sums.c,20,sq_sum
+HIT,lowonly/sums.c,20,sq_sum,runtime,2,2,plain,LOW,none
+LOOP,src/im2col.c,77,im2col_cpu
+LOOP,src/im2col.c,90,col2im_cpu
