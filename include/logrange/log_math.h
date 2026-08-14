@@ -19,9 +19,12 @@
 //     exponent scale to 0.0 and contribute nothing. Correct for sums whose
 //     result is dominated by the largest terms; stated here so it is a
 //     contract, not a surprise.
-//   - rp_accum's pos/neg partial sums are plain uncompensated doubles and
-//     accrue standard O(n·eps) rounding error over long accumulations.
-//     A stated worst-case bound is future work (intent doc, Deliverable 1).
+//   - rp_accum's pos/neg partial sums are Neumaier-compensated (see the
+//     struct comment for why and for the measured effect); pos_accum's
+//     single sum is deliberately uncompensated — it is the speed path, and
+//     positive-only sums have no cancellation to amplify its O(n·eps) error.
+//     A formally stated worst-case bound is future work (intent doc,
+//     Deliverable 1).
 
 #pragma once
 #include <cmath>
@@ -182,9 +185,18 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // exp + one log1p per term) and keeps positive/negative mass separated,
 // which makes cancellation observable rather than silent.
 //
-// Error contract (v0.1, to be formalized per intent Deliverable 1):
-//   - pos/neg are uncompensated sums: O(n·eps) relative error in the
-//     scaled domain, which maps to O(n·eps) absolute error in log_abs.
+// Error contract (v0.2, to be formalized per intent Deliverable 1):
+//   - pos/neg are Neumaier-compensated sums: each partial sum is exact to
+//     ~eps relative regardless of length, so the dominant error under
+//     cancellation is the eps/2 rounding of each term's exp() scaling,
+//     amplified by the sum's condition number (sum|x_i| / |sum x_i|) at
+//     the final subtraction — i.e. relative error ~ cond·O(eps),
+//     independent of n to first order. Measured (BENCHMARKS.md): the
+//     uncompensated version sat at ~cond·10eps under heavy cancellation
+//     and a plain log_add fold looked better only when cancelling pairs
+//     were adjacent in the input; compensation beats both in every
+//     ordering tested, at two additions per term — within benchmark noise
+//     next to the exp().
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior:
@@ -198,9 +210,11 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 struct rp_accum {
   double m_log = detail::NEG_INF; // reference log-magnitude
   double pos   = 0.0;             // sum of scaled positive terms
+  double pos_c = 0.0;             // Neumaier compensation for pos
   double neg   = 0.0;             // sum of scaled negative terms
+  double neg_c = 0.0;             // Neumaier compensation for neg
 
-  void clear() { m_log = detail::NEG_INF; pos = 0.0; neg = 0.0; }
+  void clear() { m_log = detail::NEG_INF; pos = pos_c = neg = neg_c = 0.0; }
 
   bool empty()    const { return m_log == detail::NEG_INF; }
   bool poisoned() const { return std::isnan(pos); }
@@ -217,12 +231,14 @@ struct rp_accum {
     }
     if (v.log_abs > m_log) {
       // New dominant term: rescale existing sums down to the new reference.
+      // The compensation terms are linear in the sums, so they scale too.
       const double scale = std::exp(m_log - v.log_abs);
-      pos *= scale; neg *= scale;
+      pos *= scale; pos_c *= scale;
+      neg *= scale; neg_c *= scale;
       m_log = v.log_abs;
     }
     const double r = std::exp(v.log_abs - m_log);
-    (v.sign >= 0.0 ? pos : neg) += r;
+    if (v.sign >= 0.0) kb_add(pos, pos_c, r); else kb_add(neg, neg_c, r);
 
     // --- DOCUMENTED ERROR-BOUND DECISION (intent v0.3, seed defect 2) ----
     // When pos == neg at double precision, the true residual is not zero —
@@ -240,7 +256,10 @@ struct rp_accum {
     // sums (future work); callers summing terms that genuinely cancel
     // (the common case this path serves) get strictly better behavior.
     // ---------------------------------------------------------------------
-    if (pos == neg) clear();
+    // Compensated values compared: "equal at this accumulator's resolution"
+    // must account for the low words, or the reset would fire on sums the
+    // compensation can still tell apart.
+    if (pos + pos_c == neg + neg_c) clear();
   }
 
   // Add c * v for a linear scalar c > 0. (c <= 0 or NaN c poisons —
@@ -260,7 +279,9 @@ struct rp_accum {
     log_value out;
     if (poisoned()) { out.log_abs = detail::QNAN; return out; }
     if (empty())    return out;                  // zero
-    const double net = pos - neg;
+    // High words first, then the compensation difference — the low words are
+    // where the cancellation accuracy lives.
+    const double net = (pos - neg) + (pos_c - neg_c);
     if (net == 0.0) return out;                  // zero (see reset note)
     out.sign    = (net > 0.0) ? 1.0 : -1.0;
     out.log_abs = m_log + std::log(std::fabs(net));
@@ -268,6 +289,21 @@ struct rp_accum {
   }
 
 private:
+  // Neumaier update: sum += x with the rounding error captured in comp.
+  // Statement-per-step so the compensation cannot be fused away; /fp:precise
+  // (or -ffp-contract=off) preserves the identities.
+  static void kb_add(double& sum, double& comp, double x) {
+    const double t = sum + x;
+    if (std::fabs(sum) >= std::fabs(x)) {
+      const double lost = (sum - t) + x;
+      comp += lost;
+    } else {
+      const double lost = (x - t) + sum;
+      comp += lost;
+    }
+    sum = t;
+  }
+
   void poison() { m_log = detail::POS_INF; pos = detail::QNAN; neg = detail::QNAN; }
 };
 
