@@ -1,0 +1,21 @@
+# Test suite on push/PR. Windows + MSVC deliberately: it is the flag set
+# (/W4 /WX /fp:precise) every local run has been verified against; a second
+# toolchain belongs in a separate change so its warnings can be dealt with
+# on purpose, not as CI noise.
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
