@@ -26,6 +26,7 @@ for a in "$@"; do
   esac
 done
 [ $is_compile -eq 1 ] && [ -n "$src" ] || exit 0
+case "$src" in *conftest*) exit 0 ;; esac # configure probes are not study data
 
 # Rebuild the argument list minus "-o <file>" and any -O<level>.
 args=()
@@ -40,7 +41,9 @@ for a in "$@"; do
 done
 
 mkdir -p "$BC_DIR"
-bc="$BC_DIR/$(echo "$src" | tr '/' '_').bc"
+# Strip any leading ./ — "tr / _" would otherwise produce a hidden dotfile
+# that ls and the scan glob both skip.
+bc="$BC_DIR/$(echo "${src#./}" | tr '/' '_').bc"
 "$CLANG" "${args[@]}" -O1 -g -fno-vectorize -fno-slp-vectorize \
   -fno-unroll-loops -emit-llvm -o "$bc" 2>/dev/null || rm -f "$bc"
 exit 0
