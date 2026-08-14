@@ -116,6 +116,37 @@ Long sums are ε-level and n-independent — the residual error is the per-term
 bound, consistent with worst-case-vs-random-signs slack; the bound is tight
 enough to be falsifiable and holds on every scenario.
 
+## Second toolchain: the bound on glibc
+
+The bound assumes `exp()` accurate to within 1 ulp. Every number above comes
+from msvcrt, so that assumption was untested on a libm this project does not
+control. Run of 2026-08-15, WSL2 Ubuntu, gcc 15.2.0 and clang 21.1.8,
+`-Wall -Wextra -Werror -ffp-contract=off`, Release:
+
+- All four suites pass under both compilers. Zero warnings under `-Werror`;
+  the gcc/clang flag branch of CMakeLists needed no code changes.
+- Every accuracy scenario lands under its formal bound.
+
+| scenario | n | glibc observed | bound | slack |
+|---|---|---|---|---|
+| long positive sum, k=13 | 10³ | 0.0 | 4.8e-15 | — |
+| long positive sum, k=11 | 10⁵ | 1.2e-16 | 4.1e-15 | 35× |
+| long positive sum, k=21 | 10⁶ | 1.7e-15 | 7.4e-15 | 4.5× |
+| heavy cancellation, cond = 1.8e9 | 2×10⁴ | 2.7e-9 | 1.4e-5 | 5100× |
+| same data shuffled | 2×10⁴ | 1.1e-8 | 6.3e-6 | 600× |
+| `log_add` fold, paired / shuffled | 2×10⁴ | 4.9e-8 / 1.7e-6 | (no contract) | — |
+| magnitude staircase (log-abs err) | 461 | 0.0 | 1e-12 | — |
+| forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 4.4e65 | 44× |
+
+**These cells are not comparable one-to-one with the msvcrt table above.**
+`std::mt19937_64` is reproducible across implementations but
+`normal_distribution` and `uniform_real_distribution` are not, so the same
+seeds generate different datasets: the cancellation scenario draws cond =
+1.8e9 here versus 2.3e9 on Windows. What transfers is the verdict, which is
+the property under test — the bound holds on both libms, with 4.5×–5100×
+slack on glibc. No evidence of `exp()` exceeding the assumed 1 ulp.
+
 ## Next
 
-Deliverable 2 gate: the LLVM matcher hit-rate study.
+Second-machine benchmark run (TODO.md): the timing numbers still come from
+one Ryzen 5800X.
