@@ -27,7 +27,7 @@ jobs:
             os: ubuntu-latest
             configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configure
         run: ${{ matrix.configure }}
       - name: Build

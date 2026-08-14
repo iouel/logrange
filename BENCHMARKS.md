@@ -126,6 +126,9 @@ control. Run of 2026-08-15, WSL2 Ubuntu, gcc 15.2.0 and clang 21.1.8,
 - All four suites pass under both compilers. Zero warnings under `-Werror`;
   the gcc/clang flag branch of CMakeLists needed no code changes.
 - Every accuracy scenario lands under its formal bound.
+- CI reproduces the table cell-for-cell on ubuntu-latest with gcc 13.3.0 and
+  clang 18.1.3 (run 31842013920). Four compiler versions across two majors
+  each, one set of numbers.
 
 | scenario | n | glibc observed | bound | slack |
 |---|---|---|---|---|
