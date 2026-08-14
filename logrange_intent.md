@@ -53,10 +53,10 @@ A single C header providing **signed log-domain accumulation**: values carried a
 Requirements:
 
 - Positive-only fast path and a signed general path, separately usable.
-- Exact preservation of IEEE edge semantics at the boundary: a NaN term yields NaN out, signs of zero handled deliberately, no silent absorption of infinities. *(Seed defect 1 violates this today; it will be fixed.)*
-- A stated worst-case error bound under cancellation — the property every hand-rolled version lacks. *(Seed defect 2 is an unstated bound decision; it gets documented or redesigned as part of the v0.1 refactor.)*
+- Exact preservation of IEEE edge semantics at the boundary: a NaN term yields NaN out, signs of zero handled deliberately, no silent absorption of infinities. *(Seed defect 1 violated this; fixed in the v0.1 refactor.)*
+- A stated worst-case error bound under cancellation — the property every hand-rolled version lacks. *(Seed defect 2 was an unstated bound decision; documented at the reset site in the v0.1 refactor.)*
 - Benchmarked honestly against: the naive linear loop, exponent-tracking (for the pure-product case, where exponent-tracking *should win* — publishing that number is part of being trustworthy), and hand-written logsumexp.
-- **The benchmark harness must be trustworthy before its numbers are.** Warmup runs, pinned cores, reported variance. The predecessor's harness showed 8x run-to-run swings on identical binaries; this one will not.
+- **The benchmark harness must be trustworthy before its numbers are.** Warmup runs, pinned cores, reported variance. The predecessor's harness showed 8x run-to-run swings on identical binaries; this one does not — measured floor ~1%.
 
 This header is independently useful with zero compiler machinery, and it is the fallback deliverable if everything downstream stalls.
 
@@ -88,7 +88,7 @@ If the pass proves impractical, the same analysis supports a lint: *"this reduct
 - **The idiom may be rare in matchable form.** Mitigated by measuring first (criterion 4).
 - **Nobody asked for this.** True. The primitive is re-implemented everywhere it's needed, often with corner-case defects; a specified version with published error bounds has clear value.
 - **Error analysis is the hard part.** The bound under cancellation is real numerical-analysis work, not plumbing. It is also the entire difference between this and every ad hoc version, so it cannot be skipped.
-- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design is kept because it is interesting and plausible, not because it is proven. If the error analysis reveals it as unsound, it will be replaced.
+- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. *(Resolved at step 6: worst-case bound derived, stated as a header contract, machine-checked. The design stands.)*
 
 ## First Action — status
 
