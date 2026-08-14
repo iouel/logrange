@@ -118,7 +118,7 @@ If the pass proves impractical, the same analysis supports a lint: *"this reduct
 - **The idiom may be rare in matchable form.** Mitigated by measuring first (criterion 4).
 - **Nobody asked for this.** True. The primitive is re-implemented everywhere it's needed, often with corner-case defects; a specified version with published error bounds has clear value.
 - **Error analysis is the hard part.** The bound under cancellation is real numerical-analysis work, not plumbing. It is also the entire difference between this and every ad hoc version, so it cannot be skipped.
-- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. *(Resolved at step 6: worst-case bound derived, stated as a header contract, machine-checked. The design stands.)*
+- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. *(Step 6 derived the worst-case bound, stated it as a header contract, and machine-checked it against a double-double reference. The derivation remains author-reviewed only; independent review and an attempt to falsify the bound by adversarial search are the next work item — TODO.md, "Bound review pass".)*
 
 ## First Action — status
 

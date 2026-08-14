@@ -223,6 +223,12 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // a log_add fold is NOT a fix: its apparent accuracy there was an
 // ordering artifact that collapses under shuffling).
 // The bound is asserted against measured data in test_accuracy.cpp.
+// Review status: derived and checked by its author, not independently
+//   reviewed. Two questions stay open until it is (TODO.md, "Bound review
+//   pass"): whether bounding the pos and neg rescale errors independently
+//   still holds when they correlate, and the O(n*u^2) threshold above.
+//   Pre-1.0 this contract can still move. It will not move silently —
+//   any change lands in CHANGELOG.md with old and new values.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior:
