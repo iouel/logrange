@@ -1,29 +1,28 @@
 # LogRange
 
-Playing with logs trying to fix floating-point range. 
+Correct sums when terms underflow or overflow in linear floating point.
 
-Status: v0.2, pre-1.0 - the header is complete and benchmarked; the
+**Status:** v0.2, pre-1.0 — the header is complete and benchmarked; the
 compiler tooling is a working prototype. Gaps are tracked in [TODO.md](TODO.md).
 
 ## What it is
 
-Some sums are structurally doomed in linear floating point: mixture
-likelihoods, forward-algorithm recursions, softmax denominators - anything
-summing terms that individually underflow or overflow. The linear loop
-returns 0.0, inf, or NaN, silently.
+Some sums fail in linear floating point: mixture likelihoods, forward-algorithm
+recursions, softmax denominators — anything where individual terms underflow or
+overflow. A naive loop returns 0.0, inf, or NaN.
 
-LogRange is a small C++17 header-only library for signed log-domain
-accumulation. Values are carried as `{sign, log|x|}`; the header provides
-pairwise arithmetic (`logsumexp2`, `log_add`, `log_mul`, `log_div`) and two
-reference-exponent accumulators - `pos_accum` (positive-only fast path) and
-`rp_accum` (signed, compensated, cancellation-aware) - with stated
-worst-case error bounds and IEEE-faithful edge semantics: NaN in means NaN
-out, infinities propagate, zeros are handled deliberately.
+LogRange is a C++17 header-only library for signed log-domain accumulation.
+Values are `{sign, log|x|}`; the header provides pairwise arithmetic
+(`logsumexp2`, `log_add`, `log_mul`, `log_div`) and two accumulators:
+- `pos_accum` — fast path for positive-only sums
+- `rp_accum` — general case, signed, with cancellation handling
 
-The honest cost: each term pays an `exp()`, so this is always slower than a
-linear loop (~2–3×, measured). What that buys is a correct answer in the
-regime where the linear loop returns garbage. Numbers - including the cases
-where other approaches win - are in [BENCHMARKS.md](BENCHMARKS.md).
+Both have stated worst-case error bounds and IEEE-compliant edge semantics:
+NaN in → NaN out, infinities propagate, zeros handled explicitly.
+
+**Cost vs. benefit:** ~2–3× slower than a linear loop (each term needs `exp()`),
+but produces correct answers where linear fails. See
+[BENCHMARKS.md](BENCHMARKS.md) for numbers.
 
 ## Use
 
@@ -33,8 +32,8 @@ Header-only: add `include/` to your include path.
 #include <logrange/log_math.h>
 
 logrange::pos_accum acc;
-for (double log_term : log_terms) acc.add_log(log_term);  // e.g. log-likelihoods
-logrange::log_value total = acc.to_log_value();           // {sign, log_abs}
+for (double log_term : log_terms) acc.add_log(log_term);
+logrange::log_value total = acc.to_log_value();
 ```
 
 ## Build & test
@@ -45,7 +44,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release
 ```
 
-Benchmarks (Release only; prints its measured noise floor first):
+Benchmarks (Release only):
 
 ```
 ./build/Release/bench_logrange
@@ -55,24 +54,24 @@ Benchmarks (Release only; prints its measured noise floor first):
 
 | path | what | maturity |
 |---|---|---|
-| `include/logrange/log_math.h` | the library - the product | benchmarked, formal error bound |
-| `tests/` | unit, contract, and accuracy suites (double-double reference) | run in CI |
-| `bench/` | trustworthy-by-construction benchmark harness | see BENCHMARKS.md |
-| `matcher/` | LLVM plugin recognizing sum-of-products reductions + 3-codebase hit-rate study | study published in [RESULTS.md](matcher/RESULTS.md) |
-| `matcher/diagnose.sh` | the range lint: flags underflow-prone reductions, points here as the fix | working ([DIAGNOSTIC.md](matcher/DIAGNOSTIC.md)) |
-| `pass/` | prototype LLVM pass rewriting softmax-style sums to streaming logsumexp, opt-in | verified prototype ([PROTOTYPE.md](pass/PROTOTYPE.md)) |
+| `include/logrange/log_math.h` | library (the product) | benchmarked, formal error bound |
+| `tests/` | unit, contract, accuracy suites | run in CI |
+| `bench/` | benchmark harness | see BENCHMARKS.md |
+| `matcher/` | LLVM plugin + hit-rate study | [RESULTS.md](matcher/RESULTS.md) |
+| `matcher/diagnose.sh` | range lint | [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
+| `pass/` | LLVM pass prototype, opt-in | [PROTOTYPE.md](pass/PROTOTYPE.md) |
 
-The matcher and pass build on Linux/WSL against LLVM 21 (`llvm-dev`); the
-library and tests need only a C++17 compiler.
+Matcher and pass: Linux/WSL, LLVM 21.
+Library and tests: C++17 compiler only.
 
 ## Documents
 
-- [logrange_intent.md](logrange_intent.md) - aims, honest cost model, deliverables, status ladder
-- [BENCHMARKS.md](BENCHMARKS.md) - measured results against the success criteria
-- [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) - study rules, fixed before counting
-- [TODO.md](TODO.md) - road to 1.0
-- [BASELINE.md](BASELINE.md) - historical predecessor numbers (do not cite)
+- [logrange_intent.md](logrange_intent.md) — aims, cost model, deliverables
+- [BENCHMARKS.md](BENCHMARKS.md) — results
+- [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules
+- [TODO.md](TODO.md) — road to 1.0
+- [BASELINE.md](BASELINE.md) — historical numbers
 
 ## License
 
-MIT - see [LICENSE](LICENSE). Vendor the header freely; keep the notice.
+MIT — see [LICENSE](LICENSE). Vendor freely; keep the notice.
