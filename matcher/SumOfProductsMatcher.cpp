@@ -5,8 +5,11 @@
 //
 // Emits greppable lines on stderr, one per event:
 //   LOOP,<file>,<line>,<function>                       innermost FP loop examined
-//   HIT,<file>,<line>,<function>,<trip>,<depth>,<nmul>,<transcendental>
-// Aggregation happens in the run script, not here.
+//   HIT,<file>,<line>,<function>,<trip>,<depth>,<nmul>,<transcendental|plain>,<risk>,<reasons>
+// risk is the profitability signal — the gate in front of any rewrite:
+// "would this reduction actually underflow?" HIGH | MED | LOW, with
+// semicolon-joined reason tokens (or "none"). Aggregation happens in the
+// run script, not here.
 //
 // Usage: opt -load-pass-plugin=./SopMatcher.so -passes=sop-matcher \
 //            -disable-output module.bc
@@ -34,6 +37,14 @@ bool isTranscendentalName(StringRef Name) {
          Name.contains("pow") || Name.contains("sqrt");
 }
 
+// Risk-relevant sub-families of the above. Exp-family (incl. pow): a factor
+// whose magnitude the exponent controls — unbounded, the underflow smoking
+// gun. Log-family: inputs already in log domain being multiplied back.
+bool isExpFamilyName(StringRef Name) {
+  return Name.contains("exp") || Name.contains("pow");
+}
+bool isLogFamilyName(StringRef Name) { return Name.contains("log"); }
+
 // Known libm calls accepted in the chain even though they may write errno
 // (the errno store makes them non-readonly at IR level; it is irrelevant to
 // the reduction's shape). Exact names only — substring would admit anything.
@@ -51,6 +62,8 @@ struct ChainInfo {
   unsigned depth = 0;          // instructions visited in the term chain
   unsigned nMul = 0;           // fmul / fmuladd count
   bool transcendental = false; // readonly exp/log/pow/sqrt calls in chain
+  bool expChain = false;       // exp-family (exp/expm1/exp2/pow) call in chain
+  bool logChain = false;       // log-family call in chain
   bool ok = true;              // chain stayed within the allowed op set
 };
 
@@ -112,6 +125,8 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
       StringRef Name = Callee ? Callee->getName() : StringRef();
       if (CB->onlyReadsMemory() || isKnownLibmCall(Name)) {
         if (isTranscendentalName(Name)) CI.transcendental = true;
+        if (isExpFamilyName(Name)) CI.expChain = true;
+        if (isLogFamilyName(Name)) CI.logChain = true;
         for (Use &U : CB->args()) walkChain(U.get(), L, CI, Visited, Budget);
         return;
       }
@@ -278,10 +293,33 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         if (SE.getSmallConstantTripCount(L) > 0) Trip = "constant";
         else if (SE.hasLoopInvariantBackedgeTakenCount(L)) Trip = "runtime";
 
+        // Profitability triage (the gate in front of any rewrite): would
+        // this reduction actually underflow? HIGH iff an exp-family factor
+        // is in the chain (unbounded magnitude); MED for many multiplied
+        // factors, or log-domain inputs multiplied together; else LOW.
+        bool deepChain = CI.nMul >= 4;
+        bool unknownTrip = StringRef(Trip) == "unknown";
+        const char *Risk = CI.expChain ? "HIGH"
+                           : (deepChain || (CI.logChain && CI.nMul >= 2))
+                               ? "MED"
+                               : "LOW";
+        SmallVector<const char *, 4> Reasons;
+        if (CI.expChain) Reasons.push_back("exp-chain");
+        if (CI.logChain) Reasons.push_back("log-chain");
+        if (deepChain) Reasons.push_back("deep-chain");
+        if (unknownTrip) Reasons.push_back("unknown-trip");
+
         errs() << "HIT,";
         printLoc(errs(), Upd, F);
         errs() << "," << Trip << "," << CI.depth << "," << CI.nMul << ","
-               << (CI.transcendental ? "transcendental" : "plain") << "\n";
+               << (CI.transcendental ? "transcendental" : "plain") << ","
+               << Risk << ",";
+        if (Reasons.empty())
+          errs() << "none";
+        else
+          for (size_t i = 0; i < Reasons.size(); ++i)
+            errs() << (i ? ";" : "") << Reasons[i];
+        errs() << "\n";
       }
     }
     return PreservedAnalyses::all();

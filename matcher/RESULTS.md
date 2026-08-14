@@ -33,6 +33,43 @@ The plain-chain bulk is dot products, matmul/trmv/gemm inner loops, sums of
 squares, covariance triple-products, FFT twiddle accumulation, and special-
 function series (Bessel, hypergeometric, Chebyshev-error accumulators).
 
+## Profitability triage
+
+Each HIT now carries a static risk verdict — the gate in front of any
+rewrite: "would this reduction actually underflow?" **HIGH** = exp-family
+call (exp/expm1/exp2/pow) in the product chain, a factor whose magnitude the
+exponent controls; **MED** = deep chain (nmul ≥ 4, many multiplied factors
+compounding magnitude) or log-family inputs multiplied together (nmul ≥ 2);
+**LOW** otherwise. Per-hit reasons are in `data/`; the selftest gate now also
+asserts `mixture_likelihood` triages HIGH with `exp-chain`.
+
+| codebase | hits | HIGH | MED | LOW |
+|---|---|---|---|---|
+| GSL 2.8 | 752 | 1 | 54 | 697 |
+| darknet | 18 | 2 | 0 | 16 |
+| libsvm | 11 | 0 | 2 | 9 |
+| **total** | **781** | **3** | **56** | **722** |
+
+All HIGH-risk sites:
+
+| site | function | reasons |
+|---|---|---|
+| darknet `src/blas.c:315` | `softmax` | exp-chain |
+| darknet `src/blas.c:315` | `softmax_cpu` | exp-chain |
+| GSL `filter/gaussian.c:205` | `gsl_filter_gaussian_kernel` | exp-chain;deep-chain |
+
+Three rows, one shared source line (darknet's softmax denominator, matched
+in two functions). That shortness is the finding: of 781 shape-hits, the
+static signal marks only the softmax-denominator idiom and a Gaussian-kernel
+construction as plausibly underflow-prone — consistent with the qualifier
+below, and with a diagnostic that flags a handful of sites rather than a
+rewrite that touches hundreds. The MED tier is all deep-chain (libsvm's
+`svm_train` 4–5-factor products; 54 GSL sites, none log-chain). The
+`dirichlet.c:147` pair from the marquee list triages LOW under this rule:
+its chain is `(alpha-1)*log(theta)` — a log-domain factor of linearly
+bounded magnitude, not an unbounded exp factor (nmul = 1, `log-chain`
+recorded but below the MED bar).
+
 ## Audit (per METHODOLOGY.md)
 
 - **Precision** (random hits, source eyeballed): 6/8 confirmed genuine
