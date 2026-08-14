@@ -1,5 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
-project(LogRange VERSION 0.1 LANGUAGES CXX)
+
+# Version identity lives in the header (LOGRANGE_VERSION_* in
+# include/logrange/log_math.h) so a vendored copy carries its own version.
+# Parsed here rather than duplicated: the previous hardcoded 0.1 had already
+# drifted a release behind the header.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/include/logrange/log_math.h" _lr_header)
+foreach(_lr_part MAJOR MINOR PATCH)
+  if(NOT _lr_header MATCHES "#define LOGRANGE_VERSION_${_lr_part} +([0-9]+)")
+    message(FATAL_ERROR
+      "LOGRANGE_VERSION_${_lr_part} not found in include/logrange/log_math.h")
+  endif()
+  set(_lr_${_lr_part} "${CMAKE_MATCH_1}")
+endforeach()
+unset(_lr_header)
+
+project(LogRange VERSION ${_lr_MAJOR}.${_lr_MINOR}.${_lr_PATCH} LANGUAGES CXX)
+message(STATUS "LogRange version ${PROJECT_VERSION} (from log_math.h)")
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
