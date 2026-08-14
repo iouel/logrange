@@ -58,7 +58,19 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
       docs stay the answer.
-
+- [ ] **Stretch goal — end-to-end log-form propagation.** Determine whether
+      the compiler can selectively introduce a rescued logarithmic
+      representation at a range-unsafe reduction and propagate it through
+      compatible downstream consumers far enough that the numerical rescue
+      survives to the observable result, without source-level intervention.
+      The first target is the softmax denominator: preserve
+      `log(Σ exp(x))` into the downstream divide/subtract instead of
+      reconstructing the linear denominator.
+      Success does not require arbitrary log-domain program conversion.
+      A useful result is a demonstrated end-to-end transformation on real
+      code, together with a clear boundary where propagation must stop or
+      become unprofitable.
+      
 ## Explicitly not blocking 1.0
 
 - LLVM version breadth (21-only is fine for a research tool).
