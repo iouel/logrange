@@ -72,6 +72,41 @@ Preconditions, stated plainly:
 
 Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform is acceptable compiler behavior; Herbie rewrites expressions, not loops; FPChecker already occupies the *detection* and *diagnostics* space.
 
+## Stretch Goal — End-to-End Log-Form Propagation
+
+The pass prototype currently computes the rescued result in log form but
+exports it through a side global. Converting that result back to linear
+representation immediately loses the numerical rescue in the regime where
+the original computation underflows.
+
+The stretch goal is to determine whether the compiler can propagate the log
+form into downstream consumers where the algebra permits it, without
+requiring source-level changes. The first target is the softmax family:
+
+    s = Σᵢ exp(xᵢ)
+    y = exp(xⱼ) / s
+
+where the transformed computation retains
+
+    L = log(Σᵢ exp(xᵢ))
+    y = exp(xⱼ - L)
+
+instead of reconstructing `s` in linear floating point.
+
+This is not a proposal to compile arbitrary programs into log space. Log-
+domain arithmetic and log-sum-exp are established techniques; the research
+question is whether a compiler can introduce the representation selectively
+at a range-unsafe reduction and carry it through compatible consumers far
+enough that the numerical rescue survives to the observable result.
+
+Propagation may stop where no safe or profitable log-domain representation
+exists. An end-to-end transformation on real code would establish the
+technique as a viable compiler capability; a clear propagation boundary
+would establish where the diagnostic should take over.
+
+This is a stretch goal, not a requirement for the runtime or the first
+compiler release.
+
 ## Fallback Product — The Diagnostic
 
 If the pass proves impractical, the same analysis supports a lint: *"this reduction will leave representable range for inputs like X — consider log-domain accumulation, here is the header."* Less glorious than a rewrite, and more honest if the rewrite does not pay.
