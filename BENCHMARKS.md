@@ -46,6 +46,49 @@ comparison against a number recorded on another day needs a wider envelope —
 about ±8% on this hardware. The ratios are the durable claim; the absolutes
 are a record of one run.
 
+## Second machine (2026-08-15): the margin is hardware-dependent
+
+Run `31865095928` (`.github/workflows/bench.yml`, on demand only). The
+windows-latest leg is the comparable one — the harness pins and prioritizes on
+Windows, and MSVC with the same flags matches how the numbers above were
+taken, so hardware is the only variable that moves. Its self-reported noise
+floor was **0.00%** (identical kernels, spreads 0.010/0.013), better than the
+author's machine manages.
+
+| n = 10⁶, median ns/term | Ryzen 5800X | GitHub windows-latest |
+|---|---|---|
+| uniform `stream_lse` | 23.9 | 35.56 |
+| uniform `pos_accum` | 6.5 | 6.75 |
+| uniform `rp_accum` | 9.6 | 11.64 |
+| wide `stream_lse` | 25.7 | 36.50 |
+| wide `pos_accum` | 14.5 | 18.15 |
+
+**Criterion 1 reproduces exactly.** Both machines, and the unpinned Linux leg
+too, return log-magnitude −792.643769699630184 with `|error| = 0.000e+00`
+against the analytic max-shift value. Bit-identical on three configurations.
+
+**Criterion 2 holds, and by a wider margin — which is the finding.** The
+library beats hand-rolled streaming logsumexp on both machines, but not by the
+same factor: uniform `stream_lse`/`pos_accum` is 3.7× on the Ryzen and
+**5.27×** on the runner; wide is 1.8× against 2.01×.
+
+The published 3.7× is therefore a property of that Ryzen, not a portable
+constant. The mechanism is visible in the table: `pos_accum` barely moved
+between machines (6.5 → 6.75, +4%) while `stream_lse` slowed by half
+(23.9 → 35.56, +49%). `pos_accum` pays one `exp` per term; the textbook stream
+pays `exp` + `log1p`. Hardware with relatively slower transcendentals punishes
+the stream twice, so the design's advantage grows there. The durable claim is
+the direction and the reason, with an observed margin of **1.65×–5.3×** across
+two machines.
+
+**Criterion 3 reproduces.** Exponent-tracking still wins pure products:
+4.73 vs 10.68 ns/term on the runner (2.26×), against 3.3 vs 7.3 (2.2×) here.
+
+The unpinned ubuntu leg ran too and labels itself `pinned core + high
+priority: NO — numbers suspect`. Its floor was 0.10%, but it is a different
+compiler on an unpinned shared vCPU, so it is recorded rather than compared:
+uniform 25.37 / 5.20 / 6.75 for stream_lse / pos_accum / rp_accum.
+
 ## Success criteria — verdicts
 
 **1. Underflowing mixture returns the right answer where linear returns 0.0 — ✅**
