@@ -3,11 +3,14 @@
 // negative-term contract violation, the add_log raw path, and a cross-check
 // against rp_accum on random positive data.
 #include "test_common.h"
+#include "dd_sum.h"
 #include <logrange/log_math.h>
 #include <cmath>
+#include <cstddef>
 #include <limits>
 #include <algorithm>
 #include <random>
+#include <vector>
 
 using namespace logrange;
 
@@ -181,7 +184,61 @@ static void test_agrees_with_rp_accum() {
   NC_CHECK(approx(a.log_abs, b.log_abs, 1e-12));
 }
 
+// ---------------------------------------------------------------------------
+// The error contract, machine-checked:
+//   (n + 3k + 3 + D) * u  +  |log|S|| * u
+// Until 2026-08-15 this file asserted behavior and never the bound, and the
+// bound was wrong: bound_search refuted the old (n+3k+3)*u form at 34.9x.
+// The extreme-magnitude row is the shape that broke it — n*u budgets 4u there
+// while the reduction rounding alone is worth ~500u.
+// bound_search hunts for counterexamples; this is the fixed-shape tripwire.
+// ---------------------------------------------------------------------------
+static void test_error_contract() {
+  static const double U = 0x1p-53;
+  struct shape { double peak; double spread; std::size_t n; bool ascending; };
+  const shape shapes[] = {
+    {690.0,  0.0,      4, false}, // few terms, extreme magnitude
+    {  1.0,  0.0,      4, false}, // few terms, unit magnitude
+    {  5.0,  6.0, 100000, false}, // long sum, n*u dominates
+    { 20.0, 40.0,   1000, true},  // ascending: k == n-1
+  };
+
+  std::mt19937_64 rng(0x90514ULL);
+  for (const shape& s : shapes) {
+    std::uniform_real_distribution<double> depth(0.0, s.spread);
+    std::vector<double> logs;
+    logs.reserve(s.n);
+    for (std::size_t i = 0; i < s.n; ++i) logs.push_back(s.peak - depth(rng));
+    if (s.ascending) std::sort(logs.begin(), logs.end());
+
+    pos_accum acc;
+    dd_sum ref, mass, wdepth;
+    double m = -std::numeric_limits<double>::infinity();
+    std::size_t k = 0;
+    bool first = true;
+    for (double L : logs) {
+      if (L > m) { if (!first) ++k; m = L; }
+      first = false;
+      acc.add_log(L);
+      const double lin = std::exp(L);
+      ref.add(lin);
+      mass.add(lin);
+      wdepth.add(lin * (m - L)); // insertion depth: log-space gap below m
+    }
+
+    const double truth = ref.value();
+    const double rel   = std::fabs(acc.to_log_value().to_linear() - truth) /
+                         std::fabs(truth);
+    const double D     = wdepth.value() / mass.value();
+    const double bound = (static_cast<double>(s.n) +
+                          3.0 * static_cast<double>(k) + 3.0 + D) * U +
+                         std::fabs(ref.log_abs()) * U;
+    NC_CHECK(rel <= bound);
+  }
+}
+
 int main() {
+  test_error_contract();
   test_dynamic_range_sum();
   test_scaled_add();
   test_underflow_rescue();

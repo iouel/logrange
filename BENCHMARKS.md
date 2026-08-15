@@ -97,13 +97,14 @@ from the input data; the accumulator carries no instrumentation):
 > u = 2⁻⁵³, where k = rescale events (expected O(ln n) for random order,
 > worst n−1), D = mass-weighted mean insertion depth, S = the exact sum;
 > plus the documented per-reset discard (≤ Σ Aⱼ·u absolute) and the ~745
-> log-unit vanishing contract. `pos_accum`: ≤ (n + 3k + 3)·u, no cond term
-> (positive sums cannot cancel) — the n·u summation drift is the accepted
-> price of the fast path.
+> log-unit vanishing contract. `pos_accum`: ≤ (n + 3k + 3 + D)·u + |log|S||·u,
+> no cond term (positive sums cannot cancel) — the n·u summation drift is the
+> accepted price of the fast path.
 
-The D and |log|S|| terms were added after the original cond·(3k+4)·u form was
-refuted by adversarial search; see CHANGELOG.md for old and new values and
-the two mechanisms it missed. The bound column below is the corrected form.
+Both forms were corrected after adversarial search refuted them: rp_accum's
+cond·(3k+4)·u at 15.8×, pos_accum's (n+3k+3)·u at 34.9×. See CHANGELOG.md for
+old and new values and the mechanisms they missed. The bound column below is
+the corrected form.
 
 ## Accuracy vs double-double reference (v0.2, `test_accuracy`)
 

@@ -38,7 +38,23 @@ bound is bare `4u`. Two terms were missing.
 New: `rel err ≤ cond·(3k + 4 + D)·u + |log|S||·u`. The search scores every
 input against both forms; the new one was exceeded zero times out of 400,
 worst observed/bound 0.85, so it is tight enough to stay falsifiable rather
-than padded until nothing can reach it. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
+than padded until nothing can reach it.
+
+**`pos_accum` was refuted the same way, harder.** Old: `(n+3k+3)·u`. It fails
+on 119 of 400 random inputs, worst **34.9×**, and every violation is the same
+final-reduction term — `m_log + log(sum)` rounds to `u·|log|S||`, which does
+not grow with `n` and has no `cond` to hide behind. Four terms near `e⁶⁹⁰`
+budget `7u` against ~500u of real error. New:
+`(n + 3k + 3 + D)·u + |log|S||·u`, worst 0.79 across the search.
+
+`D` is carried there for symmetry but is **not** the binding term: making `D`
+large takes ~`e^D` terms at depth `D`, so `D ~ ln n < n` and the `n·u` term
+already covers it. Measured, not assumed — depth clusters aimed at
+`pos_accum` never exceed 0.22 of even the old bound.
+
+This bound had also never been machine-checked. `test_pos_accum` asserted
+behavior only; it now asserts the contract, and that assertion was verified
+to fail under the old form. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
 
 Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;

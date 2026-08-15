@@ -80,20 +80,24 @@ run**, then packaging.
       inherit from it, so a bound that moves moves them with it — and this
       one moved. Work finished before the review might have needed redoing;
       work finished after it will not.
-- [ ] **Bound review, second pass.** What the first pass left: `pos_accum`'s
-      (n+3k+3)·u has had no review and no adversarial search (bound_search
-      only attacks rp_accum, and the same argument-rounding mechanism
-      applies to it); pos/neg rescale-error correlation, still bounded
-      independently; the n·u² threshold. An independent read of the
-      corrected rp_accum derivation belongs here too.
-
-      *Method: search, not just re-reading.* Re-derivation alone is the
-      author reproducing the author's own reasoning, blind in the same
-      places — which is exactly how the first pass went wrong, and the two
-      questions flagged in advance were not the ones that broke it. So
-      `pos_accum` needs its own families in `bound_search`, not a re-read:
-      depth clusters especially, since the argument-rounding mechanism
-      applies to it unchanged and its (n+3k+3)·u makes no allowance for one.
+- [x] **Bound review, second pass — pos_accum.** Done 2026-08-15, and it
+      broke worse than rp_accum did: (n+3k+3)·u fails on 119 of 400 random
+      inputs, worst **34.9×**. Every violation is the final-reduction term
+      (|log|S||·u), which does not grow with n and has no cond to hide
+      behind — four terms near e⁶⁹⁰ budget 7u against ~500u of real error.
+      New contract (n+3k+3+D)·u + |log|S||·u, worst 0.79 across the search.
+      The predicted argument-rounding failure did *not* materialize here:
+      D ~ ln n < n, so the n·u term already covers it, confirmed by depth
+      clusters that never exceed 0.22 of even the old bound.
+      Also closed a gap this exposed: `test_pos_accum` asserted behavior but
+      never the contract, so the bound had never been machine-checked at
+      all. It now asserts it, and the assertion was verified to fail under
+      the old form.
+- [ ] **Bound review, third pass — what remains.** rp_accum's pos/neg
+      rescale-error correlation, still bounded independently; the n·u²
+      threshold; and an independent read of both corrected derivations. Two
+      accumulators have now had their stated bounds refuted by search, so
+      the prior on the remaining unexamined claims should be low.
 - [ ] **BENCHMARKS.md refresh at 1.0 flags.** If anything above changes
       flags or code paths, the published numbers must be re-run, not edited.
 
