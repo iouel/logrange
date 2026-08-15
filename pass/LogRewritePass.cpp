@@ -496,8 +496,6 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
         continue;
       }
 
-      Changed = true;
-
       // ---- All checks passed: build the streaming logsumexp state. ----
       Type *DTy = Acc->getType();
       IRBuilder<> HB(Header, Header->begin());
@@ -690,133 +688,125 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
             if (auto *P = dyn_cast<PHINode>(V)) {
               if (L->contains(P) || P->getType() != DTy)
                 return nullptr;
-              // Insert with the phis, creating a parallel phi in the same block
-              // to track the log-domain values.
-              IRBuilder<> PB(P);
-              PHINode *LogP = PB.CreatePHI(DTy, P->getNumIncomingValues(), 
-                                           P->getName() + ".log");
-              // Memoize before recursing to break potential cycles if the phi 
-              // structure is complex (though expected to be a simple LCSSA DAG).
-              LogOf[V] = LogP; 
-
-              for (unsigned i = 0; i < P->getNumIncomingValues(); ++i) {
-                Value *IncLog = self(self, P->getIncomingValue(i));
-                if (!IncLog) {
-                  // Lattice transfer failed for one of the incoming paths.
-                  // Clean up and abort propagation for this consumer.
-                  LogP->eraseFromParent();
+              // Insert with the phis, and memoize BEFORE recursing so a
+              // cyclic phi network terminates instead of recursing forever.
+              IRBuilder<> PhiB(P->getParent(), P->getParent()->begin());
+              PHINode *NewP = PhiB.CreatePHI(DTy, P->getNumIncomingValues(),
+                                             "lr.logphi");
+              LogOf[V] = NewP;
+              for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
+                Value *In = self(self, P->getIncomingValue(I));
+                if (!In) {
+                  LogOf.erase(V);
+                  NewP->eraseFromParent();
                   return nullptr;
                 }
-                LogP->addIncoming(IncLog, P->getIncomingBlock(i));
+                NewP->addIncoming(In, P->getIncomingBlock(I));
               }
-              return LogP;
+              return NewP;
             }
             return nullptr;
           };
 
-          // Step 1: Resolve the log-form of the divisor.
-          Value *DivisorLog = logForm(logForm, FDiv->getOperand(1));
-          if (!DivisorLog) {
+          Value *LogDen = logForm(logForm, CU.SeenAs);
+          if (!LogDen) {
             errs() << "DECLINE-PROP,";
             printLoc(errs(), FDiv, F);
-            errs() << ",divisor-lattice-fail\n";
+            errs() << ",no-log-form\n";
+            continue;
+          }
+          if (auto *LogDenI = dyn_cast<Instruction>(LogDen))
+            if (!DT.dominates(LogDenI, FDiv)) {
+              errs() << "DECLINE-PROP,";
+              printLoc(errs(), FDiv, F);
+              errs() << ",log-form-not-available\n";
+              continue;
+            }
+
+          // Peel fp casts to reach an llvm.exp numerator; require one.
+          Value *Num = FDiv->getOperand(0);
+          while (auto *CI = dyn_cast<CastInst>(Num)) {
+            if (CI->getOpcode() != Instruction::FPExt &&
+                CI->getOpcode() != Instruction::FPTrunc)
+              break;
+            Num = CI->getOperand(0);
+          }
+          Value *ExpArg = nullptr;
+          if (auto *II = dyn_cast<IntrinsicInst>(Num))
+            if (II->getIntrinsicID() == Intrinsic::exp &&
+                II->getArgOperand(0)->getType() == DTy)
+              ExpArg = II->getArgOperand(0);
+          if (!ExpArg) {
+            errs() << "DECLINE-PROP,";
+            printLoc(errs(), FDiv, F);
+            errs() << ",numerator-not-exp\n";
             continue;
           }
 
-          // Step 2: Extract or dynamically log the numerator.
-          // CRITICAL: We must manually fold log(exp(t)) -> t.
-          Value *Num = FDiv->getOperand(0);
-          IRBuilder<> DB(FDiv);
-          Value *T = nullptr;
-
-          // Strip floating-point casts to find the underlying call.
-          Value *StrippedNum = Num;
-          while (auto *Cast = dyn_cast<CastInst>(StrippedNum)) {
-            if (Cast->getOpcode() == Instruction::FPExt ||
-                Cast->getOpcode() == Instruction::FPTrunc)
-              StrippedNum = Cast->getOperand(0);
-            else
-              break;
-          }
-
-          if (auto *Call = dyn_cast<CallInst>(StrippedNum)) {
-            if (Call->getIntrinsicID() == Intrinsic::exp) {
-              T = Call->getArgOperand(0);
-              // Coerce to double if the original exp was expf(float).
-              if (T->getType() != DTy)
-                T = DB.CreateFPExt(T, DTy, "prop.t.ext");
-            }
-          }
-
-          if (!T) {
-            // Fallback: the numerator is not an explicit exp() call. 
-            // We must emit a dynamic log. Note that if Num underflowed 
-            // earlier, log(0.0) yields -inf, which breaks the rescue.
-            T = DB.CreateUnaryIntrinsic(Intrinsic::log, Num, {}, "prop.num.log");
-          }
-
-          // Step 3: Materialize the new division as exp(T - L).
-          Value *Sub = DB.CreateFSub(T, DivisorLog, "prop.sub");
-          Value *NewDiv = DB.CreateUnaryIntrinsic(Intrinsic::exp, Sub, {}, "prop.exp");
-
-          // Truncate back down if the original fdiv was on floats (though the 
-          // structural match guarantees it's double, safety first).
-          if (NewDiv->getType() != FDiv->getType())
-            NewDiv = DB.CreateFPTrunc(NewDiv, FDiv->getType(), "prop.trunc");
-
-          // Rewire and leave the old fdiv for standard DCE.
-          FDiv->replaceAllUsesWith(NewDiv);
-          
-          errs() << "REWRITE-PROP,";
+          IRBuilder<> PB(FDiv);
+          Value *Diff = PB.CreateFSub(ExpArg, LogDen, "lr.diff");
+          Value *Result = PB.CreateUnaryIntrinsic(Intrinsic::exp, Diff, {},
+                                                  "lr.pdiv");
+          errs() << "PROPAGATE,";
           printLoc(errs(), FDiv, F);
-          errs() << ",fdiv-of-sum\n";
+          errs() << "\n";
+          FDiv->replaceAllUsesWith(Result);
+          FDiv->eraseFromParent();
         }
       }
+      Changed = true;
     }
 
     return Changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
   }
 };
 
-} // end anonymous namespace
+} // namespace
 
-// -----------------------------------------------------------------------------
-// Pass Plugin Registration
-// -----------------------------------------------------------------------------
-
-llvm::PassPluginLibraryInfo getLogRewritePluginInfo() {
-  return {LLVM_PLUGIN_API_VERSION, "LogRewrite", "v0.1",
-          [](PassBuilder &PB) {
+extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
+  return {LLVM_PLUGIN_API_VERSION, "LogRewrite", "0.1", [](PassBuilder &PB) {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
-                  // E.g., -passes='log-rewrite<force;propagate=div;min-risk=med>'
-                  if (Name.consume_front("log-rewrite")) {
-                    bool Force = false;
-                    Risk MinRisk = Risk::High;
-                    bool PropagateDiv = false;
-
-                    if (Name.consume_front("<") && Name.consume_back(">")) {
-                      SmallVector<StringRef, 4> Args;
-                      Name.split(Args, ';');
-                      for (StringRef Arg : Args) {
-                        if (Arg == "force") Force = true;
-                        if (Arg == "propagate=div") PropagateDiv = true;
-                        if (Arg == "min-risk=low") MinRisk = Risk::Low;
-                        if (Arg == "min-risk=med") MinRisk = Risk::Med;
-                        if (Arg == "min-risk=high") MinRisk = Risk::High;
-                        if (Arg == "min-risk=none") MinRisk = Risk::None;
-                      }
+                  // Parameters, SEMICOLON-separated inside <>: force, and
+                  // min-risk=high|med|low (default high). Semicolons, not
+                  // commas — the new-PM pipeline parser splits on commas at
+                  // the top level, so 'log-rewrite<force,min-risk=none>'
+                  // reaches this callback as the pass name
+                  // 'log-rewrite<force' and is rejected. min-risk is the
+                  // profitability gate; see the note at the gate itself for
+                  // why raising it above HIGH is currently the only way to
+                  // make it decline.
+                  if (!Name.consume_front("log-rewrite"))
+                    return false;
+                  bool Force = false;
+                  Risk MinRisk = Risk::High;
+                  bool PropagateDiv = false;
+                  if (!Name.empty()) {
+                    if (!Name.consume_front("<") || !Name.consume_back(">"))
+                      return false;
+                    while (!Name.empty()) {
+                      StringRef Tok = Name.take_until([](char C) { return C == ';'; });
+                      Name = Name.drop_front(Tok.size());
+                      Name.consume_front(";");
+                      if (Tok == "force")
+                        Force = true;
+                      else if (Tok == "min-risk=high")
+                        MinRisk = Risk::High;
+                      else if (Tok == "min-risk=med")
+                        MinRisk = Risk::Med;
+                      else if (Tok == "min-risk=low")
+                        MinRisk = Risk::Low;
+                      else if (Tok == "min-risk=none")
+                        MinRisk = Risk::None;
+                      else if (Tok == "propagate=div")
+                        PropagateDiv = true;
+                      else
+                        return false; // unknown parameter: refuse, do not ignore
                     }
-                    FPM.addPass(LogRewritePass(Force, MinRisk, PropagateDiv));
-                    return true;
                   }
-                  return false;
+                  FPM.addPass(LogRewritePass(Force, MinRisk, PropagateDiv));
+                  return true;
                 });
           }};
-}
-
-extern "C" LLVM_ATTRIBUTE_WEAK ::llvm::PassPluginLibraryInfo
-llvmGetPassPluginInfo() {
-  return getLogRewritePluginInfo();
 }
