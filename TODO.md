@@ -49,9 +49,22 @@ run**, then packaging.
       whether a shared cloud vCPU's noise floor is low enough for the
       harness to say anything — the harness reports its own spread, so it
       can answer that itself rather than being assumed either way.
-- [ ] **Install/packaging story.** `cmake --install` rules + config so
-      `find_package(LogRange)` works; verify the README quickstart compiles
-      as written from a clean clone.
+- [x] **Install/packaging story.** Done 2026-08-15. `cmake --install` rules,
+      an exported `LogRange::logrange` target, and a config package, so
+      `find_package(LogRange 0.2 CONFIG REQUIRED)` works. Verified in both
+      consumption modes on MSVC and gcc: installed-prefix and vendored
+      `add_subdirectory` (the latter builds no tests and does not leak
+      `-Werror`). Version compatibility is `SameMinorVersion`, since pre-1.0
+      the error contract can move between minors and has.
+      The README quickstart is now `examples/quickstart`, built and run
+      against the *installed* package by CI on all three legs, so the docs
+      cannot drift from what works.
+      *Found while doing it:* the FP flag is contractual, not cosmetic.
+      `rp_accum`'s compensation is written statement-per-step so its
+      recovered rounding error cannot be fused away, and FMA contraction
+      undoes that — measured 14× worse on heavy cancellation (2.7e-09 →
+      3.7e-08), silently, and on by default wherever FMA is baseline. The
+      exported target now carries `-ffp-contract=off` / `/fp:precise`.
 
 ## Blocking 1.0 — honesty debts
 
