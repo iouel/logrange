@@ -170,10 +170,21 @@ from the input data; the accumulator carries no instrumentation):
 > **rp_accum worst-case relative error ≤ cond · (3k + 4 + D) · u + |log|S|| · u**,
 > u = 2⁻⁵³, where k = rescale events (expected O(ln n) for random order,
 > worst n−1), D = mass-weighted mean insertion depth, S = the exact sum;
-> plus the documented per-reset discard (≤ Σ Aⱼ·u absolute) and the ~745
-> log-unit vanishing contract. `pos_accum`: ≤ (n + 3k + 3 + D)·u + |log|S||·u,
-> no cond term (positive sums cannot cancel) — the n·u summation drift is the
-> accepted price of the fast path.
+> plus the ~745 log-unit vanishing contract. `pos_accum`:
+> ≤ (n + 3k + 3 + D)·u + |log|S||·u, no cond term (positive sums cannot
+> cancel) — the n·u summation drift is the accepted price of the fast path.
+
+Both are **first-order** bounds, holding under the assumptions the header
+states: `exp()` within 1 ulp, the vanishing window, and O(n·u²) and higher
+terms neglected. They are not unconditional inequalities over all
+floating-point behavior, and the header lists the assumptions so they can be
+checked rather than trusted.
+
+The per-reset discard (≤ Σ Aⱼ·u absolute) is **not** a separate error source
+on top of these. Reset epochs are disjoint and each carries mass ≥ 2Aⱼ, so
+Σ Aⱼ ≤ ½·cond·|S| and the reset contribution is at most cond·u/2 — already
+inside the 4u coefficient, for any number of resets. Derivation in
+`log_math.h`.
 
 Both forms were corrected after adversarial search refuted them: rp_accum's
 cond·(3k+4)·u at 15.8×, pos_accum's (n+3k+3)·u at 34.9×. See CHANGELOG.md for

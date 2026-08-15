@@ -301,8 +301,25 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // n < ~1e7 so O(n*u^2) terms are negligible:
 //
 //   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4 + D) * u  +  |log|S|| * u
-//     + (absolute) sum_j A_j * u          discarded by resets (see below)
 //     + terms > ~745 log-units below the running m_log vanish entirely.
+//
+// This is a FIRST-ORDER bound. It holds under the assumptions stated above —
+// std::exp within 1 ulp, the vanishing window, and O(n*u^2) and higher terms
+// neglected — not as an unconditional inequality over all floating-point
+// behavior. Those assumptions are listed so they can be checked, not buried.
+//
+// The reset loss is NOT a separate unbudgeted term. The per-reset discard of
+// up to A_j (documented at the reset site) is already inside the relative
+// budget above, and the epochs are what make that work: a reset fires only
+// when pos == neg, and the reference term contributes a scaled ratio of 1 to
+// one of them, so both are >= 1 and that epoch's mass is at least 2*A_j.
+// clear() starts a fresh epoch, so epochs are disjoint and
+//     sum_j A_j  <=  (1/2) sum_j mass_j  <=  (1/2) sum_i |x_i|
+//                 =  (1/2) * cond * |S|,
+// giving a relative reset contribution of at most cond*u/2 — inside the 4u
+// coefficient already present, with a factor of 8 to spare, for ANY number of
+// resets. Disjointness is the load-bearing step: without it the sum over
+// resets would appear to grow without bound.
 //
 // Derivation. Each term's scaled ratio r_i = exp(L_i - m_i) carries 2u from
 // exp() itself (1 ulp, per the assumption above) PLUS the rounding of its
@@ -322,6 +339,16 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // error in log space IS relative error in linear space. For a sum near 1
 // this is invisible; at log|S| ~ 700, the regime this library exists for,
 // it is ~700u on its own and dominates everything else.
+//
+// These two are a division of labor, not rival explanations of the same
+// error. Cancellation in forming net = (pos - neg) + (pos_c - neg_c) is
+// covered by the cond factor: cond is large exactly when net is small
+// relative to the mass, and it multiplies every coefficient perturbation
+// that reached net. The |log|S||*u term covers something else entirely —
+// the single rounding of m_log + log|net| once net is already known, which
+// is a property of writing the answer down in a double and is there even at
+// cond == 1. One is error in computing the value; the other is error in
+// representing it.
 // Without compensation the summation term is O(n*u) and dominates — measured
 // at ~300x worse on cond=2.3e9 data (BENCHMARKS.md; a log_add fold is NOT a
 // fix: its apparent accuracy there was an ordering artifact that collapses
@@ -480,6 +507,9 @@ private:
 // Error contract (formal; u, k, D and S as defined at rp_accum):
 //
 //   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3 + D) * u  +  |log|S|| * u
+//
+// First-order, under the same stated assumptions as rp_accum's (1-ulp exp,
+// the vanishing window, higher-order terms neglected).
 //
 // The n*u term is the uncompensated running sum — kept deliberately: this
 // is the speed path, positive terms cannot cancel, so cond == 1 and there
