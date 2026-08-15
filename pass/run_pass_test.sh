@@ -212,7 +212,7 @@ grep -q '^DECLINE-FPENV,.*,softmax_denom,denormal-fp-math$' "$WORK/denorm.log" \
   || { echo "FAIL: denormal mode not declined with the denormal-fp-math reason"; exit 1; }
 echo "PASS,decline_denormal_env_under_force"
 
-echo "== 5. propagate=div: compile a _prop copy, run with propagate=div =="
+echo "== 3c. propagate=div: compile a _prop copy, run with propagate=div =="
 RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop \
             -Dsoftmax_add=softmax_add_prop -Dsoftmax_sum_div=softmax_sum_div_prop \
             -Dplain_sum=plain_sum_prop -Ddot_sum=dot_sum_prop \
