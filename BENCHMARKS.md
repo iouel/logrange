@@ -21,6 +21,31 @@ spreads mostly 0.02–0.2). The predecessor's harness showed 8× swings; this on
 supports percent-level claims. **Deltas ≲ 1–2% are not evidence; the ratios
 cited below are 1.5×–3.8× and clear the floor.**
 
+## Re-run of 2026-08-15 (same machine), and what the noise floor does not cover
+
+Confirmation run after the packaging and contract work. Code paths are
+unchanged since the numbers above: every edit to `log_math.h` since v0.2 is
+preprocessor or comment (version macros, the fast-math guard), the bench
+source is untouched, and the flag set is identical — the same four flags,
+moved from directory scope onto a target.
+
+**Ratios reproduce.** stream_lse/pos_accum 3.75× and 3.70× across two runs
+against the 3.7× published; stream_lse/rp_accum 2.56× and 2.54× against 2.5×;
+wide 1.81× and 1.80× against 1.8×. The success-criteria claims stand.
+
+**Absolute ns/term move more than the floor suggests.** Medians at n = 10⁶
+varied up to ~8% between runs on this machine (wide `rp_accum` 16.04 then
+17.31; uniform `pos_accum` 6.45 then 6.92), while the harness reported floors
+of 2.35%, 0.15% and 1.11% in those same runs.
+
+That is not a contradiction, it is a scope limit worth stating: **the noise
+floor measures two identical kernels inside one run.** It says nothing about
+run-to-run reproducibility, which is where machine state lives. So "deltas
+≲1–2% are not evidence" holds for comparisons *within* a run, and a
+comparison against a number recorded on another day needs a wider envelope —
+about ±8% on this hardware. The ratios are the durable claim; the absolutes
+are a record of one run.
+
 ## Success criteria — verdicts
 
 **1. Underflowing mixture returns the right answer where linear returns 0.0 — ✅**
