@@ -244,6 +244,53 @@ void printFnLoc(raw_ostream &OS, const Function &F) {
   OS << "," << F.getName();
 }
 
+struct ConsumerUse {
+  Instruction *User;
+  Value *SeenAs;
+  bool IsFinalSum;
+};
+
+void collectConsumerUses(Value *V, const Loop &L, bool IsFinalSum,
+                         SmallVectorImpl<ConsumerUse> &Out,
+                         SmallPtrSetImpl<Value *> &SeenVals,
+                         SmallPtrSetImpl<Instruction *> &SeenUsers) {
+  if (!SeenVals.insert(V).second)
+    return;
+  for (User *U : V->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI || L.contains(UI))
+      continue;
+    if (isa<PHINode>(UI) ||
+        (isa<CastInst>(UI) &&
+         (UI->getOpcode() == Instruction::FPExt ||
+          UI->getOpcode() == Instruction::FPTrunc))) {
+      collectConsumerUses(UI, L, IsFinalSum, Out, SeenVals, SeenUsers);
+      continue;
+    }
+    if (SeenUsers.insert(UI).second)
+      Out.push_back({UI, V, IsFinalSum});
+  }
+}
+
+const char *classifyConsumerUse(const ConsumerUse &CU, const Loop &L) {
+  auto *BO = dyn_cast<BinaryOperator>(CU.User);
+  if (!BO)
+    return CU.IsFinalSum ? "not-fdiv" : "not-the-sum";
+  if (BO->getOpcode() != Instruction::FDiv)
+    return CU.IsFinalSum ? "not-fdiv" : "not-the-sum";
+  if (!CU.IsFinalSum || BO->getOperand(1) != CU.SeenAs)
+    return "not-the-sum";
+  if (!BO->getType()->isDoubleTy() || !BO->getOperand(0)->getType()->isDoubleTy() ||
+      !CU.SeenAs->getType()->isDoubleTy())
+    return "not-double";
+  if (auto *NumeratorI = dyn_cast<Instruction>(BO->getOperand(0)))
+    if (L.contains(NumeratorI))
+      return "numeral-ineligible";
+  if (!BO->hasOneUse())
+    return "shared-result";
+  return "fdiv-of-sum";
+}
+
 // Risk tiers, ordered, matching SumOfProductsMatcher.cpp's triage. Kept as a
 // plain enum rather than shared code because the two plugins build
 // independently; the rule they encode is one sentence and is stated in both.
@@ -517,6 +564,19 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
         return ReplRunning;
       };
 
+      // Snapshot the post-split out-of-loop consumers before any rewiring.
+      // SplitEdge may have inserted pass-through phis; follow those (and any
+      // fp trunc/ext cast in front of the leaf) to the IR instruction that
+      // actually consumes the sum. This spike records that shape only; it does
+      // not rewrite the consumer.
+      SmallVector<ConsumerUse, 4> ConsumerUses;
+      SmallPtrSet<Value *, 8> SeenVals;
+      SmallPtrSet<Instruction *, 8> SeenUsers;
+      collectConsumerUses(Upd, *L, /*IsFinalSum=*/true, ConsumerUses, SeenVals,
+                          SeenUsers);
+      collectConsumerUses(Acc, *L, /*IsFinalSum=*/false, ConsumerUses, SeenVals,
+                          SeenUsers);
+
       // Fold the split-created pass-through phis into the replacement.
       for (PHINode &P : make_early_inc_range(ReplBB->phis())) {
         bool AllUpd = P.getNumIncomingValues() > 0;
@@ -567,6 +627,13 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       errs() << "REWRITE,";
       printLoc(errs(), Upd, F);
       errs() << "," << riskName(R) << ",exp-chain;exp-sum\n";
+      for (const ConsumerUse &CU : ConsumerUses) {
+        const char *Kind = classifyConsumerUse(CU, *L);
+        errs() << (StringRef(Kind) == "fdiv-of-sum" ? "CONSUMER-MATCH,"
+                                                    : "CONSUMER-DECLINE,");
+        printLoc(errs(), CU.User, F);
+        errs() << "," << Kind << "\n";
+      }
       Changed = true;
     }
 
