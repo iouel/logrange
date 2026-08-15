@@ -212,11 +212,47 @@ grep -q '^DECLINE-FPENV,.*,softmax_denom,denormal-fp-math$' "$WORK/denorm.log" \
   || { echo "FAIL: denormal mode not declined with the denormal-fp-math reason"; exit 1; }
 echo "PASS,decline_denormal_env_under_force"
 
+echo "== 3c. propagate=div: compile a _prop copy, run with propagate=div =="
+RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop \
+            -Dsoftmax_add=softmax_add_prop -Dsoftmax_sum_div=softmax_sum_div_prop \
+            -Dplain_sum=plain_sum_prop -Ddot_sum=dot_sum_prop \
+            -Dinvariant_exp_sum=invariant_exp_sum_prop"
+$CLANG $KFLAGS -DKERNEL $RENAME_PROP \
+      -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_prop.ll"
+$OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+       -passes='log-rewrite<force;propagate=div>' \
+       -S "$WORK/kernel_prop.ll" -o "$WORK/kernel_prop_opt.ll" \
+       2> "$WORK/prop.log" || { cat "$WORK/prop.log"; exit 1; }
+cat "$WORK/prop.log"
+# softmax_full_prop consumer must be rewritten.
+grep -q '^PROPAGATE,.*,softmax_full_prop$' "$WORK/prop.log" \
+  || { echo "FAIL: softmax_full_prop consumer not propagated"; exit 1; }
+# Near-miss consumers must be declined with reason tokens.
+grep -q '^DECLINE-PROP,.*,softmax_add_prop,not-fdiv$' "$WORK/prop.log" \
+  || { echo "FAIL: softmax_add_prop not declined with not-fdiv"; exit 1; }
+grep -q '^DECLINE-PROP,.*,softmax_sum_div_prop,not-the-sum$' "$WORK/prop.log" \
+  || { echo "FAIL: softmax_sum_div_prop not declined with not-the-sum"; exit 1; }
+echo "PASS,propagate_div_rewrites_softmax_full"
+
+# An unrecognised propagate= value must be refused, not silently ignored.
+if $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+        -passes='log-rewrite<force;propagate=divvv>' \
+        -S "$WORK/kernel_prop.ll" -o /dev/null > /dev/null 2>&1; then
+  echo "FAIL: unknown propagate= value was accepted"; exit 1
+fi
+echo "PASS,unknown_propagate_refused"
+
+# force alone (no propagate=div) must NOT produce any PROPAGATE lines.
+[ "$(grep -c '^PROPAGATE,' "$WORK/rewrite.log" || true)" = "0" ] \
+  || { echo "FAIL: force alone caused consumer propagation"; exit 1; }
+echo "PASS,force_alone_does_not_propagate"
+
 echo "== 4. codegen, link, run =="
-$CLANG -O1 -c "$WORK/kernel_orig.ll"   -o "$WORK/kernel_orig.o"
-$CLANG -O1 -c "$WORK/kernel_rw_opt.ll" -o "$WORK/kernel_rw.o"
+$CLANG -O1 -c "$WORK/kernel_orig.ll"      -o "$WORK/kernel_orig.o"
+$CLANG -O1 -c "$WORK/kernel_rw_opt.ll"    -o "$WORK/kernel_rw.o"
+$CLANG -O1 -c "$WORK/kernel_prop_opt.ll"  -o "$WORK/kernel_prop.o"
 $CLANG -O1 -c "$PASSDIR/test_softmax.c" -o "$WORK/main.o"
-$CLANG "$WORK/main.o" "$WORK/kernel_orig.o" "$WORK/kernel_rw.o" -lm \
+$CLANG "$WORK/main.o" "$WORK/kernel_orig.o" "$WORK/kernel_rw.o" "$WORK/kernel_prop.o" -lm \
       -o "$WORK/test_softmax"
 "$WORK/test_softmax" | tee "$WORK/test.out"
 
