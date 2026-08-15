@@ -156,3 +156,117 @@ against an independent max-shift reference oracle.
 errno, FP exception flags, rounding-mode dependence, denormal flushing
 behaviour. Sections 2 and 4 exist so that no eligible program can observe
 any of them.
+
+## 6. Log-form propagation into consumers (the stretch goal, first form)
+
+*This section governs rewriting the loop's **consumers**, not the loop.
+Nothing in it is reachable unless sections 1–5 already passed — propagation
+is layered on a successful rewrite, never attempted on its own. It
+implements the first milestone of `logrange_intent.md`, "Stretch Goal —
+End-to-End Log-Form Propagation", and closes "Shipping Posture" condition 2
+(the rescue observable without the `__logrange_logsum` side global).*
+
+### 6.1 What propagation is
+
+A rewritten loop produces the log-domain value `L = m + log(s)` — the
+log-magnitude of the sum, live in the replacement block before any `exp()`
+is applied. Propagation rewrites an eligible consumer of the linear sum to
+consume `L` directly, and **deletes the `exp(L)` materialization for every
+rewritten use**. The rescue is observable precisely when materialization is
+removed: in the regime this project targets, `exp(L)` re-underflows to
+`0.0` while `L` itself is a healthy double.
+
+Propagation is intra-function only. A value that crosses a function
+boundary — return, call argument, store to memory that escapes — is a
+frontier, and the materialization stays.
+
+### 6.2 Opt-in: per consumer-form, named, refused if misspelled
+
+Propagation is a **separate grant** from the loop rewrite's reassociation
+grant. Neither `force` nor `"unsafe-fp-math"="true"` reaches it. Each
+consumer form is enabled by its own pass parameter, semicolon-separated
+inside `<>`:
+
+| parameter | consumer form rewritten |
+|---|---|
+| `propagate=div` | `fdiv(numerator, sum)` → `exp(log(numerator) - L)` |
+
+An unrecognized `propagate=` value is **refused**, exactly as an
+unrecognized `min-risk=` value is: the pipeline fails to parse rather than
+silently reverting to no propagation. With no `propagate=` parameter, no
+consumer is touched — the default is the section 1–5 behaviour.
+
+Why a separate grant: the loop rewrite changes rounding only in the
+accumulation; a consumer rewrite changes rounding in *another* operation
+(the divide becomes a subtract). Those are two different things to permit,
+and the caller grants them separately. `force` grants reassociation of the
+sum; it says nothing about rewriting a division downstream of it.
+
+### 6.3 Eligible consumer: the divide form, all clauses required
+
+A consumer instruction is eligible for `propagate=div` only if **every**
+clause holds. A failed clause is a decline, logged as
+`DECLINE-PROP,<file>,<line>,<function>,<reason>`; it is never a fallback
+and never a partial rewrite.
+
+| clause | requirement | reason token if failed |
+|---|---|---|
+| denominator | the divisor is the rewritten sum (the loop's final value, post-LCSSA), not the running sum | `not-the-sum` |
+| operator | `fdiv`, operand 1 is the sum; `fmul` by a reciprocal is *not* matched (a different rounding and a different NaN/inf profile) | `not-fdiv` |
+| type | `double` | `not-double` |
+| numerator | the dividend is loop-invariant with respect to the rewritten loop, or provably available and `double` at the use; it is *not* required to be an `exp` call (see 6.4) | `numeral-ineligible` |
+| placement | the consumer is in the same function and dominated by the replacement block | `not-dominated` |
+| uniqueness-of-form | the rewritten value is not also consumed by an ineligible use that *shares this instruction's* result (an instruction is rewritten whole or not at all) | `shared-result` |
+
+### 6.4 The rewrite and its algebra
+
+```
+y = fdiv(x, s)        where L = log(s) is available
+  becomes
+y = llvm.exp( llvm.log(x) - L )
+```
+
+This is the softmax divide becoming a subtract in the log domain. The
+numerator is *not* required to be an `exp(xⱼ)` call: when it happens to be
+one, a later `exp(log(x))` pair is a folding opportunity for ordinary LLVM
+canonicalization, not something this pass performs or relies on. This pass
+emits `log(x) - L` and one `exp`; it does not pattern-match the numerator's
+provenance.
+
+### 6.5 What propagation preserves
+
+Finite rounding changes **more** than in the loop rewrite, and that is
+permitted and stated: the divide is replaced by a subtract, so the result
+is not bitwise identical to `fdiv` even on benign inputs. This is the
+second thing the (separate) propagation grant pays for.
+
+Special values are preserved relative to the identically-flagged linear
+form, with one row added to the section-5 table's family:
+
+| input | required behaviour |
+|---|---|
+| sum underflows (the rescue regime) | consumer yields a **finite, correct** value where the linear form yields `0.0` or NaN-from-`0/0`; this row is the entire point and is the one the linear program cannot produce |
+| NaN in numerator or any sum term | result is NaN |
+| numerator `0.0` | `log(0) = -inf`; `-inf - L` with finite `L` is `-inf`; `exp(-inf) = +0.0`, matching linear `0/s` |
+| numerator `+inf` / sum `+inf` | `inf/inf = NaN` linear; `log(inf) - inf = inf - inf` is guarded to NaN by the same `oeq` discipline as section 5 — NaN, matching linear |
+
+The rescue row is tested against the harness's independent max-shift
+reference on a full softmax (denominator loop plus normalize divide in one
+function), asserting correct finite probabilities where the original
+returns all-zero/NaN. NaN, ±inf, and zero-numerator rows are tested as
+constants and against the reference.
+
+### 6.6 Not preserved, and the stopping rule
+
+errno, FP exception flags, rounding-mode dependence and denormal flushing
+remain unpreserved for the whole function (sections 2 and 4 already screen
+these out before any loop is seen).
+
+Propagation stops at the first use with no eligible rewrite — the
+materialization `exp(L)` is kept there and the log region ends. A consumer
+the lattice cannot rewrite is a decline with a reason token, never a
+best-effort transform. The general Linear/Log/Conflict dataflow over
+arbitrary consumers is the stretch goal's second step and is **out of
+scope** for this section; if the frontier turns out to sit immediately
+outside the first loop on real code, that is a documented result, not a
+failure to be patched over.
