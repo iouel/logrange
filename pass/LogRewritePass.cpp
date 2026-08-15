@@ -693,6 +693,7 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                     return false;
                   bool Force = false;
                   Risk MinRisk = Risk::High;
+                  bool PropagateDiv = false;
                   if (!Name.empty()) {
                     if (!Name.consume_front("<") || !Name.consume_back(">"))
                       return false;
