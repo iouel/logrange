@@ -87,6 +87,30 @@ pos/neg rescale errors bounded independently and summed is conservative under
 any correlation (triangle inequality on `pos − neg`), and the `O(n·u²)` term
 does not reach `u` until ~10¹⁶ terms.
 
+**Added — install rules and a config package.**
+
+`cmake --install` now installs the header and a config package, so consumers
+can `find_package(LogRange 0.2 CONFIG REQUIRED)` and link
+`LogRange::logrange`. Vendoring via `add_subdirectory` gives the same target,
+builds no tests, and no longer leaks this project's `-Werror` into the
+consumer's build (the strict flags moved off the library target onto a
+private one). Compatibility is `SameMinorVersion` — pre-1.0 the error
+contract can move between minors, so treating 0.2 and 0.9 as interchangeable
+would be the wrong promise.
+
+`examples/quickstart` is the README snippet compiled against the *installed*
+package and checked against its analytic answer. CI installs to a temp prefix
+and builds it as a consumer on all three legs.
+
+**The exported target carries `-ffp-contract=off` / `/fp:precise`.** This is
+contractual, not cosmetic. `rp_accum`'s Neumaier compensation is written
+statement-per-step so the rounding error it recovers is not fused away; FMA
+contraction undoes that. Measured on the heavy-cancellation scenario:
+2.665e-09 with contraction off, 3.707e-08 with `-ffp-contract=fast -mfma` —
+14× worse, still inside the bound, and silent. x86-64 hides this because FMA
+is not in the baseline; `-march=native` and ARM do not.
+`-DLOGRANGE_PROPAGATE_FP_FLAGS=OFF` opts out.
+
 **Decided**
 - **Double only, by design.** Stated in the header's Precision block rather
   than left as an unmentioned limit. Every constant in the error contract is

@@ -38,3 +38,15 @@ jobs:
       # a bound that only holds on one libm is not a bound.
       - name: Accuracy table (observed vs bound)
         run: ctest --test-dir build -C Release -R accuracy -V
+      # Packaging is a claim like any other: install to a throwaway prefix and
+      # build the README quickstart against it as a real consumer would. This
+      # catches install rules, the exported target, and the README drifting
+      # apart from each other.
+      - name: Install to a prefix
+        run: cmake --install build --config Release --prefix "${{ runner.temp }}/lrprefix"
+      - name: Consumer build via find_package
+        run: cmake -S examples/quickstart -B "${{ runner.temp }}/lrconsumer" -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ runner.temp }}/lrprefix"
+      - name: Consumer compile
+        run: cmake --build "${{ runner.temp }}/lrconsumer" --config Release
+      - name: Consumer run
+        run: ctest --test-dir "${{ runner.temp }}/lrconsumer" -C Release --output-on-failure
