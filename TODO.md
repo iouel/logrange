@@ -343,6 +343,7 @@ run**, then packaging.
 
 ## Explicitly not blocking 1.0
 
+
 - [x] **Formal-bound presentation cleanup.** Done 2026-08-15, in
       `log_math.h`, `BENCHMARKS.md` and `CHANGELOG.md` together. Both forms
       are labelled first-order under their stated assumptions; the reset
@@ -372,3 +373,4 @@ run**, then packaging.
   standard of the other deliverables before any code is written. The
   diagnostic is the shipping front door either way, so nothing in 1.0 waits
   on this.
+  - [ ] **Stretch goal: End-to-end log-form propagation.** Now specified in `logrange_intent.md` "Stretch Goal — End-to-End Log-Form Propagation". Replaces the vague "propagate the log form" note with: lattice-based design (Q/DQ-style), legality via matcher's risk analysis, softmax divide→subtract milestone, and explicit stopping rule. Not blocking 1.0.
