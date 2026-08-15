@@ -25,12 +25,12 @@ build_plugin() {
 
 # Run the matcher over every .bc in a directory; write raw lines to $2.
 scan() {
-  local bcdir="$1" out="$2"
+  local bcdir="$1" out="$2" passes="${3:-sop-matcher}"
   : > "$out"
   local n=0
   for bc in "$bcdir"/*.bc; do
     [ -e "$bc" ] || continue
-    "$OPT" -load-pass-plugin="$PLUGIN" -passes=sop-matcher \
+    "$OPT" -load-pass-plugin="$PLUGIN" -passes="$passes" \
       -disable-output "$bc" 2>> "$out" || true
     n=$((n + 1))
   done
@@ -80,6 +80,38 @@ selftest)
     echo "SELFTEST FAIL: hits=$hits (want 5) loops=$loops (want 7) trans=$trans (want 2) mixture-high=$ml_ok (want 1) softmax-exp-sum=$sd_ok (want 1)"
     exit 1
   fi
+  ;;
+rejects)
+  # Rejection-cause census, backing the table in RESULTS.md under "The rule
+  # that excluded the marquee shape" / the mid-loop-read guard discussion.
+  # Serial by construction (scan() runs one opt at a time): an earlier
+  # ad-hoc version used xargs -P4, whose concurrent writes to one stderr
+  # interleaved records and undercounted (451/20/6/133/291 against the
+  # serial 460/23/8/135/294).
+  build_plugin
+  shift || true
+  targets="${*:-darknet gsl libsvm}"
+  all="$WORK/raw-rejects-all.txt"
+  : > "$all"
+  for name in $targets; do
+    bcdir="$WORK/bc-$name"
+    [ -d "$bcdir" ] || { echo "no harvested bitcode at $bcdir; skipping" >&2; continue; }
+    scan "$bcdir" "$WORK/raw-rejects-$name.txt" 'sop-matcher<explain>'
+    cat "$WORK/raw-rejects-$name.txt" >> "$all"
+  done
+  cu="$WORK/raw-rejects-cleanuses.txt"
+  grep '^REJECT,cleanUses' "$all" > "$cu" || true
+  # Any line not starting with a known record tag means interleaved output.
+  bad=$(grep -vcE '^(LOOP|HIT|REJECT),' "$all" || true)
+  echo
+  echo "== rejection census: $targets =="
+  printf 'malformed lines (interleaving check)   %s\n' "$bad"
+  printf 'cleanUses rejects                      %s\n' "$(wc -l < "$cu")"
+  printf '  extra user is invariant-addr store   %s\n' "$(grep -c 'store-of-spine:invariant-addr' "$cu" || true)"
+  printf '  extra user is varying-addr store     %s\n' "$(grep -c 'store-of-spine:varying-addr' "$cu" || true)"
+  printf '  extra user is a non-store            %s\n' "$(grep -c 'other-user' "$cu" || true)"
+  printf '  none on the update (phi/other spine) %s\n' "$(grep -vcE 'store-of-spine|other-user' "$cu" || true)"
+  [ "$bad" = "0" ] || { echo "FAIL: interleaved output detected"; exit 1; }
   ;;
 coverage)
   # Standing check for the coverage claims in RESULTS.md ("Coverage against
@@ -132,7 +164,7 @@ report)
   done
   ;;
 "")
-  echo "usage: run_study.sh selftest | coverage | <codebase-name> | report" >&2
+  echo "usage: run_study.sh selftest | coverage | rejects [name...] | <codebase-name> | report" >&2
   exit 2
   ;;
 *)
