@@ -1,55 +1,59 @@
 # LogRange — Benchmark & Accuracy Results
 
 *Runs of 2026-08-15. Answers intent v0.3 First Action step 4 and success
-criteria 1–3, and records the cancellation-accuracy investigation that led to
-v0.2's compensated `rp_accum`. Raw per-cell data: `bench_results.csv`
-(regenerate with `bench_logrange`, Release build; not committed — numbers
-below are the record).*
+criteria 1–3, and records the cancellation-accuracy investigation behind
+v0.2's compensated `rp_accum`. Raw per-cell data: `bench_results.csv`,
+regenerated with `bench_logrange`, Release build. It is not committed; the
+numbers below are the record.*
 
 ## Provenance
 
 - AMD Ryzen 7 5800X, Windows 11 Home, MSVC 19.44 (`/O2 /fp:precise /W4 /WX`)
 - Thread pinned to core 0, HIGH_PRIORITY_CLASS, warmup before every measurement
-- Fixed-seed inputs (mt19937_64) — identical binaries see identical data
+- Fixed-seed inputs (mt19937_64): identical binaries see identical data
 - Reported per cell: min and median ns/term over 9–31 repetitions, spread = (p90−p10)/median
 
 ## Noise floor (gates everything below)
 
-The identical streaming-logsumexp kernel registered twice, n = 10⁴: medians
-differed by **0.98%** and **0.27%** across the two recorded runs (per-cell
-spreads mostly 0.02–0.2). The predecessor's harness showed 8× swings; this one
-supports percent-level claims. **Deltas ≲ 1–2% are not evidence; the ratios
-cited below are 1.5×–3.8× and clear the floor.**
+**0.98%** and **0.27%**: the median gap between the identical
+streaming-logsumexp kernel registered twice, n = 10⁴, across the two recorded
+runs (per-cell spreads mostly 0.02–0.2). The predecessor's harness showed 8×
+swings; this one supports percent-level claims. **Deltas ≲ 1–2% are not
+evidence; the ratios cited below are 1.5×–3.8× and clear the floor.**
 
 ## Re-run of 2026-08-15 (same machine), and what the noise floor does not cover
 
 Confirmation run after the packaging and contract work. Code paths are
 unchanged since the numbers above: every edit to `log_math.h` since v0.2 is
 preprocessor or comment (version macros, the fast-math guard), the bench
-source is untouched, and the flag set is identical — the same four flags,
+source is untouched, and the flag set is identical: the same four flags,
 moved from directory scope onto a target.
 
-**Ratios reproduce.** stream_lse/pos_accum 3.75× and 3.70× across two runs
-against the 3.7× published; stream_lse/rp_accum 2.56× and 2.54× against 2.5×;
-wide 1.81× and 1.80× against 1.8×. The success-criteria claims stand.
+**Ratios reproduce.**
 
-**Absolute ns/term move more than the floor suggests.** Medians at n = 10⁶
-varied up to ~8% between runs on this machine (wide `rp_accum` 16.04 then
-17.31; uniform `pos_accum` 6.45 then 6.92), while the harness reported floors
-of 2.35%, 0.15% and 1.11% in those same runs.
+stream_lse/pos_accum 3.75× and 3.70× across two runs against the 3.7×
+published; stream_lse/rp_accum 2.56× and 2.54× against 2.5×; wide 1.81× and
+1.80× against 1.8×. The success-criteria claims stand.
 
-That is not a contradiction, it is a scope limit worth stating: **the noise
-floor measures two identical kernels inside one run.** It says nothing about
-run-to-run reproducibility, which is where machine state lives. So "deltas
-≲1–2% are not evidence" holds for comparisons *within* a run, and a
-comparison against a number recorded on another day needs a wider envelope —
-about ±8% on this hardware. The ratios are the durable claim; the absolutes
-are a record of one run.
+**Absolute ns/term move more than the floor suggests.**
+
+Medians at n = 10⁶ varied up to ~8% between runs on this machine (wide
+`rp_accum` 16.04 then 17.31; uniform `pos_accum` 6.45 then 6.92), while the
+harness reported floors of 2.35%, 0.15% and 1.11% in those same runs.
+
+**Scope limit, not a contradiction.**
+
+The noise floor measures two identical kernels inside one run. It says nothing
+about run-to-run reproducibility, where machine state enters. "Deltas ≲1–2%
+are not evidence" holds for comparisons *within* a run; a comparison against a
+number recorded on another day needs a wider envelope, about ±8% on this
+hardware. The ratios are the durable claim; the absolutes are a record of one
+run.
 
 ## Second machine (2026-08-15): the margin is hardware-dependent
 
 Run `31865095928` (`.github/workflows/bench.yml`, on demand only). The
-windows-latest leg is the comparable one — the harness pins and prioritizes on
+windows-latest leg is the comparable one: the harness pins and prioritizes on
 Windows, and MSVC with the same flags matches how the numbers above were
 taken, so hardware is the only variable that moves. Its self-reported noise
 floor was **0.00%** (identical kernels, spreads 0.010/0.013), better than the
@@ -63,26 +67,33 @@ author's machine manages.
 | wide `stream_lse` | 25.7 | 36.50 |
 | wide `pos_accum` | 14.5 | 18.15 |
 
-**Criterion 1 reproduces exactly.** Both machines, and the unpinned Linux leg
-too, return log-magnitude −792.643769699630184 with `|error| = 0.000e+00`
-against the analytic max-shift value. Bit-identical on three configurations.
+**Criterion 1 reproduces exactly.**
 
-**Criterion 2 holds, and by a wider margin — which is the finding.** The
-library beats hand-rolled streaming logsumexp on both machines, but not by the
-same factor: uniform `stream_lse`/`pos_accum` is 3.7× on the Ryzen and
+Both machines, and the unpinned Linux leg too, return log-magnitude
+−792.643769699630184 with `|error| = 0.000e+00` against the analytic
+max-shift value. Bit-identical on three configurations.
+
+**Criterion 2 holds, by a wider margin.**
+
+The library beats hand-rolled streaming logsumexp on both machines, but not by
+the same factor: uniform `stream_lse`/`pos_accum` is 3.7× on the Ryzen and
 **5.27×** on the runner; wide is 1.8× against 2.01×.
 
 The published 3.7× is therefore a property of that Ryzen, not a portable
-constant. The mechanism is visible in the table: `pos_accum` barely moved
-between machines (6.5 → 6.75, +4%) while `stream_lse` slowed by half
-(23.9 → 35.56, +49%). `pos_accum` pays one `exp` per term; the textbook stream
-pays `exp` + `log1p`. Hardware with relatively slower transcendentals punishes
-the stream twice, so the design's advantage grows there. The durable claim is
-the direction and the reason, with an observed margin of **1.65×–5.3×** across
-two machines.
+constant. Mechanism: `pos_accum` barely moved between machines (6.5 → 6.75,
++4%) while `stream_lse` slowed by half (23.9 → 35.56, +49%). `pos_accum` pays
+one `exp` per term; the textbook stream pays `exp` + `log1p`. Hardware with
+relatively slower transcendentals punishes the stream twice, so the design's
+advantage grows there. The durable claim is the direction and the reason, with
+an observed margin of **1.5×–5.3×** across the eight measured cells: two
+machines, uniform and wide shapes, `pos_accum` and `rp_accum`. The extremes
+are wide `rp_accum` on the Ryzen (25.7/17.6) and uniform `pos_accum` on the
+runner (35.56/6.75).
 
-**Criterion 3 reproduces.** Exponent-tracking still wins pure products:
-4.73 vs 10.68 ns/term on the runner (2.26×), against 3.3 vs 7.3 (2.2×) here.
+**Criterion 3 reproduces.**
+
+Exponent-tracking still wins pure products: 4.73 vs 10.68 ns/term on the
+runner (2.26×), against 3.3 vs 7.3 (2.2×) here.
 
 The unpinned ubuntu leg ran too and labels itself `pinned core + high
 priority: NO — numbers suspect`. Its floor was 0.10%, but it is a different
@@ -91,20 +102,23 @@ uniform 25.37 / 5.20 / 6.75 for stream_lse / pos_accum / rp_accum.
 
 ## Success criteria — verdicts
 
-**1. Underflowing mixture returns the right answer where linear returns 0.0 — ✅**
+**1. Underflowing mixture returns the right answer where linear returns 0.0: PASS**
+
 1000 terms, each ~e⁻⁸⁰⁰ (individually below the exp-underflow limit ~e⁻⁷⁴⁵):
 linear loop returns exactly `0.0`; `rp_accum` returns log-magnitude
 −792.643769699630184, matching the analytic max-shift value **bit-for-bit**.
 
 Read that as agreement to representation granularity, not to 16 digits. At
 log-magnitude ≈ 792 one ulp is ~1.1e-13, so landing on the same double means
-the two computations agree to ~512u relative in linear terms — the precision
+the two computations agree to ~512u relative in linear terms, the precision
 floor documented at `log_value`. It is the correct answer to the last bit
 `log_value` has; it is not a claim of 16-digit agreement.
 
-**2. Overhead vs hand-written logsumexp within noise — ✅, exceeded**
-The library is not merely within noise of the hand-rolled streaming-logsumexp
-loop; it is faster (ns/term, median, n = 10⁶, v0.2 compensated rp_accum):
+**2. Overhead vs hand-written logsumexp within noise: PASS, exceeded**
+
+The library is faster than the hand-rolled streaming-logsumexp loop, not
+merely within noise of it (ns/term, median, n = 10⁶, v0.2 compensated
+rp_accum):
 
 | shape | stream_lse (hand-rolled) | pos_accum (fast path) | rp_accum (signed, compensated) |
 |---|---|---|---|
@@ -114,13 +128,14 @@ loop; it is faster (ns/term, median, n = 10⁶, v0.2 compensated rp_accum):
 Mechanism: the reference-exponent design spends one `exp` per term with the
 `log` deferred to reduction, versus the textbook stream's `exp` + `log1p`
 every term. Ratios are stable from n = 10² through 10⁶.
-(Pre-compensation v0.1 rp_accum measured 7.3/14.2 ns/term on these shapes —
-compensation costs ~2–3 ns/term and buys the accuracy documented below.)
+Pre-compensation v0.1 rp_accum measured 7.3/14.2 ns/term on these shapes:
+compensation costs ~2–3 ns/term and buys the accuracy documented below.
 
-**3. Exponent-tracking beats this runtime on pure products — ✅, published**
+**3. Exponent-tracking beats this runtime on pure products: PASS, published**
+
 Pure product of lognormal factors, n = 10⁶ (ns/term, median): exponent-tracking
 (frexp + int64 counter) **3.3**, log-domain product 7.3, naive linear 0.63
-(fastest, but leaves double range around n ~ 10⁵ — by design). Products are
+(fastest, but leaves double range around n ~ 10⁵, by design). Products are
 exponent-tracking's territory; this library's case is sums.
 
 ## Cost (intent: "slower-but-right versus fast-but-meaningless")
@@ -132,14 +147,14 @@ returns 0.0/inf/NaN. Cancellation-heavy inputs cost rp_accum ~11.4 ns/term.
 
 ## Cancellation accuracy: the investigation behind v0.2
 
-The first accuracy run flagged an anomaly: on a heavy-cancellation dataset
-(10⁴ near-cancelling pairs plus a small tail, condition number 2.3×10⁹), a
-plain sequential `log_add` fold was ~170× more accurate than v0.1 `rp_accum`
-(2.8e-8 vs 4.8e-6 relative). Hypothesis: the fold looked good only because
-cancelling pairs were *adjacent* — each pair annihilated at matched magnitude
-before rounding error could accumulate — while rp_accum accumulates all
-positive and all negative mass into two long uncompensated sums whose
-accumulated error is amplified by cond at the final subtraction.
+On a heavy-cancellation dataset (10⁴ near-cancelling pairs plus a small tail,
+condition number 2.3×10⁹), a plain sequential `log_add` fold was ~170× more
+accurate than v0.1 `rp_accum` (2.8e-8 vs 4.8e-6 relative). Hypothesis: the
+fold looked good only because cancelling pairs were *adjacent*, each pair
+annihilating at matched magnitude before rounding error could accumulate,
+while rp_accum accumulates all positive and all negative mass into two long
+uncompensated sums whose accumulated error is amplified by cond at the final
+subtraction.
 
 The ordering experiment (same data, three orderings, plus a
 Neumaier-compensated rp_accum variant) confirmed it:
@@ -157,7 +172,7 @@ Conclusions, now encoded in code and tests (`test_accuracy` scenario 2b):
 - **The fold's advantage was an ordering artifact.** Shuffled, it degrades ~150×
   and loses to even uncompensated rp_accum. Not a better algorithm.
 - **Uncompensated rp_accum was ordering-insensitive but mediocre** (~cond·10ε).
-- **Neumaier compensation wins in every ordering** — up to 5000× better than
+- **Neumaier compensation wins in every ordering**, up to 5000× better than
   uncompensated, below the cond·ε level, at two additions per term. v0.2
   `rp_accum` ships with compensated pos/neg sums; `pos_accum` stays
   uncompensated because positive-only sums have no cancellation to amplify.
@@ -182,7 +197,7 @@ checked rather than trusted.
 
 The per-reset discard (≤ Σ Aⱼ·u absolute) is **not** a separate error source
 on top of these. Reset epochs are disjoint and each carries mass ≥ 2Aⱼ, so
-Σ Aⱼ ≤ ½·cond·|S| and the reset contribution is at most cond·u/2 — already
+Σ Aⱼ ≤ ½·cond·|S| and the reset contribution is at most cond·u/2, already
 inside the 4u coefficient, for any number of resets. Derivation in
 `log_math.h`.
 
@@ -202,22 +217,22 @@ the corrected form.
 | magnitude staircase (log-abs err) | 461 | 0.0 | 0.0 | (below resolution) |
 | forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 1.0e64 | 4.4e65 (k·A·u) |
 
-Long sums are ε-level and n-independent — the residual error is the per-term
+Long sums are ε-level and n-independent: the residual error is the per-term
 `exp()` rounding, not summation drift.
 
-These six scenarios never exceeded even the old bound, which is exactly the
-limitation of fixed scenarios: they can only fail to refute a universal
-claim. `bound_search` attacks the same claim directly and does refute it.
-Under the corrected bound, observed sits 6–1000× under on these scenarios and
-0.85× at the worst point the search could construct.
+These six scenarios never exceeded even the old bound, which is the limitation
+of fixed scenarios: they can only fail to refute a universal claim.
+`bound_search` attacks the same claim directly and does refute it. Under the
+corrected bound, observed sits 6–1000× under on these scenarios and 0.85× at
+the worst point the search could construct.
 
-Both new terms are small here, which is why these scenarios missed both
-mechanisms rather than just one. On the n=10⁶ row the bound moved 7.438e-15 →
+Both new terms are small here, so these scenarios missed both mechanisms
+rather than just one. On the n=10⁶ row the bound moved 7.438e-15 →
 9.966e-15, so D + |log|S|| ≈ 22.8: about 18 of that is |log|S|| (the sum is
 ~9e7) and 4–5 is D, because `logmag ~ N(0,3)` keeps every term within a few
-log units of the running reference. The search reaches the mechanisms by
-going where these scenarios do not — depth clusters for D, and output
-magnitudes out to |log|S|| ~ 500 for the reduction term.
+log units of the running reference. The search reaches the mechanisms by going
+where these scenarios do not: depth clusters for D, and output magnitudes out
+to |log|S|| ~ 500 for the reduction term.
 
 ## Second toolchain: the bound on glibc
 
@@ -245,14 +260,16 @@ control. Run of 2026-08-15, WSL2 Ubuntu, gcc 15.2.0 and clang 21.1.8,
 | forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 4.4e65 | 44× |
 
 **These cells are not comparable one-to-one with the msvcrt table above.**
+
 `std::mt19937_64` is reproducible across implementations but
 `normal_distribution` and `uniform_real_distribution` are not, so the same
 seeds generate different datasets: the cancellation scenario draws cond =
-1.8e9 here versus 2.3e9 on Windows. What transfers is the verdict, which is
-the property under test — the bound holds on both libms, with 6×–5300×
-slack on glibc. No evidence of `exp()` exceeding the assumed 1 ulp.
+1.8e9 here versus 2.3e9 on Windows. What transfers is the verdict, the
+property under test: the bound holds on both libms, with 6×–5300× slack on
+glibc. No evidence of `exp()` exceeding the assumed 1 ulp.
 
 ## Next
 
-Second-machine benchmark run (TODO.md): the timing numbers still come from
-one Ryzen 5800X.
+Nothing outstanding in this file. The second-machine run landed 2026-08-15
+(run `31865095928`) and is recorded above. Open benchmark work, if any, is
+tracked in TODO.md.

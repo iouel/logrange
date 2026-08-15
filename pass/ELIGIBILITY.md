@@ -23,13 +23,13 @@ self-authorizes it.
 ### `"unsafe-fp-math"="true"` is an opt-in, and only an opt-in
 
 It is retained as an alternate grant because it records a deliberate user
-action — `-ffast-math` / `-funsafe-math-optimizations`.
+action: `-ffast-math` / `-funsafe-math-optimizations`.
 
 It is **never** read as evidence that special values may be discarded.
 Every clause in sections 2–4 applies identically on both grant paths. The
 attribute unlocks nothing beyond the reassociation grant itself.
 
-Caveat, stated because it is real: under `-ffast-math` the surrounding IR
+Caveat: under `-ffast-math` the surrounding IR
 already carries `nnan`/`ninf` on operations this pass did not create. The
 special-value guarantees in section 5 are preservation *relative to the
 identically-flagged linear loop*, not an absolute guarantee about a program
@@ -65,13 +65,13 @@ Each emits `DECLINE-FPENV,<file>,<line>,<function>,<reason>`:
 
 Why each is fatal rather than merely risky:
 
-- **strictfp / constrained** — the rewrite changes both the number and the
+- **strictfp / constrained**: the rewrite changes both the number and the
   operands of the FP operations. A dynamic rounding mode gives a different
   result, and the exception record differs. Constrained intrinsics carry
   per-operation rounding and exception metadata that the plain
   `fadd`/`fmul`/`fsub` and `llvm.exp`/`llvm.log`/`llvm.maxnum` emitted here
   cannot express.
-- **denormal** — a non-IEEE denormal mode (flush-to-zero, preserve-sign)
+- **denormal**: a non-IEEE denormal mode (flush-to-zero, preserve-sign)
   changes *which* intermediate values become zero. The rewrite's
   intermediates are `exp()` of differences against a running maximum, a
   different set of values entirely from the source loop's `exp(x_i)`, so
@@ -99,7 +99,7 @@ gone or different. For a conforming program with `math_errno` in force,
 that is observable behaviour.
 
 `llvm.exp` is exactly the marker that errno is already unobservable. Clang
-emits it only when errno cannot be read — measured, LLVM 21, on
+emits it only when errno cannot be read. Measured, LLVM 21, on
 `pass/test_softmax.c`: at `-O1` the source `s += exp(x[i])` emits
 `call double @exp`; adding `-fno-math-errno` emits `llvm.exp.f64`.
 Restricting to the intrinsic therefore *is* the errno contract.
@@ -109,7 +109,7 @@ Consequence for callers: the kernel must be compiled `-fno-math-errno` (or
 
 **Extension point, deliberately not taken.** A direct external `exp`/`expf`
 call MAY be accepted once the IR itself proves the call has no observable
-memory or errno effect — the call site's memory effects excluding writes to
+memory or errno effect: the call site's memory effects excluding writes to
 errno memory and to inaccessible memory. LLVM 21 models this explicitly: an
 errno-writing `exp` declaration carries `memory(errnomem: write)`.
 Implementing it requires its own accept and decline tests. Until those
@@ -124,8 +124,8 @@ logsumexp with rescaling; the operations, their order, and their operands
 all differ. Finite results are therefore not bitwise identical.
 
 Measured on the reference kernel (n=1000, ~N(0,1)): 1.37e-15 relative,
-against a 1e-12 bound. That is a permitted, expected difference and the
-whole point of the transform — it is what buys back the range.
+against a 1e-12 bound. That is a permitted, expected difference, and what
+buys back the range.
 
 This is the one thing the reassociation grant in section 1 pays for. It is
 the only thing it pays for.
@@ -146,7 +146,7 @@ Not a quality goal. A failed clause here is a bug, not a tolerance.
 The `oeq`-guarded exponent differences exist for this and may not be
 removed. `oeq` specifically: a NaN operand is never `oeq` to the running
 maximum, so the subtraction survives, `exp(NaN) = NaN`, and NaN still
-poisons the accumulator — matching the linear loop.
+poisons the accumulator, matching the linear loop.
 
 Every row is tested in `pass/test_softmax.c`, against constants **and**
 against an independent max-shift reference oracle.
@@ -160,7 +160,7 @@ any of them.
 ## 6. Log-form propagation into consumers (the stretch goal, first form)
 
 *This section governs rewriting the loop's **consumers**, not the loop.
-Nothing in it is reachable unless sections 1–5 already passed — propagation
+Nothing in it is reachable unless sections 1–5 already passed: propagation
 is layered on a successful rewrite, never attempted on its own. It
 implements the first milestone of `logrange_intent.md`, "Stretch Goal —
 End-to-End Log-Form Propagation", and closes "Shipping Posture" condition 2
@@ -168,7 +168,7 @@ End-to-End Log-Form Propagation", and closes "Shipping Posture" condition 2
 
 ### 6.1 What propagation is
 
-A rewritten loop produces the log-domain value `L = m + log(s)` — the
+A rewritten loop produces the log-domain value `L = m + log(s)`, the
 log-magnitude of the sum, live in the replacement block before any `exp()`
 is applied. Propagation rewrites an eligible consumer of the linear sum to
 consume `L` directly, and **deletes the `exp(L)` materialization for every
@@ -177,7 +177,7 @@ removed: in the regime this project targets, `exp(L)` re-underflows to
 `0.0` while `L` itself is a healthy double.
 
 Propagation is intra-function only. A value that crosses a function
-boundary — return, call argument, store to memory that escapes — is a
+boundary (return, call argument, store to memory that escapes) is a
 frontier, and the materialization stays.
 
 ### 6.2 Opt-in: per consumer-form, named, refused if misspelled
@@ -194,7 +194,7 @@ inside `<>`:
 An unrecognized `propagate=` value is **refused**, exactly as an
 unrecognized `min-risk=` value is: the pipeline fails to parse rather than
 silently reverting to no propagation. With no `propagate=` parameter, no
-consumer is touched — the default is the section 1–5 behaviour.
+consumer is touched; the default is the section 1–5 behaviour.
 
 Why a separate grant: the loop rewrite changes rounding only in the
 accumulation; a consumer rewrite changes rounding in *another* operation
@@ -225,17 +225,17 @@ and never a partial rewrite.
 the accumulation loop, so the value the consumer divides by is an LCSSA phi
 merging the rewritten sum with the constant `0.0` from the zero-trip path, and
 no single block dominates the consumer. Requiring one is why an earlier
-version declined this shape — the milestone case — as `not-dominated`.
+version declined this shape, the milestone case, as `not-dominated`.
 
-The log form is therefore derived structurally, and it is the lattice's phi
-transfer function, nothing more:
+The log form is therefore derived structurally, by the lattice's phi
+transfer function:
 
 | divisor is | log form |
 |---|---|
 | the rewritten sum | `LogSum`, computed on the exit edge |
 | `ConstantFP c`, `c > 0` | `ConstantFP log(c)` |
 | `ConstantFP 0.0` | `-inf` |
-| `ConstantFP` negative or NaN | decline — no real logarithm |
+| `ConstantFP` negative or NaN | decline; no real logarithm |
 | a phi outside the loop | a parallel phi in the same block, of its operands' log forms |
 | anything else | decline |
 
@@ -247,7 +247,7 @@ emits exactly one extra phi:
 %lr.logphi = phi double [ 0xFFF0000000000000, %entry ], [ %lr.logsum, %lr.exit ]
 ```
 
-`-inf` on the zero-trip path is not a special case bolted on: it *is* the log
+`-inf` on the zero-trip path is not a special case bolted on: it is the log
 form of the `0.0` the linear code carries there, and it reproduces the linear
 result. Finite numerator over a zero sum gives `x/0 = +inf`, and
 `exp(t - (-inf)) = exp(+inf) = +inf`. A zero numerator gives `0/0 = NaN`, and
@@ -267,10 +267,11 @@ The numerator **must** be an `llvm.exp` call, and the rewrite consumes its
 pre-`exp` argument `t` directly. Emitting `log(numerator) - L` instead would
 be wrong in exactly the regime this exists for: the numerator is `exp(t)`,
 which underflows to `0.0` at rescue-regime inputs, so `log(numerator)` is
-`log(0) = -inf` and the propagated result collapses to `0` or NaN. Correctness
-must not depend on a later InstCombine fold of `log(exp(t)) -> t` either — the
-pass emits the subtract on `t` itself, so the transform is correct in the IR
-it produces rather than in the IR someone else might canonicalize it into.
+`log(0) = -inf` and the propagated result collapses to `0` or NaN.
+Correctness must not depend on a later InstCombine fold of
+`log(exp(t)) -> t` either. The pass emits the subtract on `t` itself, so the
+transform is correct in the IR it produces rather than in the IR someone
+else might canonicalize it into.
 
 ### 6.5 What propagation preserves
 
@@ -284,10 +285,10 @@ form, with one row added to the section-5 table's family:
 
 | input | required behaviour |
 |---|---|
-| sum underflows (the rescue regime) | consumer yields a **finite, correct** value where the linear form yields `0.0` or NaN-from-`0/0`; this row is the entire point and is the one the linear program cannot produce |
+| sum underflows (the rescue regime) | consumer yields a **finite, correct** value where the linear form yields `0.0` or NaN-from-`0/0`; the linear program cannot produce this |
 | NaN in numerator or any sum term | result is NaN |
 | numerator `0.0` | `log(0) = -inf`; `-inf - L` with finite `L` is `-inf`; `exp(-inf) = +0.0`, matching linear `0/s` |
-| numerator `+inf` / sum `+inf` | `inf/inf = NaN` linear; `log(inf) - inf = inf - inf` is guarded to NaN by the same `oeq` discipline as section 5 — NaN, matching linear |
+| numerator `+inf` / sum `+inf` | `inf/inf = NaN` linear; `log(inf) - inf = inf - inf` is guarded to NaN by the same `oeq` discipline as section 5: NaN, matching linear |
 
 The rescue row is tested against the harness's independent max-shift
 reference on a full softmax (denominator loop plus normalize divide in one
@@ -301,7 +302,7 @@ errno, FP exception flags, rounding-mode dependence and denormal flushing
 remain unpreserved for the whole function (sections 2 and 4 already screen
 these out before any loop is seen).
 
-Propagation stops at the first use with no eligible rewrite — the
+Propagation stops at the first use with no eligible rewrite: the
 materialization `exp(L)` is kept there and the log region ends. A consumer
 the lattice cannot rewrite is a decline with a reason token, never a
 best-effort transform. The general Linear/Log/Conflict dataflow over

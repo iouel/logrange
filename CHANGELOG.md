@@ -6,61 +6,60 @@ Ordered comparisons use `LOGRANGE_VERSION` (MAJOR·10000 + MINOR·100 + PATCH),
 so `#if LOGRANGE_VERSION >= 200` means 0.2.0 or newer.
 
 Pre-1.0: the error contract can still change between minor versions. What
-will not change silently is the contract's *existence* — any bound that moves
+will not change silently is the contract's *existence*: any bound that moves
 is recorded here with its old and new values.
 
 ## Unreleased
 
-**Changed — the error contract moved. Old and new values below.**
+**Changed: the error contract moved.**
 
 The 0.2.0 contract was `rel err ≤ cond·(3k+4)·u`. It was refuted, not
-adjusted: `tests/bound_search.cpp` searches for counterexamples and found
-151 of 400 random inputs violating that form, worst case 15.8× over. A
-constructed counterexample reaches 5.8× at `cond = 1, k = 0`, where the old
-bound is bare `4u`. Two terms were missing.
+adjusted: `tests/bound_search.cpp` found 151 of 400 random inputs violating
+that form, worst case 15.8× over. A constructed counterexample reaches 5.8× at
+`cond = 1, k = 0`, where the old bound is bare `4u`. Two terms were missing.
 
-- **Argument rounding.** The derivation charged each term `2u` for its
-  `exp()`. It ignored the rounding of `exp()`'s *argument*: `fl(L_i − m_i)`
-  differs from the exact difference by up to `u·d_i` where `d_i = m_i − L_i`,
-  and `exp` converts that into a relative error of the same size, so a term
-  costs `(d_i + 2)·u` — the `2u` is unchanged and still sits inside the `+4`,
-  and `d_i·u` is what was missing. Terms at equal depth share one rounding
-  error coherently, with nothing to cancel it. Enters as `D`, the
-  mass-weighted mean insertion depth, where depth is the gap in *log space*
-  below the running reference (~`ln n` for ordinary data, capped by the ~745
-  vanishing window since deeper terms scale to zero and leave the sum).
+- **Argument rounding.** The derivation charged each term `2u` for its `exp()`
+  and ignored the rounding of `exp()`'s *argument*. `fl(L_i − m_i)` differs
+  from the exact difference by up to `u·d_i` where `d_i = m_i − L_i`, and
+  `exp` converts that into a relative error of the same size, so a term costs
+  `(d_i + 2)·u`. The `2u` is unchanged and still sits inside the `+4`; `d_i·u`
+  is what was missing. Terms at equal depth share one rounding error
+  coherently, with nothing to cancel it. It enters as `D`, the mass-weighted
+  mean insertion depth, where depth is the gap in *log space* below the
+  running reference: ~`ln n` for ordinary data, capped by the ~745 vanishing
+  window since deeper terms scale to zero and leave the sum.
 - **Final reduction.** `out.log_abs = m_log + log|net|` rounds to within
   `u·|log|S||`, and absolute error in log space is relative error in linear
-  space. Invisible for sums near 1; at `log|S| ~ 700` — the regime this
-  library exists for — it is ~700u on its own, and it never touches `cond`.
-  This is what most of the random refutations were hitting.
+  space. Invisible for sums near 1. At `log|S| ~ 700`, the regime this library
+  exists for, it is ~700u on its own, and it never touches `cond`. Most of the
+  random refutations were hitting this.
 
 New: `rel err ≤ cond·(3k + 4 + D)·u + |log|S||·u`. The search scores every
 input against both forms; the new one was exceeded zero times out of 400,
-worst observed/bound 0.85, so it is tight enough to stay falsifiable rather
-than padded until nothing can reach it.
+worst observed/bound 0.85.
 
-**`pos_accum` was refuted the same way, harder.** Old: `(n+3k+3)·u`. It fails
-on 119 of 400 random inputs, worst **34.9×**, and every violation is the same
-final-reduction term — `m_log + log(sum)` rounds to `u·|log|S||`, which does
-not grow with `n` and has no `cond` to hide behind. Four terms near `e⁶⁹⁰`
-budget `7u` against ~500u of real error. New:
+**`pos_accum` was refuted the same way, harder.**
+
+Old: `(n+3k+3)·u`. It fails on 119 of 400 random inputs, worst **34.9×**.
+Every violation is the same final-reduction term: `m_log + log(sum)` rounds to
+`u·|log|S||`, which does not grow with `n` and has no `cond` to hide behind.
+Four terms near `e⁶⁹⁰` budget `7u` against ~500u of real error. New:
 `(n + 3k + 3 + D)·u + |log|S||·u`, worst 0.79 across the search.
 
 `D` is carried there for symmetry but is **not** the binding term: making `D`
 large takes ~`e^D` terms at depth `D`, so `D ~ ln n < n` and the `n·u` term
-already covers it. Measured, not assumed — depth clusters aimed at
-`pos_accum` never exceed 0.22 of even the old bound.
+already covers it. Measured, not assumed: depth clusters aimed at `pos_accum`
+never exceed 0.22 of even the old bound.
 
 This bound had also never been machine-checked. `test_pos_accum` asserted
 behavior only; it now asserts the contract, and that assertion was verified
-to fail under the old form. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
+to fail under the old form.
 
 Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
-**Added — `propagate=div`, the stretch goal's first milestone. Tooling only.**
+**Added: `propagate=div`, the stretch goal's first milestone. Tooling only.**
 
 The pass can carry the log form out of the accumulation loop and into the
 softmax normalize divide, so the rescued value reaches an observable result
@@ -76,41 +75,41 @@ propagated form returns probabilities summing to 1.0000000000000262.
   guards the accumulation loop, so the consumer divides by an LCSSA phi
   merging the rewritten sum with `0.0` from the zero-trip path, and no block
   dominates the divide. Requiring one declined the only shape the milestone
-  is about. A value's log form is now derived structurally — `LogSum` for the
-  rewritten sum, `log(c)` for a constant with `0.0 → -inf`, a parallel phi
-  for a phi, decline otherwise — which is the design's phi transfer function.
-  `-inf` on the bypass reproduces the linear answers: `x/0 = +inf` against
-  `exp(t + inf)`, and `0/0 = NaN` against `exp(NaN)`.
+  is about. A value's log form is now derived structurally, which is the
+  design's phi transfer function: `LogSum` for the rewritten sum, `log(c)`
+  for a constant with `0.0 → -inf`, a parallel phi for a phi, decline
+  otherwise. `-inf` on the bypass reproduces the linear answers:
+  `x/0 = +inf` against `exp(t + inf)`, and `0/0 = NaN` against `exp(NaN)`.
 - **The numerator is not re-logged.** `exp(t)` underflows to `0.0` at these
   inputs, so `log(numerator)` was `log(0) = -inf` and the propagated result
-  collapsed exactly where the rescue is the point. The pre-`exp` argument `t`
-  is used directly, so correctness does not rest on a later InstCombine fold
-  of `log(exp(t)) → t`.
-- **Accuracy, measured against a long-double reference on benign inputs:**
-  2.3e-16 for the pure linear path, 1.6e-15 for the linear re-conversion,
-  2.4e-15 for the propagated form. **Propagation is the least accurate of the
-  three where all three work**, because the subtract `t - L` carries absolute
-  rounding `u·|t - L|` — the same representation floor that moved both
-  accumulator bounds. It buys range, not precision. The stretch goal's
-  success criterion claiming the opposite is refuted and amended in
-  `logrange_intent.md`.
+  collapsed at exactly the inputs it exists to rescue. The pre-`exp` argument
+  `t` is used directly, so correctness does not rest on a later InstCombine
+  fold of `log(exp(t)) → t`.
+- **Accuracy at one conversion: 1.33x to 13.9x behind the linear
+  re-conversion, 64 of 64 swept trials.** Sweep: spreads 0.5/1/3/8, lengths
+  100 and 1000, eight seeds each, long-double reference with error 1.7e-18.
+  `t - L` carries `u·|t - L|`; re-conversion carries one rounding. This is
+  the case where propagation has least to offer, and it measures one
+  conversion, not a chain. Chains are unmeasured: the vocabulary is one
+  rule. The stretch goal's success criterion asserted the opposite ranking
+  and is amended in `logrange_intent.md`.
 - The test asserts the linear path is broken on the rescue inputs. Without
   that, it checked only the propagated output, and a numerically wrong
   transform would have passed.
 
-**Changed — the rewrite pass's eligibility contract narrowed. Tooling only;
-the header is unaffected.**
+**Changed: the rewrite pass's eligibility contract narrowed.**
 
-`pass/` is a labeled prototype, not installed and not packaged, so this
-changes no shipped interface. It is recorded because it retracts a documented
-stance and closes a stated precondition.
+Tooling only; the header is unaffected. `pass/` is a labeled prototype, not
+installed and not packaged, so this changes no shipped interface. It is
+recorded because it retracts a documented stance and closes a stated
+precondition.
 
 - **Infinite terms produced NaN.** The streaming update's exponents are
   differences against the running max, and `x - x` is NaN when `x` is
   infinite. Two reachable cases: `t = -inf` arriving while the max is still
-  `-inf` (a zero term — `exp(-inf) = 0`, ordinary input, the documented one)
+  `-inf` (a zero term: `exp(-inf) = 0`, ordinary input, the documented one)
   and `t = +inf` (undocumented, same root cause). Each difference is now
-  `(x oeq newm) ? 0.0 : x - newm` — 4 instructions per iteration against 2
+  `(x oeq newm) ? 0.0 : x - newm`: 4 instructions per iteration against 2
   `exp` calls, and no finite result moves. `oeq` is load-bearing: a NaN
   operand is never equal to `newm`, so NaN still propagates.
 - **Errno.** PROTOTYPE.md previously stated that libm `errno` behaviour was
@@ -120,19 +119,19 @@ stance and closes a stated precondition.
   2N different exponentials plus a `log`. The pass now matches **only
   `llvm.exp.*`** and declines direct `exp`/`expf` with `DECLINE-ERRNO`.
   Measured basis on LLVM 21: `-O1` emits `call double @exp`;
-  `-O1 -fno-math-errno` emits `llvm.exp.f64` — the intrinsic is exactly the
-  marker that errno is already unobservable.
+  `-O1 -fno-math-errno` emits `llvm.exp.f64`. The intrinsic is the marker
+  that errno is already unobservable.
 - **FP environment.** `strictfp` functions, functions containing
   `llvm.experimental.constrained.*`, and non-IEEE `denormal-fp-math` modes
   are declined with `DECLINE-FPENV`.
-- **`force` narrowed** to waive reassociation *proof* and nothing else — not
+- **`force` narrowed** to waive reassociation *proof* and nothing else: not
   the structural match, not the FP-environment screen, not the errno
   contract, not special-value correctness. `"unsafe-fp-math"="true"` is
   retained as an alternate opt-in only, never as evidence that special values
   may be discarded.
 - **New `pass/ELIGIBILITY.md`**, normative; PROTOTYPE.md is the design
   narrative and measured record, and ELIGIBILITY.md wins on conflict.
-- **Fixed — the harness's reference oracle.** `ref_logsumexp()` applied the
+- **Fixed: the harness's reference oracle.** `ref_logsumexp()` applied the
   max-shift unconditionally and returned NaN for all-`-inf` and for any input
   containing `+inf`. The infinity assertions added earlier the same day were
   therefore constant-based only, not reference-validated. Now handles NaN,
@@ -143,11 +142,11 @@ stance and closes a stated precondition.
 
 This closes Deliverable 2's "semantics preservation is exact" precondition
 for the one shape the pass matches. Finite rounding differences remain
-permitted and intentional — 1.37e-15 relative measured against a 1e-12 bound
-— which is what the reassociation grant buys. Special-value differences are
-forbidden.
+permitted and intentional, and are what the reassociation grant buys:
+1.37e-15 relative measured against a 1e-12 bound. Special-value differences
+are forbidden.
 
-**Changed — bound presentation, after an independent read.**
+**Changed: bound presentation, after an independent read.**
 
 No counterexample to either corrected contract was found; these are
 presentation fixes, not corrections to the bounds.
@@ -158,30 +157,30 @@ presentation fixes, not corrections to the bounds.
 - The per-reset `Σ Aⱼ·u` discard is no longer presented as a separate
   absolute term alongside a relative bound. It is already covered: reset
   epochs are disjoint and each carries mass ≥ 2Aⱼ, so Σ Aⱼ ≤ ½·cond·|S| and
-  the relative contribution is ≤ cond·u/2 — inside the existing 4u
-  coefficient, for any number of resets. The disjointness step is what keeps
-  it from growing with the reset count, and is stated explicitly.
+  the relative contribution is ≤ cond·u/2, inside the existing 4u
+  coefficient, for any number of resets. The disjointness step keeps it from
+  growing with the reset count, and is stated explicitly.
 - `cond` and the `|log|S||` term are described as a division of labor rather
   than competing explanations: `cond` covers cancellation in *forming* `net`,
   `|log|S||·u` covers the single rounding of `m_log + log|net|` once `net` is
   known. Error in computing the value versus error in representing it.
 
-**Fixed — the installed package's config comment.** `LogRangeConfig.cmake.in`
+**Fixed: the installed package's config comment.** `LogRangeConfig.cmake.in`
 still told consumers the imported target carries `-ffp-contract=off` /
 `/fp:precise`. That propagation was removed when the FMA diagnosis was
 corrected, but the template shipping inside the install tree was not updated
 with it.
 
-**Changed — `log_mul` / `log_div` were documented as exact. They are not.**
+**Changed: `log_mul` / `log_div` were documented as exact. They are not.**
 
 The mapping is exact (multiplication is addition of logarithms); the
 arithmetic implementing it is a floating-point add and rounds. Old claim:
 "exact in log domain". New: `error(log_abs) ≤ u·|log|a| + log|b||`, exact
 only when that sum is representable. Measured at 1024u on a product of
-log-magnitude 1024 — outside double's linear range, but an ordinary
-`log_value`, which is the point of the type.
+log-magnitude 1024, outside double's linear range but an ordinary
+`log_value`.
 
-**Added — the precision floor, stated once at `log_value`.**
+**Added: the precision floor, stated once at `log_value`.**
 
 This is the root cause of all three refuted bounds, and it was never written
 down. `log_abs` is a double, so a value is representable no better than
@@ -199,28 +198,28 @@ pos/neg rescale errors bounded independently and summed is conservative under
 any correlation (triangle inequality on `pos − neg`), and the `O(n·u²)` term
 does not reach `u` until ~10¹⁶ terms.
 
-**Added — install rules and a config package.**
+**Added: install rules and a config package.**
 
 `cmake --install` now installs the header and a config package, so consumers
 can `find_package(LogRange 0.2 CONFIG REQUIRED)` and link
 `LogRange::logrange`. Vendoring via `add_subdirectory` gives the same target,
 builds no tests, and no longer leaks this project's `-Werror` into the
 consumer's build (the strict flags moved off the library target onto a
-private one). Compatibility is `SameMinorVersion` — pre-1.0 the error
-contract can move between minors, so treating 0.2 and 0.9 as interchangeable
-would be the wrong promise.
+private one). Compatibility is `SameMinorVersion`: pre-1.0 the error contract
+can move between minors, so treating 0.2 and 0.9 as interchangeable would be
+the wrong promise.
 
 `examples/quickstart` is the README snippet compiled against the *installed*
 package and checked against its analytic answer. CI installs to a temp prefix
 and builds it as a consumer on all three legs.
 
-**Added — the header refuses to compile under fast-math.**
+**Added: the header refuses to compile under fast-math.**
 
 `-ffast-math` / `/fp:fast` folds away the algebraic identities `rp_accum` uses
 to recover each addition's rounding error, degrading it to an uncompensated
 sum. Measured on a 40000-term cancellation set: log-magnitude
 −7.36251563240462303 normally, −7.36251072122148731 under `-ffast-math`, a
-relative error of 4.9e-6 — nine orders past the contract. Detected via
+relative error of 4.9e-6, nine orders past the contract. Detected via
 `__FAST_MATH__` / `_M_FP_FAST`; `LOGRANGE_ALLOW_FAST_MATH` overrides. CI
 asserts both that the guard fires and that the override still builds.
 
@@ -228,17 +227,17 @@ asserts both that the guard fires and that the override still builds.
 this changelog and README claimed the exported target must carry
 `-ffp-contract=off` because FMA contraction cost 14× accuracy. That was wrong
 and the flag has been removed from the consumer-facing target. On fixed
-inputs the accumulator is **bit-identical** with contraction on or off —
-structurally so, since the compensation path holds no multiply-add pair to
-fuse. The apparent 14× came from `test_accuracy`'s cancellation corpus being
+inputs the accumulator is **bit-identical** with contraction on or off,
+structurally so: the compensation path holds no multiply-add pair to fuse.
+The apparent 14× came from `test_accuracy`'s cancellation corpus being
 *generated* with multiply-add expressions that contract differently, changing
 the dataset. The tell was there and was missed: the uncompensated `log_add`
 fold rows moved too, and nothing in that algorithm could have been affected by
 compensation damage.
 
 `-ffp-contract=off` is still pinned on this project's own builds, for
-reproducibility of that corpus rather than for correctness — it is what keeps
-the accuracy table bit-identical across gcc 13/15 and clang 18/21.
+reproducibility of that corpus rather than for correctness: it keeps the
+accuracy table bit-identical across gcc 13/15 and clang 18/21.
 `LOGRANGE_PROPAGATE_FP_FLAGS` is gone; it existed only to serve the wrong
 diagnosis, and while it existed, setting it to OFF silently disarmed the flag
 in this project's own test suite.
@@ -248,7 +247,7 @@ in this project's own test suite.
   than left as an unmentioned limit. Every constant in the error contract is
   double-specific (u = 2⁻⁵³, the ~745 log-unit vanishing window, and the new
   D term that window caps), so a float variant means re-deriving the bound at
-  u = 2⁻²⁴ with a ~103 log-unit window and a finer accuracy reference — not a
+  u = 2⁻²⁴ with a ~103 log-unit window and a finer accuracy reference, not a
   typedef. The rewrite pass already declines float accumulators. Callers with
   float data widen at the accumulator boundary.
 

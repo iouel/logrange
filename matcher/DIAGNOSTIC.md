@@ -34,19 +34,19 @@ Exit codes:
 
 Raw lines other than `LOOP,...` / `HIT,...` records are ignored. HIT lines
 in the old 8-column format (no risk/reasons columns) are skipped with a
-warning rather than misread — regenerate the scan instead.
+warning rather than misread; regenerate the scan instead.
 
 ## Scope limits
 
-- **It is selective by design, and the base rate is worth knowing.** Across
-  the study corpus — GSL 2.8, darknet, libsvm — 2859 innermost FP loops
-  produced 783 shape hits (27.4%) and **5 HIGH findings on 4 source lines**
-  (0.17% of loops). One HIGH finding in a large codebase is the expected
-  outcome, not a sign the scan failed. The bulk of the shape hits are
-  benign-range dot products, correctly summarized as a LOW count.
+- **Selective by design.** Across the study corpus (GSL 2.8, darknet,
+  libsvm), 2859 innermost FP loops produced 783 shape hits (27.4%) and
+  **5 HIGH findings on 4 source lines** (0.17% of loops). One HIGH finding in
+  a large codebase is the expected outcome, not a sign the scan failed. The
+  bulk of the shape hits are benign-range dot products, summarized as a LOW
+  count.
 - **Two of the three shapes the README names as motivating this project are
   covered.** Mixture likelihood and the softmax denominator triage HIGH. The
-  forward algorithm does not, in either form it is usually written — see the
+  forward algorithm does not, in either form it is usually written: see the
   two bullets below and RESULTS.md, "Coverage against the shapes this project
   names". `coverage.c` plus `./run_study.sh coverage` assert that table in
   both directions, so the gap cannot silently close or widen.
@@ -60,13 +60,13 @@ warning rather than misread — regenerate the scan instead.
 - **Memory-carried reductions are not covered.** An accumulator that stays in
   memory never reaches the matcher (METHODOLOGY.md, known blind spots) and so
   never reaches this report.
-- **Nor are reductions mirrored to a fixed cell**, and for a different reason
-  worth keeping separate. `out[j] += ...` *does* get promoted to a register
-  accumulator, but LLVM keeps a store writing it back each iteration, and the
-  mid-loop-read guard rejects any update with a second in-loop user. The
-  forward algorithm — one of the three shapes the README names as motivating
-  this project — is usually written that way and goes unreported (RESULTS.md,
-  "Coverage against the shapes this project names").
+- **Nor are reductions mirrored to a fixed cell**, for a different reason.
+  `out[j] += ...` *does* get promoted to a register accumulator, but LLVM
+  keeps a store writing it back each iteration, and the mid-loop-read guard
+  rejects any update with a second in-loop user. The forward algorithm, one
+  of the three shapes the README names as motivating this project, is usually
+  written that way and goes unreported (RESULTS.md, "Coverage against the
+  shapes this project names").
 
   Admitting that case was considered and declined for v1 on measured yield:
   23 of 460 such rejects across the study corpus (5.0%), every one a
@@ -75,8 +75,8 @@ warning rather than misread — regenerate the scan instead.
   alias/dependence analysis and cross-loop risk modelling; the latter is what
   would make these sites worth printing (TODO.md).
 - **Risk is judged one loop at a time.** A reduction whose magnitude decays
-  across an *enclosing* loop — the forward algorithm again, probabilities
-  shrinking over time steps — has unremarkable inner iterations and grades
+  across an *enclosing* loop (the forward algorithm again, probabilities
+  shrinking over time steps) has unremarkable inner iterations and grades
   LOW. This lint will not flag it even when the matcher can see it.
 - **Vectorized/unrolled loops are not covered.** The study pipeline
   deliberately compiles with `-fno-vectorize -fno-slp-vectorize
@@ -87,6 +87,6 @@ warning rather than misread — regenerate the scan instead.
 
 ## The fix it points at
 
-`include/logrange/log_math.h` — `pos_accum` for positive-term sums,
+`include/logrange/log_math.h`: `pos_accum` for positive-term sums,
 `rp_accum` for signed sums, both with stated worst-case error bounds
 (header contract). BENCHMARKS.md has the cost numbers.
