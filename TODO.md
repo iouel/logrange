@@ -41,14 +41,23 @@ run**, then packaging.
       coherent across the toolchain. Callers with float data widen at the
       accumulator boundary. Implementing a float variant stays optional and
       is now explicitly out of scope for 1.0.
-- [ ] **Second-machine benchmark run.** All numbers come from one Ryzen
-      5800X. Criterion 2's "within noise" claim deserves one confirmation on
-      different hardware (any second machine; the harness measures its own
-      noise floor, so this is cheap to do credibly). The CI runners became
-      that second machine when the Linux jobs landed. Open question is
-      whether a shared cloud vCPU's noise floor is low enough for the
-      harness to say anything — the harness reports its own spread, so it
-      can answer that itself rather than being assumed either way.
+- [x] **Second-machine benchmark run.** Done 2026-08-15, run `31865095928`
+      via `.github/workflows/bench.yml` (workflow_dispatch only — timings
+      never run on push). The open question answered itself: the
+      windows-latest runner reported a **0.00%** noise floor, better than the
+      author's machine, because the harness's pinning and priority raising
+      work there and MSVC matches the published flag set. Hardware was the
+      only variable.
+      Criterion 1 is bit-identical across three configurations
+      (−792.643769699630184, |error| 0). Criterion 3 reproduces (2.26× vs
+      2.2×).
+      *Found doing it:* criterion 2's margin is hardware-dependent, not a
+      constant. `stream_lse`/`pos_accum` is 3.7× here and 5.27× on the
+      runner, because `pos_accum` barely moved between machines (+4%) while
+      `stream_lse` slowed 49% — one `exp` per term versus `exp` + `log1p`,
+      so slower transcendentals punish the textbook stream twice. The
+      durable claim is the direction and its reason, margin 1.65×–5.3×
+      observed. BENCHMARKS.md says so rather than implying 3.7× travels.
 - [x] **Install/packaging story.** Done 2026-08-15. `cmake --install` rules,
       an exported `LogRange::logrange` target, and a config package, so
       `find_package(LogRange 0.2 CONFIG REQUIRED)` works. Verified in both
