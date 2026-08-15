@@ -103,6 +103,8 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
+#include <cmath>
+
 using namespace llvm;
 
 namespace {
@@ -643,20 +645,106 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
           printLoc(errs(), CU.User, F);
           errs() << "," << Kind << "\n";
         } else {
-          // propagate=div enabled, structural clauses passed: check domination
-          // then emit exp(log(numerator) - LogSum).
+          // propagate=div enabled, structural clauses passed.
+          //
+          // Two things have to be true at the divide, and the first version of
+          // this code got both wrong.
+          //
+          // (1) A log form of the DIVISOR must exist on every path reaching
+          //     the divide. Requiring ReplBB to dominate the divide is too
+          //     strong: clang guards the accumulation loop, so the divisor the
+          //     consumer sees is an LCSSA phi merging the rewritten sum with
+          //     the constant 0.0 from the zero-trip path, and no single block
+          //     dominates. The log form has to travel through that merge, so
+          //     build it: a value's log form is LogSum for the rewritten sum,
+          //     log(c) for a constant (0.0 -> -inf), and for a phi a parallel
+          //     phi of its operands' log forms. Anything else declines. That
+          //     is the lattice's phi transfer function and nothing more.
+          //
+          // (2) The NUMERATOR must not be re-logged. exp(t)/s becomes
+          //     exp(t - L) using t directly. Taking log(numerator) would
+          //     compute log(exp(t)), and exp(t) is exactly the quantity that
+          //     underflows to 0.0 in the regime this rewrite exists for —
+          //     log(0) = -inf, and the propagated result would be 0 or NaN
+          //     precisely where the rescue is the point.
           auto *FDiv = cast<BinaryOperator>(CU.User);
-          if (!DT.dominates(ReplBB, FDiv->getParent())) {
+
+          DenseMap<Value *, Value *> LogOf;
+          auto logForm = [&](auto &self, Value *V) -> Value * {
+            if (V == ReplFinal)
+              return LogSum;
+            auto It = LogOf.find(V);
+            if (It != LogOf.end())
+              return It->second;
+            if (auto *C = dyn_cast<ConstantFP>(V)) {
+              const APFloat &A = C->getValueAPF();
+              if (A.isNaN() || A.isNegative())
+                return nullptr; // no real logarithm
+              if (A.isZero())
+                return ConstantFP::getInfinity(DTy, /*Negative=*/true);
+              return ConstantFP::get(
+                  DTy, std::log(A.convertToDouble()));
+            }
+            if (auto *P = dyn_cast<PHINode>(V)) {
+              if (L->contains(P) || P->getType() != DTy)
+                return nullptr;
+              // Insert with the phis, and memoize BEFORE recursing so a
+              // cyclic phi network terminates instead of recursing forever.
+              IRBuilder<> PhiB(P->getParent(), P->getParent()->begin());
+              PHINode *NewP = PhiB.CreatePHI(DTy, P->getNumIncomingValues(),
+                                             "lr.logphi");
+              LogOf[V] = NewP;
+              for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
+                Value *In = self(self, P->getIncomingValue(I));
+                if (!In) {
+                  LogOf.erase(V);
+                  NewP->eraseFromParent();
+                  return nullptr;
+                }
+                NewP->addIncoming(In, P->getIncomingBlock(I));
+              }
+              return NewP;
+            }
+            return nullptr;
+          };
+
+          Value *LogDen = logForm(logForm, CU.SeenAs);
+          if (!LogDen) {
             errs() << "DECLINE-PROP,";
             printLoc(errs(), FDiv, F);
-            errs() << ",not-dominated\n";
+            errs() << ",no-log-form\n";
             continue;
           }
-          Value *Numerator = FDiv->getOperand(0);
+          if (auto *LogDenI = dyn_cast<Instruction>(LogDen))
+            if (!DT.dominates(LogDenI, FDiv)) {
+              errs() << "DECLINE-PROP,";
+              printLoc(errs(), FDiv, F);
+              errs() << ",log-form-not-available\n";
+              continue;
+            }
+
+          // Peel fp casts to reach an llvm.exp numerator; require one.
+          Value *Num = FDiv->getOperand(0);
+          while (auto *CI = dyn_cast<CastInst>(Num)) {
+            if (CI->getOpcode() != Instruction::FPExt &&
+                CI->getOpcode() != Instruction::FPTrunc)
+              break;
+            Num = CI->getOperand(0);
+          }
+          Value *ExpArg = nullptr;
+          if (auto *II = dyn_cast<IntrinsicInst>(Num))
+            if (II->getIntrinsicID() == Intrinsic::exp &&
+                II->getArgOperand(0)->getType() == DTy)
+              ExpArg = II->getArgOperand(0);
+          if (!ExpArg) {
+            errs() << "DECLINE-PROP,";
+            printLoc(errs(), FDiv, F);
+            errs() << ",numerator-not-exp\n";
+            continue;
+          }
+
           IRBuilder<> PB(FDiv);
-          Value *LogNum = PB.CreateUnaryIntrinsic(Intrinsic::log, Numerator,
-                                                  {}, "lr.lognum");
-          Value *Diff = PB.CreateFSub(LogNum, LogSum, "lr.diff");
+          Value *Diff = PB.CreateFSub(ExpArg, LogDen, "lr.diff");
           Value *Result = PB.CreateUnaryIntrinsic(Intrinsic::exp, Diff, {},
                                                   "lr.pdiv");
           errs() << "PROPAGATE,";
