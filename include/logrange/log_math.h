@@ -14,6 +14,18 @@
 //   sign    ∈ {+1.0, -1.0}
 //   log_abs = log(|x|);  -inf encodes x == 0;  +inf encodes |x| == inf.
 //
+// Precision: double only, by design. A scope decision, not an omission.
+// Every constant in the error contract is double-specific — u = 2^-53, the
+// ~745 log-unit vanishing window at the subnormal floor 2^-1074, and the
+// mass-weighted depth term D that the same window caps. A float variant is
+// therefore not a typedef: it needs the bound re-derived at u = 2^-24 with a
+// ~103 log-unit window (2^-149, seven orders of magnitude coarser and a
+// rescue range shrunk to a seventh), plus an accuracy reference finer than
+// the double-double one the tests use. The compiler tooling already agrees:
+// the rewrite pass declines float accumulators. Callers holding float data
+// should widen at the accumulator boundary — the accumulation cost dominates
+// the conversion.
+//
 // Known, documented limitations (accepted; bounds stated at the accumulators):
 //   - Terms more than ~745 log-units below the accumulator's reference
 //     exponent scale to 0.0 and contribute nothing. Correct for sums whose
@@ -209,7 +221,11 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //   D    = mass-weighted mean insertion depth
 //          = sum_i |x_i| * (m_i - L_i) / sum_i |x_i|, where L_i is term i's
 //          log_abs and m_i the reference when it was added (so m_i >= L_i).
-//          Bounded by ~ln(n) for ordinary data, by ~745 in the worst case.
+//          "Depth" is a gap in LOG SPACE — how far below the running
+//          reference the term sat when its exp() argument was formed — not a
+//          position in any traversal. That is why it is capped by the
+//          vanishing window: a term ~745 below the reference scales to 0.0
+//          and leaves the sum. Bounded by ~ln(n) for ordinary data.
 //   S    = the exact sum; log|S| is the result's own log-magnitude.
 // Assuming std::exp within 1 ulp (true of MSVC/glibc/libm current), and
 // n < ~1e7 so O(n*u^2) terms are negligible:
@@ -218,13 +234,15 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //     + (absolute) sum_j A_j * u          discarded by resets (see below)
 //     + terms > ~745 log-units below the running m_log vanish entirely.
 //
-// Derivation. Each term's scaled ratio r_i = exp(L_i - m_i) carries u from
-// exp() itself PLUS the rounding of its own argument: fl(L_i - m_i) differs
-// from the exact difference by up to u*(m_i - L_i) = u*d_i, and exp turns
-// that absolute argument error into a relative error of the same size. So a
-// term costs (d_i + 1)*u, not the flat 2u this derivation first claimed.
-// Terms sharing one depth share one rounding error, coherently, with no
-// cancellation between them; weighting by mass share gives the D term.
+// Derivation. Each term's scaled ratio r_i = exp(L_i - m_i) carries 2u from
+// exp() itself (1 ulp, per the assumption above) PLUS the rounding of its
+// own argument: fl(L_i - m_i) differs from the exact difference by up to
+// u*(m_i - L_i) = u*d_i, and exp turns that absolute argument error into a
+// relative error of the same size. So a term costs (d_i + 2)*u, not the flat
+// 2u this derivation first claimed. The 2u is unchanged and still sits in
+// the +4 below; D is the d_i*u that was missing. Terms sharing one depth
+// share one rounding error, coherently, with no cancellation between them;
+// weighting by mass share gives the D term.
 // Each rescale event multiplies the standing sums by a factor carrying
 // <= 2u (exp) + u (multiply); Neumaier compensation makes summation itself
 // contribute <= u regardless of length. That is the (3k + 4) part, on a mass
@@ -239,9 +257,12 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // fix: its apparent accuracy there was an ordering artifact that collapses
 // under shuffling).
 // Status: the earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
-//   which found 151 of 400 random inputs violating it (worst 15.8x) and a
-//   constructed counterexample at 5.8x with cond == 1, k == 0. The form above
-//   survives that search with worst observed/bound 0.85. It is still an
+//   which found 151 of 400 random inputs violating THAT superseded form
+//   (worst 15.8x) plus a constructed counterexample at 5.8x with cond == 1,
+//   k == 0. The same sweep scores every input against both forms; the form
+//   above was exceeded zero times out of 400, worst observed/bound 0.85
+//   (0.82 before the sweep widened to +/-600 magnitudes and mixed signs, so
+//   the wider attack did press it harder). It is still an
 //   author's derivation, now with an adversarial search standing behind it
 //   rather than six fixed scenarios; independent review is still open
 //   (TODO.md). Pre-1.0 this contract can still move, and CHANGELOG.md
