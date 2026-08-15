@@ -81,6 +81,49 @@ selftest)
     exit 1
   fi
   ;;
+coverage)
+  # Standing check for the coverage claims in RESULTS.md ("Coverage against
+  # the shapes this project names"). selftest.c guards the matcher's labeled
+  # ground truth; this guards the separate claim that the shapes this project
+  # SAYS it targets are or are not seen. Without it, that table is prose that
+  # can rot silently — which is what it was until 2026-08-15.
+  build_plugin
+  mkdir -p "$WORK/bc-coverage"
+  "$CLANG" -O1 -g -fno-vectorize -fno-slp-vectorize -fno-unroll-loops \
+    -emit-llvm -c "$HERE/coverage.c" -o "$WORK/bc-coverage/coverage.bc"
+  scan "$WORK/bc-coverage" "$WORK/raw-coverage.txt"
+  cat "$WORK/raw-coverage.txt"
+  cov_fail=0
+  # expect_hit <function> <RISK> <reasons>
+  expect_hit() {
+    grep -q "^HIT,.*,$1,.*,$2,$3\$" "$WORK/raw-coverage.txt" \
+      || { echo "COVERAGE FAIL: $1 should hit as $2/$3"; cov_fail=1; }
+  }
+  # expect_miss <function> — examined as a loop, but not a hit
+  expect_miss() {
+    grep -q "^LOOP,.*,$1\$" "$WORK/raw-coverage.txt" \
+      || { echo "COVERAGE FAIL: $1 was not even examined"; cov_fail=1; }
+    grep -q "^HIT,.*,$1," "$WORK/raw-coverage.txt" \
+      && { echo "COVERAGE FAIL: $1 should not hit"; cov_fail=1; }
+    return 0
+  }
+  expect_hit  mixture           HIGH exp-chain
+  expect_hit  softmax_denom     HIGH 'exp-chain;exp-sum'
+  expect_hit  manual_lse        HIGH 'exp-chain;exp-sum'
+  expect_hit  forward_step_reg  LOW  none
+  expect_hit  kernel_sum        LOW  none
+  # Known gaps. These are asserted so the docs cannot quietly become wrong in
+  # EITHER direction: if one starts hitting, RESULTS.md needs updating too.
+  expect_miss forward_step_mem
+  expect_miss likelihood_product
+  if [ "$cov_fail" = 0 ]; then
+    echo "COVERAGE PASS (5 named shapes seen; forward_step_mem and"\
+         "likelihood_product still missed, as documented)"
+  else
+    echo "COVERAGE FAIL: RESULTS.md 'Coverage against the shapes this project names' is stale"
+    exit 1
+  fi
+  ;;
 report)
   echo "== matcher hit-rate study =="
   for raw in "$WORK"/raw-*.txt; do
@@ -89,7 +132,7 @@ report)
   done
   ;;
 "")
-  echo "usage: run_study.sh selftest | <codebase-name> | report" >&2
+  echo "usage: run_study.sh selftest | coverage | <codebase-name> | report" >&2
   exit 2
   ;;
 *)
