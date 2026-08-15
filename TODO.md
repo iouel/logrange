@@ -59,12 +59,17 @@ run**, then packaging.
       The README quickstart is now `examples/quickstart`, built and run
       against the *installed* package by CI on all three legs, so the docs
       cannot drift from what works.
-      *Found while doing it:* the FP flag is contractual, not cosmetic.
-      `rp_accum`'s compensation is written statement-per-step so its
-      recovered rounding error cannot be fused away, and FMA contraction
-      undoes that — measured 14× worse on heavy cancellation (2.7e-09 →
-      3.7e-08), silently, and on by default wherever FMA is baseline. The
-      exported target now carries `-ffp-contract=off` / `/fp:precise`.
+      *Found while doing it, then corrected:* I first read a 14× accuracy
+      change under `-ffp-contract=fast` as FMA contraction damaging the
+      compensation, and exported the flag to consumers on that basis. Wrong.
+      On fixed inputs the accumulator is bit-identical with contraction on or
+      off — there is no multiply-add pair in the compensation path to fuse.
+      The 14× was `test_accuracy`'s corpus being *generated* with
+      multiply-add expressions that contract, producing different data; the
+      uncompensated `log_add` fold moved too, which should have been the
+      tell. What genuinely breaks the accumulator is reassociating math
+      (4.9e-6 relative under `-ffast-math`), so the header now refuses to
+      compile under it and no flag is imposed on consumers.
 
 ## Blocking 1.0 — honesty debts
 
