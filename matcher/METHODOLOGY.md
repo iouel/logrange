@@ -13,16 +13,16 @@ reduction**, i.e. all of:
 1. A loop-carried `phi` of floating-point type (the accumulator) with exactly
    one in-loop update.
 2. The update is `fadd` (or `fsub`) whose other operand chains through at
-   least one `fmul` — possibly via intermediate `fadd`/`fsub`/`fneg`/casts —
+   least one `fmul` (possibly via intermediate `fadd`/`fsub`/`fneg`/casts),
    with all chain operations inside the loop. (`total += a*b`, `total +=
    a*b*c`, `total += x[i]*y[i] + z[i]*w[i]` all count; `total += x[i]` alone
-   does not — that is a plain sum, rescuable without logsumexp.)
+   does not: that is a plain sum, rescuable without logsumexp.)
 3. The accumulator's only in-loop consumers are the update chain itself
    (no mid-loop reads that would change semantics under rewriting).
 4. No calls with side effects inside the loop body along the reduction path
    (readnone/readonly intrinsics like `llvm.fmuladd`, `fabs`, `exp`, `log`
-   are allowed and recorded — `exp` in the product chain is a strong signal
-   of exactly the likelihood-style computation this project targets).
+   are allowed and recorded; `exp` in the product chain is a strong signal
+   of the likelihood-style computation this project targets).
 
 Recorded per hit: function name, source location (from debug info),
 trip-count kind (constant / runtime / unknown), the chain depth, and whether
@@ -35,8 +35,8 @@ the product chain contains transcendental calls.
   caller's grant, not the matcher's inference); measuring how many shape-hits
   additionally carry `reassoc` flags in shipped builds is a separate column,
   not a bar for counting.
-- **Profitability.** No range analysis here. Hit rate answers "does the shape
-  survive real codebases in recognizable form?" — the go/no-go question —
+- **Profitability.** No range analysis here. Hit rate answers the go/no-go
+  question, "does the shape survive real codebases in recognizable form?",
   not "is each hit worth rewriting?".
 
 ## Pipeline
@@ -44,7 +44,7 @@ the product chain contains transcendental calls.
 1. Compile each target to bitcode with clang at `-O1 -g` with
    `-fno-vectorize -fno-slp-vectorize -fno-unroll-loops`
    (`-O1` gets mem2reg/instcombine canonicalization the matcher relies on,
-   while the disables keep reductions in scalar recognizable form — the same
+   while the disables keep reductions in scalar recognizable form, the same
    position a mid-pipeline pass would occupy; vectorized/unrolled forms are
    recorded as a known blind spot rather than chased in v0).
 2. Run the matcher as an `opt` plugin over every module; aggregate counts.
@@ -58,11 +58,11 @@ the product chain contains transcendental calls.
 Chosen for: plain C/C++, builds with clang out of the box, genuinely numeric,
 and containing the likelihood/kernel/softmax shapes this project targets.
 
-1. **GSL** (GNU Scientific Library) — statistics, randist, linalg: classic
+1. **GSL** (GNU Scientific Library): statistics, randist, linalg. Classic
    hand-written numeric C.
-2. **libsvm** — kernel evaluations are sum-of-products over feature vectors;
+2. **libsvm**: kernel evaluations are sum-of-products over feature vectors;
    probability outputs involve log-domain code already.
-3. **darknet** — softmax/loss/convolution loops in plain C; the
+3. **darknet**: softmax/loss/convolution loops in plain C; the
    softmax-denominator shape is success-criterion territory.
 
 (If one fails to build to bitcode cleanly inside the WSL environment, the

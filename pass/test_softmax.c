@@ -439,10 +439,78 @@ int main(void) {
            e_orig, e_rw, e_prop);
     check("prop_benign_agrees_1e-12",
           max_rel_diff(out_orig, out_prop2, N) < 1e-12);
-    /* Reported, not asserted: criterion 2's ranking is a measurement, and
-     * asserting it before it is established would make the test decorative. */
-    printf("INFO,prop_benign_ranking,propagated_better_than_reconvert=%d\n",
-           e_prop < e_rw);
+  }
+
+  /* (m1) The accuracy RANKING, swept rather than sampled once.
+   *
+   *      A single seed at one spread is an extreme-value statistic (a max
+   *      over n outputs) and is not enough to strike a stated criterion.
+   *      Sweep spread and length, count how often each path wins, and
+   *      report the reference's own error so the reader can see how much
+   *      of the gap is real.
+   *
+   *      Reference error is estimated by recomputing the long-double
+   *      reference with Kahan compensation: the difference between the two
+   *      is an upper bound on what the reference itself contributes. */
+  {
+    static double out_o[N], out_r[N], out_p[N];
+    const double spreads[] = {0.5, 1.0, 3.0, 8.0};
+    int si, trial, len_i;
+    const int lens[] = {100, 1000};
+    int prop_beats_reconv = 0, trials = 0;
+    double worst_ref_err = 0.0;
+    double ratio_min = 1e300, ratio_max = 0.0;
+
+    for (si = 0; si < 4; ++si) {
+      for (len_i = 0; len_i < 2; ++len_i) {
+        int n = lens[len_i];
+        for (trial = 0; trial < 8; ++trial) {
+          long double ml, sl, sl_k, c_k, Ll, Ll_k;
+          double e_r = 0.0, e_p = 0.0;
+          for (i = 0; i < n; ++i) x[i] = spreads[si] * nrand();
+
+          softmax_full_orig(x, out_o, n);
+          softmax_full_rw(x, out_r, n);
+          softmax_full_prop(x, out_p, n);
+
+          ml = -INFINITY;
+          for (i = 0; i < n; ++i)
+            if ((long double)x[i] > ml) ml = (long double)x[i];
+          sl = 0.0L;
+          for (i = 0; i < n; ++i) sl += expl((long double)x[i] - ml);
+          /* Same sum, Kahan-compensated: the gap bounds reference error. */
+          sl_k = 0.0L; c_k = 0.0L;
+          for (i = 0; i < n; ++i) {
+            long double y = expl((long double)x[i] - ml) - c_k;
+            long double t = sl_k + y;
+            c_k = (t - sl_k) - y;
+            sl_k = t;
+          }
+          Ll = ml + logl(sl);
+          Ll_k = ml + logl(sl_k);
+          if (fabsl(Ll - Ll_k) > worst_ref_err)
+            worst_ref_err = (double)fabsl(Ll - Ll_k);
+
+          for (i = 0; i < n; ++i) {
+            long double ref = expl((long double)x[i] - Ll_k);
+            double er = (double)(fabsl((long double)out_r[i] - ref) / ref);
+            double ep = (double)(fabsl((long double)out_p[i] - ref) / ref);
+            if (er > e_r) e_r = er;
+            if (ep > e_p) e_p = ep;
+          }
+          ++trials;
+          if (e_p < e_r) ++prop_beats_reconv;
+          if (e_r > 0.0) {
+            double ratio = e_p / e_r;
+            if (ratio < ratio_min) ratio_min = ratio;
+            if (ratio > ratio_max) ratio_max = ratio;
+          }
+        }
+      }
+    }
+    printf("INFO,prop_ranking,trials=%d,prop_wins=%d,ratio_min=%.2f,"
+           "ratio_max=%.2f,ref_logL_err=%.2g\n",
+           trials, prop_beats_reconv, ratio_min, ratio_max, worst_ref_err);
   }
 
   /* (m) Rescue regime, the stretch goal's first milestone. softmax_full_prop
