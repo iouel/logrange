@@ -396,9 +396,9 @@ private:
 // would hide a bug at the call site. Zero terms (either sign of zero) are
 // the additive identity and are no-ops.
 //
-// Error contract (v0.2, formal; u and k as defined at rp_accum):
+// Error contract (formal; u, k, D and S as defined at rp_accum):
 //
-//   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3) * u
+//   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3 + D) * u  +  |log|S|| * u
 //
 // The n*u term is the uncompensated running sum — kept deliberately: this
 // is the speed path, positive terms cannot cancel, so cond == 1 and there
@@ -406,6 +406,26 @@ private:
 // rounding lands near sqrt(n)*u. Callers needing epsilon-level accuracy on
 // very long positive sums should use rp_accum (compensated) and pay the
 // ~1.5x per-term cost.
+//
+// The |log|S|| term is the same final-reduction rounding rp_accum carries:
+// out.log_abs = m_log + log(sum) rounds to within u*|log|S||, and absolute
+// error in log space is relative error in linear space. There is no cond
+// here for it to hide behind, and it does not grow with n — so at small n
+// and large magnitude it is the entire error. Four terms near e^690 budget
+// (n+3k+3)*u = 7u under the old form against ~500u of real error.
+//
+// D is carried for symmetry with rp_accum and is NOT the binding term here.
+// Making D large takes ~e^D terms at depth D, so D ~ ln(n) < n and the n*u
+// term already covers it. Measured rather than assumed: bound_search's P2
+// family drives depth clusters at this accumulator and never exceeds 0.22 of
+// even the old bound.
+//
+// Status: the earlier (n+3k+3)*u form was REFUTED by tests/bound_search.cpp —
+//   119 of 400 random inputs exceed it, worst 34.9x, and every violation is
+//   the missing reduction term. The form above holds across that search at
+//   worst 0.79. Note this bound had never been machine-checked before
+//   2026-08-15: test_pos_accum asserted behavior, not the contract. Both
+//   now check it.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior (mirrors rp_accum):

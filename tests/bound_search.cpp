@@ -201,6 +201,93 @@ static std::vector<log_value> family_random(std::mt19937_64& rng) {
   return terms;
 }
 
+// ---------------------------------------------------------------------------
+// pos_accum. Stated contract: (n + 3k + 3) * u — no cond term (positive sums
+// cannot cancel) and no reduction term. Its reduction is the same shape as
+// rp_accum's, out.log_abs = m_log + log(sum), so the same |log|S||*u lands on
+// it; unlike rp_accum there is no cond to hide behind, and unlike the n*u
+// term it does not grow with n. A handful of terms at extreme magnitude is
+// therefore the shortest path to a counterexample.
+//
+// The D term is a different story here and is measured, not assumed: making D
+// large needs ~e^D terms at depth D, so D ~ ln(n) < n, and pos_accum's n*u
+// term already covers it. The families below test that rather than trust it.
+// ---------------------------------------------------------------------------
+static verdict evaluate_pos(const std::vector<double>& logs) {
+  pos_accum acc;
+  dd_sum ref, mass, weighted_depth;
+  double m = NINF;
+  std::size_t k = 0, n = 0;
+  bool first = true;
+
+  for (double L : logs) {
+    if (L == NINF) continue;
+    if (L > m) {
+      if (!first) ++k;
+      m = L;
+    }
+    first = false;
+    ++n;
+    acc.add_log(L);
+    const double lin = std::exp(L);
+    ref.add(lin);
+    mass.add(lin);
+    weighted_depth.add(lin * (m - L));
+  }
+
+  verdict r;
+  r.n      = n;
+  r.k      = k;
+  r.cond   = 1.0; // positive-only: sum|x_i| == |sum x_i| by construction
+  r.depth  = weighted_depth.value() / mass.value();
+  r.outmag = std::fabs(ref.log_abs());
+  const double truth = ref.value();
+  const double got   = acc.to_log_value().to_linear();
+  r.observed = std::fabs(got - truth) / std::fabs(truth);
+  r.bound    = (static_cast<double>(n) + 3.0 * static_cast<double>(k) + 3.0) * U;
+  r.fixed    = (static_cast<double>(n) + 3.0 * static_cast<double>(k) + 3.0 +
+                r.depth) * U + r.outmag * U;
+  r.ratio       = r.observed / r.bound;
+  r.ratio_fixed = r.observed / r.fixed;
+  return r;
+}
+
+// P1 — few terms, extreme magnitude. n*u is tiny, |log|S|| is ~700.
+// Magnitudes stay under exp()'s overflow so the linear comparison is valid
+// and the reference carries no log() of its own.
+static std::vector<double> pos_family_magnitude(double peak, std::size_t n) {
+  return std::vector<double>(n, peak);
+}
+
+// P2 — depth cluster, the mechanism that broke rp_accum, against a bound that
+// grows with n. Expected to be covered by n*u; measured to be sure.
+static std::vector<double> pos_family_depth_cluster(double depth, std::size_t N) {
+  const double peak = 10.5;
+  double argerr = 0.0;
+  const double L = worst_rounding_log_abs(peak, depth, &argerr);
+  std::vector<double> logs;
+  logs.reserve(N + 1);
+  logs.push_back(peak);
+  for (std::size_t i = 0; i < N; ++i) logs.push_back(L);
+  return logs;
+}
+
+// P3 — random sweep over the two axes that matter: how many terms (which
+// sets the n*u budget) and how far the result sits from 1.0.
+static std::vector<double> pos_family_random(std::mt19937_64& rng) {
+  std::uniform_int_distribution<int> size_pick(1, 400);
+  std::uniform_real_distribution<double> peak_pick(-690.0, 690.0);
+  std::uniform_real_distribution<double> spread_pick(0.0, 20.0);
+  const std::size_t n  = static_cast<std::size_t>(size_pick(rng));
+  const double peak    = peak_pick(rng);
+  const double spread  = spread_pick(rng);
+  std::uniform_real_distribution<double> depth(0.0, spread);
+  std::vector<double> logs;
+  logs.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) logs.push_back(peak - depth(rng));
+  return logs;
+}
+
 static void report(const char* label, const verdict& v) {
   std::printf("  %-40s %8zu %5zu %8.1e %6.1f %6.1f %9.2e %7.2f %7.2f\n", label,
               v.n, v.k, v.cond, v.depth, v.outmag, v.observed, v.ratio,
@@ -278,14 +365,71 @@ int main() {
   std::printf("\n  family D: %d/%d random inputs refute the stated bound\n",
               refutations, trials);
 
-  std::printf("\nworst vs stated contract:    %.2f on %s\n", worst.ratio,
-              worst_label);
+  std::printf("\nrp_accum worst vs stated contract:    %.2f on %s\n",
+              worst.ratio, worst_label);
   std::printf("  observed %.3e vs stated %.3e\n", worst.observed, worst.bound);
-  std::printf("worst vs corrected contract: %.2f\n", worst_fixed.ratio_fixed);
+  std::printf("rp_accum worst vs corrected contract: %.2f\n",
+              worst_fixed.ratio_fixed);
 
-  // The contract claims observed <= bound for every input. Anything above 1
+  // --- pos_accum ----------------------------------------------------------
+  std::printf("\npos_accum\n");
+  std::printf("  stated:    (n+3k+3)*u\n");
+  std::printf("  corrected: (n+3k+3+D)*u + |log|S||*u\n\n");
+  std::printf("  %-40s %8s %5s %8s %6s %6s %9s %7s %7s\n", "family", "n", "k",
+              "cond", "D", "|logS|", "observed", "stated", "fixed");
+
+  verdict pworst, pworst_fixed;
+  const char* pworst_label = "(none)";
+  static char pworst_buf[96];
+  auto pconsider = [&](const char* label, const verdict& v) {
+    report(label, v);
+    if (v.ratio > pworst.ratio) {
+      pworst = v;
+      std::snprintf(pworst_buf, sizeof pworst_buf, "%s", label);
+      pworst_label = pworst_buf;
+    }
+    if (v.ratio_fixed > pworst_fixed.ratio_fixed) pworst_fixed = v;
+  };
+
+  const double peaks[] = {690.0, 300.0, 50.0, 1.0};
+  for (double peak : peaks) {
+    char label[96];
+    std::snprintf(label, sizeof label, "P1 magnitude peak=%.0f n=4", peak);
+    pconsider(label, evaluate_pos(pos_family_magnitude(peak, 4)));
+  }
+  for (double d : {8.0, 12.0}) {
+    for (std::size_t N : {std::size_t(10000), std::size_t(1000000)}) {
+      char label[96];
+      std::snprintf(label, sizeof label, "P2 depth=%.1f N=%zu", d, N);
+      pconsider(label, evaluate_pos(pos_family_depth_cluster(d, N)));
+    }
+  }
+
+  verdict p_rand_stated, p_rand_fixed;
+  int p_refutations = 0;
+  for (int trial = 0; trial < 400; ++trial) {
+    const verdict v = evaluate_pos(pos_family_random(rng));
+    if (v.bound <= 0.0) continue;
+    if (v.ratio > 1.0) ++p_refutations;
+    if (v.ratio > p_rand_stated.ratio) p_rand_stated = v;
+    if (v.ratio_fixed > p_rand_fixed.ratio_fixed) p_rand_fixed = v;
+  }
+  pconsider("P3 random (worst vs stated)", p_rand_stated);
+  pconsider("P3 random (worst vs corrected)", p_rand_fixed);
+  std::printf("\n  P3: %d/400 random inputs refute the stated bound\n",
+              p_refutations);
+
+  std::printf("\npos_accum worst vs stated contract:    %.2f on %s\n",
+              pworst.ratio, pworst_label);
+  std::printf("  observed %.3e vs stated %.3e\n", pworst.observed,
+              pworst.bound);
+  std::printf("pos_accum worst vs corrected contract: %.2f\n",
+              pworst_fixed.ratio_fixed);
+
+  // Each contract claims observed <= bound for every input. Anything above 1
   // (clear of the ~1.3 reference floor documented at the top) is a refutation.
   NC_CHECK(worst_fixed.ratio_fixed <= 1.0);
+  NC_CHECK(pworst_fixed.ratio_fixed <= 1.0);
   std::puts("bound_search passed");
   return 0;
 }
