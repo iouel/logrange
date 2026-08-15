@@ -43,6 +43,17 @@ struct dd_sum {
 // Exact rounding error of a - b: returns e such that (a - b) + e is the exact
 // difference, i.e. e = (a - b) - fl(a - b). Used to measure how much accuracy
 // the argument subtraction (log_abs - m_log) loses before exp() ever runs.
+// Exact rounding error of a + b: returns e with (a + b) + e the exact sum.
+// Lets a claim about a single floating-point add be checked without any
+// higher-precision reference at all — the error is recovered exactly.
+inline double two_sum_err(double a, double b) {
+  const double s  = a + b;
+  const double bv = s - a;
+  const double ea = a - (s - bv);
+  const double eb = b - bv;
+  return ea + eb;
+}
+
 inline double two_diff_err(double a, double b) {
   const double s  = a - b;
   const double bv = a - s;
