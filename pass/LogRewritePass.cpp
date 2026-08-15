@@ -311,8 +311,10 @@ const char *riskName(Risk R) {
 struct LogRewritePass : PassInfoMixin<LogRewritePass> {
   bool Force;
   Risk MinRisk = Risk::High;
-  explicit LogRewritePass(bool Force, Risk MinRisk = Risk::High)
-      : Force(Force), MinRisk(MinRisk) {}
+  bool PropagateDiv = false;
+  explicit LogRewritePass(bool Force, Risk MinRisk = Risk::High,
+                          bool PropagateDiv = false)
+      : Force(Force), MinRisk(MinRisk), PropagateDiv(PropagateDiv) {}
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
     // Opt-in gate. Being named in -passes got us here at all; on top of
@@ -629,10 +631,40 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       errs() << "," << riskName(R) << ",exp-chain;exp-sum\n";
       for (const ConsumerUse &CU : ConsumerUses) {
         const char *Kind = classifyConsumerUse(CU, *L);
-        errs() << (StringRef(Kind) == "fdiv-of-sum" ? "CONSUMER-MATCH,"
-                                                    : "CONSUMER-DECLINE,");
-        printLoc(errs(), CU.User, F);
-        errs() << "," << Kind << "\n";
+        bool IsMatch = StringRef(Kind) == "fdiv-of-sum";
+        if (!PropagateDiv) {
+          // Default: log observed shape, no rewrite.
+          errs() << (IsMatch ? "CONSUMER-MATCH," : "CONSUMER-DECLINE,");
+          printLoc(errs(), CU.User, F);
+          errs() << "," << Kind << "\n";
+        } else if (!IsMatch) {
+          // propagate=div enabled but structural clause failed.
+          errs() << "DECLINE-PROP,";
+          printLoc(errs(), CU.User, F);
+          errs() << "," << Kind << "\n";
+        } else {
+          // propagate=div enabled, structural clauses passed: check domination
+          // then emit exp(log(numerator) - LogSum).
+          auto *FDiv = cast<BinaryOperator>(CU.User);
+          if (!DT.dominates(ReplBB, FDiv->getParent())) {
+            errs() << "DECLINE-PROP,";
+            printLoc(errs(), FDiv, F);
+            errs() << ",not-dominated\n";
+            continue;
+          }
+          Value *Numerator = FDiv->getOperand(0);
+          IRBuilder<> PB(FDiv);
+          Value *LogNum = PB.CreateUnaryIntrinsic(Intrinsic::log, Numerator,
+                                                  {}, "lr.lognum");
+          Value *Diff = PB.CreateFSub(LogNum, LogSum, "lr.diff");
+          Value *Result = PB.CreateUnaryIntrinsic(Intrinsic::exp, Diff, {},
+                                                  "lr.pdiv");
+          errs() << "PROPAGATE,";
+          printLoc(errs(), FDiv, F);
+          errs() << "\n";
+          FDiv->replaceAllUsesWith(Result);
+          FDiv->eraseFromParent();
+        }
       }
       Changed = true;
     }
@@ -678,11 +710,13 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                         MinRisk = Risk::Low;
                       else if (Tok == "min-risk=none")
                         MinRisk = Risk::None;
+                      else if (Tok == "propagate=div")
+                        PropagateDiv = true;
                       else
                         return false; // unknown parameter: refuse, do not ignore
                     }
                   }
-                  FPM.addPass(LogRewritePass(Force, MinRisk));
+                  FPM.addPass(LogRewritePass(Force, MinRisk, PropagateDiv));
                   return true;
                 });
           }};
