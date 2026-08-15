@@ -206,29 +206,46 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //          term. Worst case n-1 (sorted ascending input); expected O(ln n)
 //          for randomly ordered input.
 //   rho  = pos==neg reset events; A_j = largest |term| before reset j.
+//   D    = mass-weighted mean insertion depth
+//          = sum_i |x_i| * (m_i - L_i) / sum_i |x_i|, where L_i is term i's
+//          log_abs and m_i the reference when it was added (so m_i >= L_i).
+//          Bounded by ~ln(n) for ordinary data, by ~745 in the worst case.
+//   S    = the exact sum; log|S| is the result's own log-magnitude.
 // Assuming std::exp within 1 ulp (true of MSVC/glibc/libm current), and
 // n < ~1e7 so O(n*u^2) terms are negligible:
 //
-//   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4) * u
+//   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4 + D) * u  +  |log|S|| * u
 //     + (absolute) sum_j A_j * u          discarded by resets (see below)
 //     + terms > ~745 log-units below the running m_log vanish entirely.
 //
-// Derivation sketch: each term's scaled ratio carries <= 2u from its exp();
-// each rescale event multiplies the standing sums by a factor carrying
+// Derivation. Each term's scaled ratio r_i = exp(L_i - m_i) carries u from
+// exp() itself PLUS the rounding of its own argument: fl(L_i - m_i) differs
+// from the exact difference by up to u*(m_i - L_i) = u*d_i, and exp turns
+// that absolute argument error into a relative error of the same size. So a
+// term costs (d_i + 1)*u, not the flat 2u this derivation first claimed.
+// Terms sharing one depth share one rounding error, coherently, with no
+// cancellation between them; weighting by mass share gives the D term.
+// Each rescale event multiplies the standing sums by a factor carrying
 // <= 2u (exp) + u (multiply); Neumaier compensation makes summation itself
-// contribute <= u regardless of length. Total coefficient perturbation
-// <= (3k+4)*u on a mass of sum|x_i|, amplified by cond at the final
-// subtraction. Without compensation the summation term is O(n*u) and
-// dominates — measured at ~300x worse on cond=2.3e9 data (BENCHMARKS.md;
-// a log_add fold is NOT a fix: its apparent accuracy there was an
-// ordering artifact that collapses under shuffling).
-// The bound is asserted against measured data in test_accuracy.cpp.
-// Review status: derived and checked by its author, not independently
-//   reviewed. Two questions stay open until it is (TODO.md, "Bound review
-//   pass"): whether bounding the pos and neg rescale errors independently
-//   still holds when they correlate, and the O(n*u^2) threshold above.
-//   Pre-1.0 this contract can still move. It will not move silently —
-//   any change lands in CHANGELOG.md with old and new values.
+// contribute <= u regardless of length. That is the (3k + 4) part, on a mass
+// of sum|x_i|, amplified by cond at the final subtraction.
+// The final reduction adds a term that never touches cond: out.log_abs =
+// m_log + log|net| rounds to within u*|log|S|| in log space, and absolute
+// error in log space IS relative error in linear space. For a sum near 1
+// this is invisible; at log|S| ~ 700, the regime this library exists for,
+// it is ~700u on its own and dominates everything else.
+// Without compensation the summation term is O(n*u) and dominates — measured
+// at ~300x worse on cond=2.3e9 data (BENCHMARKS.md; a log_add fold is NOT a
+// fix: its apparent accuracy there was an ordering artifact that collapses
+// under shuffling).
+// Status: the earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
+//   which found 151 of 400 random inputs violating it (worst 15.8x) and a
+//   constructed counterexample at 5.8x with cond == 1, k == 0. The form above
+//   survives that search with worst observed/bound 0.85. It is still an
+//   author's derivation, now with an adversarial search standing behind it
+//   rather than six fixed scenarios; independent review is still open
+//   (TODO.md). Pre-1.0 this contract can still move, and CHANGELOG.md
+//   records old and new values when it does.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.
 //
 // Edge behavior:
