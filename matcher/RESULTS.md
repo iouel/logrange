@@ -124,17 +124,40 @@ intent, and METHODOLOGY, and the answer is recorded here.
 | mixture likelihood `w[i]*exp(logp[i])` | yes | HIGH exp-chain |
 | softmax denominator, textbook form | yes | HIGH exp-chain;exp-sum |
 | forward algorithm, register accumulator | yes | **LOW** |
-| forward algorithm, memory-carried | **no** | — |
+| forward algorithm, `out[j] += ...` | **no** | rejected at the mid-loop-read guard |
 | hand-written logsumexp | yes | HIGH exp-chain;exp-sum |
 | kernel / weighted sum (libsvm family) | yes | LOW |
 | product of likelihoods | no — correct, exponent-tracking's job | — |
 
 Two gaps, and the second is not the documented one.
 
-**The forward algorithm as usually written is invisible.** `out[j] += ...`
-makes the accumulator an array cell, and memory-carried reductions never
-reach the matcher (METHODOLOGY.md, known blind spots). The README names this
-shape as a motivating case; the tooling cannot see it in its common form.
+**The forward algorithm as usually written is invisible, and the reason is
+not the one first published here.** An earlier version of this section
+attributed it to the memory-carried blind spot. That was wrong. `out[j] +=
+...` does not leave the accumulator in memory: LLVM promotes it to a register
+phi exactly as in the register-accumulator version, and keeps a store
+mirroring it back to `out[j]` on every iteration.
+
+The shape reaches the matcher and is rejected by the **mid-loop-read guard** —
+the update then has two in-loop users, the phi and that store, so `cleanUses`
+fails. Established by running an instrumented build that reports which check
+rejects:
+
+```
+REJECT,cleanUses,coverage.c,44,forward_step_mem,store-of-spine:invariant-addr
+REJECT,cleanUses,selftest.c,66,midread,store-of-spine:varying-addr
+```
+
+The guard is right to exist — `midread` is a prefix sum whose intermediate
+values are genuinely observed — but it currently cannot tell that case from an
+accumulator merely mirrored to a fixed cell. A differential set isolates what
+does and does not trip it: a loop containing a store that does *not* store the
+accumulator still hits, so the guard keys on extra in-loop users of the spine
+value, and among those, `isLoopInvariant` on the store address separates the
+mirroring case from the prefix-sum case. That makes invariance a candidate
+condition for refining the guard, tested on four hand-written variants at
+`-O1`; it is not evidence that a refined rule is sound in general, and alias
+analysis is still required before accepting any such store.
 
 **When the matcher can see it, the triage grades it LOW.** The register-
 accumulator version is a `nMul = 1` plain product chain with no

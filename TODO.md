@@ -203,12 +203,26 @@ run**, then packaging.
       Extend or document per shape.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
-      docs stay the answer. Now has evidence attached (`matcher/coverage.c`,
-      RESULTS.md "Coverage against the shapes this project names"): the
-      forward algorithm, a README-named target, is invisible in its usual
-      `out[j] += ...` form because the accumulator is an array cell.
-      Memory-carried reductions are no longer a hypothetical gap — one of
-      the three motivating shapes lands in it.
+      docs stay the answer.
+      *Correction 2026-08-15:* this item briefly claimed the forward
+      algorithm lands in the memory-carried gap. It does not. An
+      instrumented matcher shows `out[j] += ...` is promoted to a register
+      accumulator and then rejected by the **mid-loop-read guard**, because
+      LLVM keeps a store mirroring the value to `out[j]` each iteration and
+      the update ends up with two in-loop users. Genuinely memory-carried
+      reductions remain a separate, still-open gap; this shape is a
+      guard-precision problem, tracked in the next item.
+- [ ] **Mid-loop-read guard is too coarse.** It rejects any update with a
+      second in-loop user, which catches both prefix sums (`midread`, where
+      the intermediate values really are observed and rejection is correct)
+      and accumulators merely mirrored to a fixed cell (`out[j] += ...`,
+      where nothing in the loop reads them). A differential set at `-O1`
+      shows `L->isLoopInvariant` on the store address separates the two, and
+      that a store which does not store the accumulator does not trip the
+      guard at all. That makes invariance a candidate refinement — not a
+      validated one: it is four hand-written variants on one compiler, and
+      accepting such a store additionally needs alias analysis, since a
+      loop-invariant address can still alias a load in the loop.
 - [ ] **Per-loop risk cannot see cross-loop decay.** Found 2026-08-15 by the
       coverage audit. When the matcher *can* see the forward algorithm (the
       register-accumulator form), the triage grades it LOW: `nMul = 1`, no
