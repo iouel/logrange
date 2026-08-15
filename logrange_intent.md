@@ -60,47 +60,42 @@ Requirements:
 
 This header is independently useful with zero compiler machinery, and it is the fallback deliverable if everything downstream stalls.
 
-## Deliverable 2 — The Pass (conditional)
-
-An LLVM pass that recognizes sum-of-products reductions at IR level and rewrites them to log-domain accumulation, converting once at the edges of the loop nest rather than per operation.
-
-Preconditions, stated plainly:
-
-- **Legality requires reassociation permission.** FP reductions cannot be reordered without fast-math flags or a pragma; opt-in is not a courtesy here, it is what makes the transform legal. This is explicit and enforced.
-- **Semantics preservation is exact.** The rewrite must match linear behavior on NaN propagation and exceptional inputs, and must decline to fire on any loop it cannot prove has the required structure.
-- **Hit rate is measured before the rewrite is built.** Milestone: write the matcher only, run it over real numeric codebases, count. If real-world sum-of-products loops are too gnarled to recognize, the pass is not built.
-
-Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform is acceptable compiler behavior; Herbie rewrites expressions, not loops; FPChecker already occupies the *detection* and *diagnostics* space.
-
 ## Stretch Goal — End-to-End Log-Form Propagation
 
 *Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
 
-The pass prototype computes the rescued result in log form but exports it through a side global. Converting that result back to linear representation immediately loses the numerical rescue in the regime where the original computation underflows.
+**The problem.** The pass prototype computes the rescued result in log form but exports it through a side global. Converting back to linear loses the rescue at the final step: for inputs near −800, `m + log(s) ≈ −792.6` is a healthy double while `exp(m + log(s))` is 0.0. The real win requires propagating the log form into downstream consumers. This section states the target transformation, the legality rule, the success criteria, and the stopping conditions before any code is written.
 
-The question is whether the compiler can propagate the log form into downstream consumers where the algebra permits it, without source-level changes. The first target is the softmax family:
+**The design.** One rule, stated once: **never hand-place a conversion.** Mark the rescued value as log-form and push the representation outward; materialize back to linear only where no rewrite applies.
 
-```
-s = Σᵢ exp(xᵢ)
-y = exp(xⱼ) / s
-```
+- `fdiv(x, s)` where `s` is log-form `L` → `fsub(x_log, L)` (softmax's divide becomes a subtract).
+- `fmul` → `fadd` of log-magnitudes.
+- `fadd` of two log-form values → logsumexp.
+- A use that no rule covers — a store to memory, a call argument, a comparison, an op outside the vocabulary — forces an `exp()` materialization at that point.
 
-where the transformed computation retains
+Adjacent `exp(log(x))` pairs fold on contact. The log region grows to its natural frontier and stops there.
 
-```
-L = log(Σᵢ exp(xᵢ))
-y = exp(xⱼ - L)
-```
+**The lattice.** A three-point value lattice over SSA values: `Linear` (default), `Log` (rescued form), `Conflict` (meets an unknown use). Transfer functions rewrite instructions in the vocabulary; every other instruction is a meet that forces materialization. This is the standard dataflow shape, not an invention.
 
-instead of reconstructing `s` in linear floating point.
+**The legality oracle.** The matcher's risk analysis answers the question the lattice cannot: *is it safe to materialize here?* At a frontier in the rescue regime (|log| ~ 700), `exp()` provably re-underflows, so materialization is refused and the log region extends. One analysis does two jobs — gating the original rewrite and proving boundary conversions safe.
 
-This is not a proposal to compile arbitrary programs into log space. Log-domain arithmetic and log-sum-exp are established techniques; the research question is whether a compiler can introduce the representation selectively at a range-unsafe reduction and carry it through compatible consumers far enough that the numerical rescue survives to the observable result.
+**Legality is the caller's grant, wider than the first rewrite's.** The original transform needed reassociation permission; propagation additionally requires *value* rewrites (`fdiv` → `fsub`) whose results are not bit-identical on benign inputs. Each propagation step is a separate, named opt-in; a miss is a decline, not a fallback.
 
-**First milestone.** One real softmax computation carries the log representation from the denominator, through its natural consumer, to the final observable result.
+**Prior art.** The pattern is established; the application to range rescue is not:
 
-**Stopping rule.** Propagation may stop where no safe or profitable log-domain representation exists. An end-to-end transformation on real code establishes the technique as a viable compiler capability; a clear propagation boundary establishes where the diagnostic takes over instead. A negative result that fixes that boundary is a valid outcome and a valid place to stop.
+- *Q/DQ propagation* (ONNX Runtime, TensorRT): rewrite rules push quantize/dequantize nodes apart across ops with quantized equivalents, folding `DQ→Q` pairs; the dequantize lands where pushing stops. Same shape as pushing `log`/`exp` apart.
+- *TAFFO*: an LLVM-based tool that propagates representation annotations (fixed-point) through SSA, inserting conversions at boundaries. The architecture transfers; the representation differs.
+- *Logarithmic Number Systems*: multiply = add, divide = subtract, add = logsumexp — proven at scale in hardware. The lesson: log-domain arithmetic is easy when the representation is a first-class type and hard when it is a convention smuggled through a type system that does not know it. That is why the export hook is a global.
 
-**Precondition on implementation.** This section gets the treatment the other deliverables have before any code is written: target transformation and legality conditions, success criteria and tests, representative positive and negative controls, profitability conditions, known propagation boundaries, and the outcomes that justify continuing or stopping. The failure mode to avoid is a sequence of ad hoc propagation cases with no research question and no stopping rule.
+**What this project has that prior art lacked:** a lowering target that is specified. Q/DQ lowers to int8 hardware; TAFFO lowers to fixed-point C. Log-form propagation lowers adds to `logrange::log_add` — with the stated, adversarially-tested error bounds. The runtime stops being a library you call and becomes the codegen backend for the pass.
+
+**First milestone.** One real softmax computation — denominator loop and normalize divide in the same function — carries the log representation from the denominator, through the divide, to the final observable result. Verified end-to-end: benign inputs agree to ~1 ulp, the underflowing case returns a correct finite log-probability where the original returns 0.0.
+
+**Success criteria.** (1) The milestone above passes. (2) The propagated result is *more* accurate than the linear re-conversion, not merely equal — measured against the double-double reference. (3) The legality grant is stated per rewrite and honored: no propagation fires without it.
+
+**Stopping rule.** Propagation stops where no safe or profitable log-domain representation exists. A single end-to-end transformation on real code establishes the technique; a documented wall — the point where the lattice meets a use it cannot rewrite and the materialization is provably lossy — is also a deliverable. If the frontier is immediately outside the first loop on every real codebase, the answer is "diagnostic-first was correct" and that is published.
+
+**Explicitly out of scope.** Interprocedural propagation, arbitrary consumer shapes, and any change to the IR type system. The first milestone is intra-function. The `__logrange_logsum` global remains the escape hatch for the prototype; the milestone replaces it for one named consumer, not for the general case.
 
 ## Fallback Product — The Diagnostic
 
