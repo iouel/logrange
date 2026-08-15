@@ -98,6 +98,7 @@ extern double softmax_denom_orig(const double *x, int n);
 extern double softmax_denom_rw(const double *x, int n);
 extern void softmax_full_orig(const double *x, double *out, int n);
 extern void softmax_full_rw(const double *x, double *out, int n);
+extern void softmax_full_prop(const double *x, double *out, int n);
 extern void softmax_add_orig(const double *x, double *out, int n);
 extern void softmax_add_rw(const double *x, double *out, int n);
 extern void softmax_sum_div_orig(const double *x, double *out, int n);
@@ -393,6 +394,29 @@ int main(void) {
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_sum_div,max_rel=%.3g\n", rel);
     check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
+  }
+
+  /* (m) Rescue case for propagate=div: softmax_full_prop has its normalize
+   *     divide rewritten to exp(log(x) - L). On rescue-regime inputs the
+   *     numerator exp(x[i]) underflows to 0, but LLVM's instcombine folds
+   *     log(exp(t)) -> t, so the emitted code becomes exp(x[i] - LogSum),
+   *     which is finite and correct. The linear form yields 0.0/0.0 = NaN. */
+  {
+    static double out_prop[N];
+    int all_finite;
+    double prop_sum;
+    double lref;
+    for (i = 0; i < N; ++i) x[i] = -800.0 + nrand();
+    softmax_full_prop(x, out_prop, N);
+    lref = ref_logsumexp(x, N);
+    all_finite = 1;
+    for (i = 0; i < N; ++i)
+      if (!isfinite(out_prop[i])) { all_finite = 0; break; }
+    prop_sum = 0.0;
+    for (i = 0; i < N; ++i) prop_sum += out_prop[i];
+    printf("INFO,prop_rescue,logref=%.17g,sum=%.17g\n", lref, prop_sum);
+    check("prop_rescue_all_finite", all_finite);
+    check("prop_rescue_sums_to_one", fabs(prop_sum - 1.0) < 1e-10);
   }
 
   printf(fails ? "OVERALL,FAIL\n" : "OVERALL,PASS\n");
