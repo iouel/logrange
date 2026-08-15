@@ -364,7 +364,7 @@ run**, then packaging.
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,
   documented, not worth chasing).
-- [ ] **Stretch goal: end-to-end log-form propagation.** Specified
+- [ ] **Stretch goal: end-to-end log-form propagation.** "Specified 2026-08-16 in logrange_intent.md, "Stretch Goal — End-to-End Log-Form Propagation":
       Log-Form Propagation": a three-point SSA lattice (Linear / Log /
       Conflict) that never hand-places a conversion, with the matcher's
       risk analysis as the legality oracle for where materialization is
