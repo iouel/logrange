@@ -1,0 +1,50 @@
+# Benchmarks on demand, never on push.
+#
+# Timing runs on shared cloud vCPUs are noisy, and a number nobody trusts is
+# worse than no number. This job exists to answer one question: do the
+# published ratios hold on hardware that is not the author's Ryzen 5800X
+# (intent success criterion 2, TODO "second-machine benchmark run")?
+#
+# windows-latest is the primary leg: the harness's core pinning and priority
+# raising are Windows-only, and MSVC with the same flags matches how the
+# published numbers were taken, so hardware is the only variable that moves.
+# ubuntu-latest runs too, unpinned by construction — the harness says so
+# itself rather than pretending otherwise.
+#
+# Read the harness's own NOISE FLOOR line before reading any timing. The
+# same-machine run-to-run envelope is ~8% (BENCHMARKS.md), so a cross-machine
+# delta smaller than that is not evidence of anything.
+name: bench
+on:
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: bench-${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-msvc-pinned
+            os: windows-latest
+            configure: cmake -S . -B build
+            run: ./build/Release/bench_logrange.exe
+          - name: ubuntu-gcc-unpinned
+            os: ubuntu-latest
+            configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
+            run: ./build/bench_logrange
+    steps:
+      - uses: actions/checkout@v5
+      - name: Configure
+        run: ${{ matrix.configure }}
+      - name: Build
+        run: cmake --build build --config Release
+      - name: Benchmark
+        run: ${{ matrix.run }}
+      - name: Upload raw results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-${{ matrix.name }}
+          path: bench_results.csv
+          if-no-files-found: warn
