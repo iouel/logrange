@@ -396,7 +396,57 @@ int main(void) {
     check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
   }
 
-  /* (m) THE STRETCH-GOAL MILESTONE. softmax_full_prop has its normalize
+  /* (m0) Benign inputs through the propagated path, and the accuracy
+   *      ranking the stretch goal's success criterion 2 asserts.
+   *
+   *      Three paths compute the same softmax: orig is pure linear; rw
+   *      rewrites the sum then re-converts with exp(m + log(s)) and divides
+   *      in linear; prop replaces the divide with exp(t - L). Reference is
+   *      long double (64-bit mantissa on x86-64, 11 bits more than double),
+   *      independent of all three.
+   *
+   *      Criterion 2 claims prop is MORE accurate than the linear
+   *      re-conversion, not merely equal. Measured here rather than assumed:
+   *      the subtract t - L carries absolute rounding u*|t - L|, which is
+   *      relative error in the result, so the claim is not obviously true at
+   *      benign magnitudes where the linear path is healthy. */
+  {
+    static double out_orig[N], out_rw2[N], out_prop2[N];
+    long double ml, sl, Ll;
+    double e_orig = 0.0, e_rw = 0.0, e_prop = 0.0;
+    for (i = 0; i < N; ++i) x[i] = nrand();
+
+    softmax_full_orig(x, out_orig, N);
+    softmax_full_rw(x, out_rw2, N);
+    softmax_full_prop(x, out_prop2, N);
+
+    ml = -INFINITY;
+    for (i = 0; i < N; ++i)
+      if ((long double)x[i] > ml) ml = (long double)x[i];
+    sl = 0.0L;
+    for (i = 0; i < N; ++i) sl += expl((long double)x[i] - ml);
+    Ll = ml + logl(sl);
+    for (i = 0; i < N; ++i) {
+      long double ref = expl((long double)x[i] - Ll);
+      double eo = (double)(fabsl((long double)out_orig[i] - ref) / ref);
+      double er = (double)(fabsl((long double)out_rw2[i] - ref) / ref);
+      double ep = (double)(fabsl((long double)out_prop2[i] - ref) / ref);
+      if (eo > e_orig) e_orig = eo;
+      if (er > e_rw)   e_rw   = er;
+      if (ep > e_prop) e_prop = ep;
+    }
+    printf("INFO,prop_benign,linear=%.3g,reconvert=%.3g,propagated=%.3g\n",
+           e_orig, e_rw, e_prop);
+    check("prop_benign_agrees_1e-12",
+          max_rel_diff(out_orig, out_prop2, N) < 1e-12);
+    /* Reported, not asserted: criterion 2's ranking is a measurement, and
+     * asserting it before it is established would make the test decorative. */
+    printf("INFO,prop_benign_ranking,propagated_better_than_reconvert=%d\n",
+           e_prop < e_rw);
+  }
+
+  /* (m) Rescue regime, the stretch goal's first milestone. softmax_full_prop
+   *     has its normalize
    *     divide rewritten to exp(t - L), where t is the pre-exp argument and
    *     L is the log-domain denominator carried through the loop-exit merge.
    *

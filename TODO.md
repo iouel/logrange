@@ -364,14 +364,29 @@ run**, then packaging.
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,
   documented, not worth chasing).
-- [ ] **Stretch goal: end-to-end log-form propagation.** "Specified 2026-08-16 in logrange_intent.md, "Stretch Goal — End-to-End Log-Form Propagation":
-      Log-Form Propagation": a three-point SSA lattice (Linear / Log /
-      Conflict) that never hand-places a conversion, with the matcher's
-      risk analysis as the legality oracle for where materialization is
-      safe. First milestone is one softmax carrying log form through the
-      divide; stopping rule and prior art (Q/DQ, TAFFO, LNS) stated
-      there. This is also **condition 2** ("the rescue observable without
-      the side global") in "Shipping Posture", and it is the one
-      non-blocking item with a research question attached. The diagnostic
-      is the shipping front door either way, so nothing in 1.0 waits on
-      this.
+- [ ] **Stretch goal: end-to-end log-form propagation.** Specified
+      2026-08-16 in logrange_intent.md, "Stretch Goal — End-to-End Log-Form
+      Propagation": a three-point SSA lattice (Linear / Log / Conflict) that
+      never hand-places a conversion, with the matcher's risk analysis as
+      the legality oracle for where materialization is safe. Stopping rule
+      and prior art (Q/DQ, TAFFO, LNS) stated there.
+      *First milestone passing 2026-08-16.* `propagate=div` rewrites the
+      softmax normalize divide to `exp(t - L)`, carrying the log form
+      through the loop-exit merge. At inputs near −800 the linear form is
+      all NaN and the propagated form sums to 1.0000000000000262, with no
+      side global read. That closes **condition 2** of the shipping posture
+      for this one shape.
+      *What the design still lacks:*
+      — the vocabulary is one rule. `fmul → fadd` and `fadd → logsumexp`
+        are unimplemented, so the log region cannot grow past a single
+        divide and the "frontier" the design describes has never formed.
+      — the legality oracle is not wired. Nothing consults the risk
+        analysis to refuse a materialization that would re-underflow;
+        propagation simply does not happen anywhere else.
+      — success criterion (2) is refuted. Propagation is measurably *less*
+        accurate than the linear re-conversion at benign magnitudes
+        (2.4e-15 against 1.6e-15, long-double reference), because
+        `t - L` carries `u·|t - L|`. It buys range, not precision, and the
+        criterion is amended in the intent to say so.
+      The diagnostic is the shipping front door either way, so nothing in
+      1.0 waits on this.

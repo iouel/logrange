@@ -245,13 +245,18 @@ The linear replacement `exp(m + log(s))` equals the original sum in exact
 arithmetic and agrees to ~1 ulp-scale relative error on benign inputs. But
 in the rescue regime it **re-underflows at the very last step**: for
 inputs near −800, `m + log(s) ≈ −792.6` is a perfectly healthy double
-while `exp(−792.6)` is 0.0. The real win requires propagating the *log
-form* downstream (e.g. into the softmax divide, which becomes a subtract).
-That is the stretch goal; this prototype makes the log form observable through
-a documented hook: each rewrite stores `m + log(s)` to the external global
-`@__logrange_logsum` (created as an external declaration on demand — the
-consuming link must define it; last rewrite executed wins). The test
+while `exp(−792.6)` is 0.0. Carrying the *log form* downstream avoids that
+last step; each rewrite therefore also stores `m + log(s)` to the external
+global `@__logrange_logsum` (created as an external declaration on demand —
+the consuming link must define it; last rewrite executed wins). The test
 harness defines that global and reads it after each call.
+
+The global is no longer the only route for every shape. With
+`propagate=div`, the softmax normalize divide is rewritten to `exp(t - L)`
+and the rescued value reaches `out[]` directly — see "Propagation" below and
+ELIGIBILITY.md section 6. That covers one consumer shape. Everything else
+still exits through the global, and last-rewrite-wins remains its stated
+defect.
 
 ## Consumer-shape logging spike (section 6 reconnaissance)
 
