@@ -118,6 +118,7 @@ Library and tests: C++17 compiler only.
 
 ## Documents
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) — evidence and writing conventions, read first
 - [logrange_intent.md](logrange_intent.md) — aims, cost model, deliverables
 - [BENCHMARKS.md](BENCHMARKS.md) — results
 - [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules
