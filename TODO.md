@@ -134,8 +134,19 @@ run**, then packaging.
       corrected by the same author who wrote them; a second pair of eyes on
       the corrected derivations is the remaining honesty debt, and it is the
       only one left that a search harness cannot discharge.
-- [ ] **BENCHMARKS.md refresh at 1.0 flags.** If anything above changes
-      flags or code paths, the published numbers must be re-run, not edited.
+- [x] **BENCHMARKS.md refresh at 1.0 flags.** Done 2026-08-15. Nothing
+      required a refresh: every header edit since v0.2 is preprocessor or
+      comment (version macros, fast-math guard), the bench source is
+      untouched, and the flags are the same four, moved from directory scope
+      onto a target. Re-run anyway to confirm rather than assert. Ratios
+      reproduce (3.75×/3.70× vs 3.7× published; 2.56×/2.54× vs 2.5×).
+      *Found doing it:* absolute medians move up to ~8% between runs on this
+      machine while the harness reported 0.15–2.35% floors, because the
+      floor compares two identical kernels **within** one run and says
+      nothing about run-to-run reproducibility. BENCHMARKS.md now scopes the
+      "±1%" claim accordingly. This also sets the bar for the
+      second-machine run below: a cross-machine delta under ~8% is not
+      evidence of anything.
 
 ## Tooling — ships as beta, gaps stated
 
