@@ -189,7 +189,7 @@ inside `<>`:
 
 | parameter | consumer form rewritten |
 |---|---|
-| `propagate=div` | `fdiv(numerator, sum)` → `exp(log(numerator) - L)` |
+| `propagate=div` | `fdiv(llvm.exp(t), sum)` → `exp(t - L)` |
 
 An unrecognized `propagate=` value is **refused**, exactly as an
 unrecognized `min-risk=` value is: the pipeline fails to parse rather than
@@ -214,24 +214,63 @@ and never a partial rewrite.
 | denominator | the divisor is the rewritten sum (the loop's final value, post-LCSSA), not the running sum | `not-the-sum` |
 | operator | `fdiv`, operand 1 is the sum; `fmul` by a reciprocal is *not* matched (a different rounding and a different NaN/inf profile) | `not-fdiv` |
 | type | `double` | `not-double` |
-| numerator | the dividend is loop-invariant with respect to the rewritten loop, or provably available and `double` at the use; it is *not* required to be an `exp` call (see 6.4) | `numeral-ineligible` |
-| placement | the consumer is in the same function and dominated by the replacement block | `not-dominated` |
+| numerator | the dividend is an `llvm.exp.*` call (possibly through `fpext`/`fptrunc`) whose argument is `double`; the pre-`exp` argument is what the rewrite consumes (see 6.4) | `numerator-not-exp` |
+| log form of the divisor | a log form of the divisor exists on **every** path reaching the consumer, derived by the rule in 6.3.1 | `no-log-form` |
+| placement | that log form dominates the consumer | `log-form-not-available` |
 | uniqueness-of-form | the rewritten value is not also consumed by an ineligible use that *shares this instruction's* result (an instruction is rewritten whole or not at all) | `shared-result` |
+
+### 6.3.1 Deriving the divisor's log form
+
+`L` is not simply the `LogSum` computed on the loop's exit edge. clang guards
+the accumulation loop, so the value the consumer divides by is an LCSSA phi
+merging the rewritten sum with the constant `0.0` from the zero-trip path, and
+no single block dominates the consumer. Requiring one is why an earlier
+version declined this shape — the milestone case — as `not-dominated`.
+
+The log form is therefore derived structurally, and it is the lattice's phi
+transfer function, nothing more:
+
+| divisor is | log form |
+|---|---|
+| the rewritten sum | `LogSum`, computed on the exit edge |
+| `ConstantFP c`, `c > 0` | `ConstantFP log(c)` |
+| `ConstantFP 0.0` | `-inf` |
+| `ConstantFP` negative or NaN | decline — no real logarithm |
+| a phi outside the loop | a parallel phi in the same block, of its operands' log forms |
+| anything else | decline |
+
+The parallel phi is memoized before its operands are visited, so a cyclic phi
+network terminates rather than recursing forever. On the guarded softmax this
+emits exactly one extra phi:
+
+```llvm
+%lr.logphi = phi double [ 0xFFF0000000000000, %entry ], [ %lr.logsum, %lr.exit ]
+```
+
+`-inf` on the zero-trip path is not a special case bolted on: it *is* the log
+form of the `0.0` the linear code carries there, and it reproduces the linear
+result. Finite numerator over a zero sum gives `x/0 = +inf`, and
+`exp(t - (-inf)) = exp(+inf) = +inf`. A zero numerator gives `0/0 = NaN`, and
+`exp(-inf + inf) = exp(NaN) = NaN`.
 
 ### 6.4 The rewrite and its algebra
 
 ```
-y = fdiv(x, s)        where L = log(s) is available
+y = fdiv(llvm.exp(t), s)     where L is the divisor's log form
   becomes
-y = llvm.exp( llvm.log(x) - L )
+y = llvm.exp( t - L )
 ```
 
-This is the softmax divide becoming a subtract in the log domain. The
-numerator is *not* required to be an `exp(xⱼ)` call: when it happens to be
-one, a later `exp(log(x))` pair is a folding opportunity for ordinary LLVM
-canonicalization, not something this pass performs or relies on. This pass
-emits `log(x) - L` and one `exp`; it does not pattern-match the numerator's
-provenance.
+This is the softmax divide becoming a subtract in the log domain.
+
+The numerator **must** be an `llvm.exp` call, and the rewrite consumes its
+pre-`exp` argument `t` directly. Emitting `log(numerator) - L` instead would
+be wrong in exactly the regime this exists for: the numerator is `exp(t)`,
+which underflows to `0.0` at rescue-regime inputs, so `log(numerator)` is
+`log(0) = -inf` and the propagated result collapses to `0` or NaN. Correctness
+must not depend on a later InstCombine fold of `log(exp(t)) -> t` either — the
+pass emits the subtract on `t` itself, so the transform is correct in the IR
+it produces rather than in the IR someone else might canonicalize it into.
 
 ### 6.5 What propagation preserves
 

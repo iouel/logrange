@@ -396,17 +396,33 @@ int main(void) {
     check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
   }
 
-  /* (m) Rescue case for propagate=div: softmax_full_prop has its normalize
-   *     divide rewritten to exp(log(x) - L). On rescue-regime inputs the
-   *     numerator exp(x[i]) underflows to 0, but LLVM's instcombine folds
-   *     log(exp(t)) -> t, so the emitted code becomes exp(x[i] - LogSum),
-   *     which is finite and correct. The linear form yields 0.0/0.0 = NaN. */
+  /* (m) THE STRETCH-GOAL MILESTONE. softmax_full_prop has its normalize
+   *     divide rewritten to exp(t - L), where t is the pre-exp argument and
+   *     L is the log-domain denominator carried through the loop-exit merge.
+   *
+   *     t is used DIRECTLY, not as log(numerator). The numerator is exp(t),
+   *     which underflows to 0.0 at these inputs — log(0) = -inf would put
+   *     the propagated result at 0 or NaN precisely where the rescue is the
+   *     whole point. Correctness must not depend on a later InstCombine
+   *     fold of log(exp(t)) -> t either; the pass emits the subtract on t.
+   *
+   *     The linear form is asserted broken on the same inputs, because a
+   *     rescue that is not compared against the failure it repairs proves
+   *     nothing. exp(x[i]) is 0.0 and the denominator is 0.0, so every
+   *     output is 0.0/0.0 = NaN. */
   {
     static double out_prop[N];
-    int all_finite;
+    static double out_lin[N];
+    int all_finite, lin_broken;
     double prop_sum;
     double lref;
     for (i = 0; i < N; ++i) x[i] = -800.0 + nrand();
+
+    softmax_full_orig(x, out_lin, N);
+    lin_broken = 1;
+    for (i = 0; i < N; ++i)
+      if (isfinite(out_lin[i])) { lin_broken = 0; break; }
+
     softmax_full_prop(x, out_prop, N);
     lref = ref_logsumexp(x, N);
     all_finite = 1;
@@ -414,7 +430,10 @@ int main(void) {
       if (!isfinite(out_prop[i])) { all_finite = 0; break; }
     prop_sum = 0.0;
     for (i = 0; i < N; ++i) prop_sum += out_prop[i];
-    printf("INFO,prop_rescue,logref=%.17g,sum=%.17g\n", lref, prop_sum);
+
+    printf("INFO,prop_rescue,linear[0]=%g,logref=%.17g,sum=%.17g\n",
+           out_lin[0], lref, prop_sum);
+    check("prop_rescue_linear_is_broken", lin_broken);
     check("prop_rescue_all_finite", all_finite);
     check("prop_rescue_sums_to_one", fabs(prop_sum - 1.0) < 1e-10);
   }
