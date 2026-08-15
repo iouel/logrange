@@ -138,11 +138,30 @@ run**, then packaging.
       is conservative under any correlation (triangle inequality on
       pos − neg), and the O(n·u²) term does not reach u until n ~ 10¹⁶
       terms, which is not addressable.
-- [ ] **Independent read.** The one part of the review that cannot be done
-      from inside. Three stated bounds have now been refuted by search and
-      corrected by the same author who wrote them; a second pair of eyes on
-      the corrected derivations is the remaining honesty debt, and it is the
-      only one left that a search harness cannot discharge.
+- [x] **Independent read.** Done 2026-08-15. The independent read agrees
+      that the repaired `D` term and the representation/final-reduction term
+      close real omissions; no counterexample to either corrected accumulator
+      contract was found after reading the header, implementation, adversarial
+      harness, fixed tests, reset test, public docs, packaging, and broader
+      repository search.
+
+      *Correction made during the read:* the reset's documented
+      `Σ Aⱼ·u` absolute loss does **not** invalidate rp_accum's relative
+      contract. A reset at scale Aⱼ implies cancelling mass of at least about
+      2Aⱼ, so `cond = Σ|xᵢ|/|S|` already contributes at least about
+      `2Aⱼ/|S|`; the existing `cond·(3k+4+D)·u` budget (coefficient at least
+      4u) conservatively covers the reset loss when expressed relatively.
+      The separate absolute wording is therefore explanatory, not an
+      unbudgeted error source.
+
+      *Non-blocking proof-tightening left:* state that reset-coverage argument
+      explicitly, so the mixed relative/absolute presentation cannot be
+      misread; describe the published contracts as first-order bounds under
+      their stated 1-ulp `exp()`, vanishing-window, and neglected higher-order
+      assumptions; and make the final-reduction explanation more precise about
+      how the representation-floor term and conditioning cover cancellation in
+      `m_log + log(|net|)`. These are clarity/proof-presentation tasks, not
+      evidence that the corrected bounds fail.
 - [x] **BENCHMARKS.md refresh at 1.0 flags.** Done 2026-08-15. Nothing
       required a refresh: every header edit since v0.2 is preprocessor or
       comment (version macros, fast-math guard), the bench source is
