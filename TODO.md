@@ -364,13 +364,14 @@ run**, then packaging.
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,
   documented, not worth chasing).
-- **Downstream log-form propagation** — the stretch goal, and the one item
-  here with a research question attached. The rescue currently exits through
-  the `__logrange_logsum` side global; the win is rewriting the *consumers*
-  (softmax's divide → subtract) to use the log form. Full statement, first
-  milestone, and stopping rule: `logrange_intent.md`, "Stretch Goal —
-  End-to-End Log-Form Propagation". That section needs fleshing out to the
-  standard of the other deliverables before any code is written. The
-  diagnostic is the shipping front door either way, so nothing in 1.0 waits
-  on this.
-  - [ ] **Stretch goal: End-to-end log-form propagation.** Now specified in `logrange_intent.md` "Stretch Goal — End-to-End Log-Form Propagation". Replaces the vague "propagate the log form" note with: lattice-based design (Q/DQ-style), legality via matcher's risk analysis, softmax divide→subtract milestone, and explicit stopping rule. Not blocking 1.0.
+- [ ] **Stretch goal: end-to-end log-form propagation.** Specified
+      Log-Form Propagation": a three-point SSA lattice (Linear / Log /
+      Conflict) that never hand-places a conversion, with the matcher's
+      risk analysis as the legality oracle for where materialization is
+      safe. First milestone is one softmax carrying log form through the
+      divide; stopping rule and prior art (Q/DQ, TAFFO, LNS) stated
+      there. This is also **condition 2** ("the rescue observable without
+      the side global") in "Shipping Posture", and it is the one
+      non-blocking item with a research question attached. The diagnostic
+      is the shipping front door either way, so nothing in 1.0 waits on
+      this.
