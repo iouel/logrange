@@ -67,6 +67,28 @@ namespace detail {
 
 // ---------------------------------------------------------------------------
 // log_value — a real number in signed log representation.
+//
+// PRECISION FLOOR, and it grows with magnitude. log_abs is a double, so it
+// sits on a grid of spacing ulp(log_abs). Since absolute error in log space
+// is relative error in linear space, a value can be represented no better
+// than
+//
+//   relative precision  ~  |log|x|| * u
+//
+// however it was computed. Near 1.0 that is invisible. At |log|x|| ~ 700 —
+// the range this library exists to reach — it is ~512u ~ 5.7e-14, about 13
+// significant decimal digits rather than 16. Measured, not asserted:
+// bound_search reports 512u for a log_value(x).to_linear() round trip at
+// |log|x|| ~ 540.
+//
+// This floor is a property of the REPRESENTATION, not of any one operation.
+// Every reduction ending in `m_log + log(...)` inherits it, which is why the
+// same term appears in both accumulator contracts below. It is the reason
+// those two contracts were wrong until 2026-08-15: the floor was real and
+// undocumented, so neither bound accounted for it.
+//
+// Callers who need more than 13 digits at extreme magnitudes need a wider
+// log_abs, not a different accumulator.
 // ---------------------------------------------------------------------------
 struct log_value {
   double log_abs = detail::NEG_INF; // log(|x|); -inf == zero
@@ -105,7 +127,25 @@ struct log_value {
 };
 
 // ---------------------------------------------------------------------------
-// Multiplication / division — exact in log domain (an add / a subtract).
+// Multiplication / division — an add / a subtract in the log domain.
+//
+// The MAPPING is exact: multiplication is addition of logarithms, with no
+// series and no cancellation. The ARITHMETIC is not. `a.log_abs + b.log_abs`
+// is a floating-point add and rounds like any other:
+//
+//   error(log_abs)  <=  u * |log|a| + log|b||   (absolute, in log space)
+//                    =  the representation floor for the result
+//
+// This header called these operations "exact" until 2026-08-15. They are
+// exact only when the sum of the two log magnitudes is itself representable.
+// bound_search measures 1024u of rounding on a product whose log-magnitude
+// is 1024 — a value well outside double's linear range but perfectly
+// ordinary as a log_value, which is the point of the type.
+//
+// No error accumulates beyond that single rounding: there is no cancellation
+// path here, so a chain of n multiplications costs n roundings at the floor,
+// not an amplified sum.
+//
 // NaN in either operand propagates via IEEE arithmetic on log_abs.
 // Note: inf * zero and zero / zero yield log_abs = inf + (-inf) = NaN,
 // matching IEEE linear semantics.
@@ -126,6 +166,17 @@ inline log_value log_div(const log_value& a, const log_value& b) {
 
 // ---------------------------------------------------------------------------
 // logsumexp2 — log(exp(a) + exp(b)) for scalar log-magnitudes.
+//
+// Accuracy: the returned log-magnitude carries
+//
+//   error  <=  u * |result|  +  (d + 3) * u,   d = |a - b|
+//
+// absolute in log space. The first term is the representation floor on the
+// final `a + log1p(...)` add and dominates at large magnitudes (measured:
+// 512u near |result| ~ 700). The second is the working arithmetic — the
+// argument subtraction rounds to u*d, exp turns that into a relative error
+// of the same size, and log1p contributes its own ulp. Both terms are
+// checked in bound_search.
 //
 // Edge semantics (intent v0.3 requirement — NaN out for NaN in, no silent
 // absorption of infinities):
@@ -256,6 +307,17 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // at ~300x worse on cond=2.3e9 data (BENCHMARKS.md; a log_add fold is NOT a
 // fix: its apparent accuracy there was an ordering artifact that collapses
 // under shuffling).
+//
+// Two questions this contract carried as open, now closed by inspection:
+//   - pos/neg rescale errors are bounded independently and added. That is
+//     conservative under ANY correlation between them: the result is
+//     (pos - neg), and |e_pos - e_neg| <= |e_pos| + |e_neg| by the triangle
+//     inequality. Correlation can only shrink the realized error; it cannot
+//     push it past the sum of the separate bounds. No change needed.
+//   - the O(n*u^2) small print. At n = 1e7 that term is ~1.2e-25 against
+//     u = 1.1e-16 — nine orders down, and it does not reach u until n ~ 1e16
+//     terms, which is not an addressable count. The caveat is real but far
+//     looser than "n < ~1e7" suggests.
 // Status: the earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
 //   which found 151 of 400 random inputs violating THAT superseded form
 //   (worst 15.8x) plus a constructed counterexample at 5.8x with cond == 1,

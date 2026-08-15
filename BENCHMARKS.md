@@ -28,6 +28,12 @@ cited below are 1.5×–3.8× and clear the floor.**
 linear loop returns exactly `0.0`; `rp_accum` returns log-magnitude
 −792.643769699630184, matching the analytic max-shift value **bit-for-bit**.
 
+Read that as agreement to representation granularity, not to 16 digits. At
+log-magnitude ≈ 792 one ulp is ~1.1e-13, so landing on the same double means
+the two computations agree to ~512u relative in linear terms — the precision
+floor documented at `log_value`. It is the correct answer to the last bit
+`log_value` has; it is not a claim of 16-digit agreement.
+
 **2. Overhead vs hand-written logsumexp within noise — ✅, exceeded**
 The library is not merely within noise of the hand-rolled streaming-logsumexp
 loop; it is faster (ns/term, median, n = 10⁶, v0.2 compensated rp_accum):

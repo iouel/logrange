@@ -93,11 +93,29 @@ run**, then packaging.
       never the contract, so the bound had never been machine-checked at
       all. It now asserts it, and the assertion was verified to fail under
       the old form.
-- [ ] **Bound review, third pass — what remains.** rp_accum's pos/neg
-      rescale-error correlation, still bounded independently; the n·u²
-      threshold; and an independent read of both corrected derivations. Two
-      accumulators have now had their stated bounds refuted by search, so
-      the prior on the remaining unexamined claims should be low.
+- [x] **Bound review, third pass — the rest of the header's claims.** Done
+      2026-08-15. The prior was right again: `log_mul`/`log_div` were
+      documented as **"exact in log domain"**, and they are not — the
+      mapping is exact, the floating-point add implementing it rounds.
+      Measured 1024u on a product of log-magnitude 1024.
+      The root cause of all three refutations is now stated once, at
+      `log_value`, where it belongs: **the representation has a precision
+      floor of |log|x||·u that grows with magnitude** — ~13 significant
+      digits, not 16, at the |log|x|| ~ 700 range this library targets.
+      Every reduction ending in `m_log + log(...)` inherits it, which is why
+      one undocumented fact broke two independent accumulator contracts.
+      `logsumexp2` now states a bound for the first time; the round trip
+      through `log_value` is measured at 512u.
+      The two originally flagged questions both close by inspection, no
+      change needed: pos/neg rescale errors bounded independently and added
+      is conservative under any correlation (triangle inequality on
+      pos − neg), and the O(n·u²) term does not reach u until n ~ 10¹⁶
+      terms, which is not addressable.
+- [ ] **Independent read.** The one part of the review that cannot be done
+      from inside. Three stated bounds have now been refuted by search and
+      corrected by the same author who wrote them; a second pair of eyes on
+      the corrected derivations is the remaining honesty debt, and it is the
+      only one left that a search harness cannot discharge.
 - [ ] **BENCHMARKS.md refresh at 1.0 flags.** If anything above changes
       flags or code paths, the published numbers must be re-run, not edited.
 

@@ -60,6 +60,33 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Changed — `log_mul` / `log_div` were documented as exact. They are not.**
+
+The mapping is exact (multiplication is addition of logarithms); the
+arithmetic implementing it is a floating-point add and rounds. Old claim:
+"exact in log domain". New: `error(log_abs) ≤ u·|log|a| + log|b||`, exact
+only when that sum is representable. Measured at 1024u on a product of
+log-magnitude 1024 — outside double's linear range, but an ordinary
+`log_value`, which is the point of the type.
+
+**Added — the precision floor, stated once at `log_value`.**
+
+This is the root cause of all three refuted bounds, and it was never written
+down. `log_abs` is a double, so a value is representable no better than
+`|log|x||·u` relative, *however it was computed*. Near 1.0 that is invisible;
+at `|log|x|| ~ 700` it is ~512u, about 13 significant decimal digits rather
+than 16. Every reduction ending in `m_log + log(...)` inherits it, which is
+why one undocumented fact broke two independent accumulator contracts.
+Measured: 512u on a `log_value(x).to_linear()` round trip.
+
+`logsumexp2` now states an accuracy bound for the first time:
+`u·|result| + (d+3)·u` with `d = |a−b|`.
+
+Two long-open questions closed by inspection, no code or contract change:
+pos/neg rescale errors bounded independently and summed is conservative under
+any correlation (triangle inequality on `pos − neg`), and the `O(n·u²)` term
+does not reach `u` until ~10¹⁶ terms.
+
 **Decided**
 - **Double only, by design.** Stated in the header's Precision block rather
   than left as an unmentioned limit. Every constant in the error contract is

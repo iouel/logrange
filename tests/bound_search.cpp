@@ -426,10 +426,84 @@ int main() {
   std::printf("pos_accum worst vs corrected contract: %.2f\n",
               pworst_fixed.ratio_fixed);
 
+  // --- representation floor -----------------------------------------------
+  // Both accumulator bounds were broken by the same |log|S||*u term, which is
+  // not an accumulator defect: log_abs is a double, so a value of magnitude
+  // e^700 sits on a grid of spacing ulp(700) ~ 1.1e-13 and cannot be
+  // represented to better than ~512u relative however it was computed. The
+  // pairwise ops inherit it. These checks need no reference: the rounding
+  // error of a single add is recovered exactly by TwoSum.
+  std::printf("\nrepresentation floor (log_abs is a double)\n");
+  std::printf("  %-40s %10s %10s %12s\n", "claim under test", "worst err",
+              "in u", "rel linear");
+
+  // log_mul / log_div: r.log_abs = fl(la +/- lb). Documented as "exact in log
+  // domain". The mapping is exact; the arithmetic implementing it is not.
+  double mul_worst = 0.0, mul_at = 0.0;
+  bool mul_bound_holds = true;
+  for (int i = 0; i < 4000; ++i) {
+    const double la = -700.0 + 0.35 * i;
+    for (int j = 0; j < 8; ++j) {
+      const double lb = std::nextafter(400.0 + 13.7 * j, 1e9);
+      const double e = std::fabs(two_sum_err(la, lb));
+      if (e > mul_worst) { mul_worst = e; mul_at = la + lb; }
+      if (e > U * std::fabs(la + lb)) mul_bound_holds = false;
+    }
+  }
+  std::printf("  %-40s %10.3e %10.1f %12.3e\n", "log_mul exact (refuted)",
+              mul_worst, mul_worst / U, mul_worst);
+
+  // logsumexp2: the final a + log1p(exp(b-a)) lands on the same grid.
+  double lse_worst = 0.0;
+  bool lse_bound_holds = true;
+  for (int i = 0; i < 4000; ++i) {
+    double a = -700.0 + 0.35 * i;
+    double b = a - 0.5 - 0.001 * i;
+    if (b > a) std::swap(a, b);
+    const double t = std::log1p(std::exp(b - a));
+    const double e = std::fabs(two_sum_err(a, t));
+    if (e > lse_worst) lse_worst = e;
+    if (e > U * std::fabs(a + t)) lse_bound_holds = false;
+  }
+  std::printf("  %-40s %10.3e %10.1f %12.3e\n", "logsumexp2 final add",
+              lse_worst, lse_worst / U, lse_worst);
+
+  // Round trip log_value(x).to_linear(): log then exp, each landing on the
+  // same grid. Sample x with ARBITRARY mantissas — seeding with x = exp(l)
+  // for representable l makes the trip exact by construction and reports a
+  // meaningless 0.0, since log then recovers l exactly.
+  double rt_worst = 0.0, rt_at = 0.0;
+  bool rt_bound_holds = true;
+  std::uniform_real_distribution<double> mantissa(1.0, 2.0);
+  for (int e = -1000; e < 1000; ++e) {
+    for (int t = 0; t < 20; ++t) {
+      const double x = std::ldexp(mantissa(rng), e);
+      if (!(x > 0.0) || std::isinf(x)) continue;
+      const double back = log_value(x).to_linear();
+      if (!(back > 0.0) || std::isinf(back)) continue;
+      const double rel = std::fabs(back - x) / x;
+      if (rel > rt_worst) { rt_worst = rel; rt_at = std::log(x); }
+      // Corrected claim: the trip costs |log|x||*u, plus exp's own ulp.
+      if (rel > (std::fabs(std::log(x)) + 2.0) * U) rt_bound_holds = false;
+    }
+  }
+  std::printf("  %-40s %10.3e %10.1f %12.3e\n", "log_value round trip",
+              rt_worst, rt_worst / U, rt_worst);
+  std::printf("\n  worst log_mul rounding at log|product| = %.0f; "
+              "worst round trip at log|x| = %.0f\n", mul_at, rt_at);
   // Each contract claims observed <= bound for every input. Anything above 1
   // (clear of the ~1.3 reference floor documented at the top) is a refutation.
   NC_CHECK(worst_fixed.ratio_fixed <= 1.0);
   NC_CHECK(pworst_fixed.ratio_fixed <= 1.0);
+  // The corrected pairwise claim: error <= u * |result in log space|.
+  NC_CHECK(mul_bound_holds);
+  NC_CHECK(lse_bound_holds);
+  // And the old claim really is false, so nobody restores it: log_mul rounds.
+  NC_CHECK(mul_worst > 0.0);
+  NC_CHECK(rt_bound_holds);
+  // The round trip is not free either. If this ever reads 0, the sampling has
+  // regressed to x = exp(representable), which cannot fail by construction.
+  NC_CHECK(rt_worst > 0.0);
   std::puts("bound_search passed");
   return 0;
 }
