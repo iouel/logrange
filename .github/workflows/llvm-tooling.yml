@@ -1,0 +1,134 @@
+# The three correctness gates for the LLVM tooling, which until now only ever
+# ran when a human typed them into WSL:
+#
+#   matcher/run_study.sh selftest   labeled ground truth for the matcher
+#   matcher/run_study.sh coverage   the coverage claims in matcher/RESULTS.md
+#   pass/run_pass_test.sh           the rewrite prototype, end to end
+#
+# Deliberately a SEPARATE workflow from tests.yml. This job installs a
+# toolchain from a third-party apt mirror; the header-only library's signal
+# must not go red because apt.llvm.org had a bad day. It is also slower than
+# the library matrix, and that is an acceptable trade here.
+#
+# LLVM 21 is installed explicitly and pinned by major version: both plugins are
+# built against LLVM 21, pass/run_pass_test.sh hardcodes CMAKE_PREFIX_PATH=
+# /usr/lib/llvm-21 and calls opt-21 by name, and a plugin loaded into an opt of
+# a different major version will not load at all. Nothing here relies on
+# whatever LLVM the runner image happens to ship.
+name: llvm-tooling
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: llvm-tooling-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: llvm-21-gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash  # -e -o pipefail, so a failing gate survives `| tee`
+    env:
+      LLVM_VERSION: "21"
+      # matcher/run_study.sh honours OPT and CLANG (defaulting to the
+      # unversioned names) and runs cmake without a prefix of its own, so the
+      # LLVM it finds is entirely the environment's business.
+      CMAKE_PREFIX_PATH: /usr/lib/llvm-21
+      OPT: opt-21
+      CLANG: clang-21
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install LLVM ${{ env.LLVM_VERSION }} from apt.llvm.org
+        run: |
+          set -euxo pipefail
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME}"
+          # Fail loudly rather than silently installing packages built for a
+          # different Ubuntu: a wrong-codename toolchain fails much later and
+          # much more confusingly than a missing repo.
+          if ! curl -fsI "https://apt.llvm.org/${CODENAME}/dists/llvm-toolchain-${CODENAME}-${LLVM_VERSION}/Release" > /dev/null; then
+            echo "apt.llvm.org has no llvm-toolchain-${CODENAME}-${LLVM_VERSION} channel."
+            echo "The runner image moved to '${CODENAME}' before LLVM published for it;"
+            echo "pin runs-on to an older ubuntu-XX.XX, or bump LLVM_VERSION."
+            exit 1
+          fi
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/apt-llvm-org.gpg
+          echo "deb [signed-by=/usr/share/keyrings/apt-llvm-org.gpg] https://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${LLVM_VERSION} main" \
+            | sudo tee /etc/apt/sources.list.d/llvm-${LLVM_VERSION}.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            clang-${LLVM_VERSION} llvm-${LLVM_VERSION} llvm-${LLVM_VERSION}-dev \
+            zlib1g-dev libzstd-dev
+
+      # pass/run_pass_test.sh calls plain `clang` (only `opt` is version-suffixed
+      # there), so the unversioned name has to resolve to 21 as well — otherwise
+      # the runner's stock clang emits the IR and opt-21 consumes it, which is a
+      # version skew nobody asked for.
+      - name: Put LLVM ${{ env.LLVM_VERSION }} first on PATH
+        run: echo "/usr/lib/llvm-${LLVM_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - name: Toolchain versions (assert the pin actually took)
+        run: |
+          set -euo pipefail
+          clang --version
+          opt --version
+          opt-21 --version
+          for tool in clang opt opt-21; do
+            "$tool" --version | grep -qE "version ${LLVM_VERSION}\." \
+              || { echo "FAIL: $tool is not LLVM ${LLVM_VERSION}"; exit 1; }
+          done
+          test -f "/usr/lib/llvm-${LLVM_VERSION}/lib/cmake/llvm/LLVMConfig.cmake"
+
+      # Gate 1. run_study.sh resolves its own paths from $0, but it is written
+      # to be run from matcher/, so run it from there. It builds the plugin
+      # itself (build_plugin -> matcher/build, which is gitignored, so this is
+      # always a cold build).
+      - name: Gate 1 — matcher selftest (labeled ground truth)
+        working-directory: matcher
+        run: |
+          bash ./run_study.sh selftest | tee "$RUNNER_TEMP/selftest.out"
+          grep -q '^SELFTEST PASS' "$RUNNER_TEMP/selftest.out" \
+            || { echo "FAIL: no SELFTEST PASS line"; exit 1; }
+
+      # Gate 2. Guards matcher/RESULTS.md's coverage table in both directions —
+      # named shapes that must hit, and documented gaps that must still miss.
+      - name: Gate 2 — matcher coverage (RESULTS.md coverage claims)
+        working-directory: matcher
+        run: |
+          bash ./run_study.sh coverage | tee "$RUNNER_TEMP/coverage.out"
+          grep -q '^COVERAGE PASS' "$RUNNER_TEMP/coverage.out" \
+            || { echo "FAIL: no COVERAGE PASS line"; exit 1; }
+
+      # Gate 3. Builds the rewrite plugin, rewrites the softmax kernel, links
+      # straight and rewritten kernels into one binary and compares them. Runs
+      # from the repo root; the script sets its own CMAKE_PREFIX_PATH and works
+      # under $HOME/logrange-pass.
+      - name: Gate 3 — rewrite pass prototype, end to end
+        run: |
+          bash pass/run_pass_test.sh | tee "$RUNNER_TEMP/pass.out"
+          grep -q '^run_pass_test: PASS$' "$RUNNER_TEMP/pass.out" \
+            || { echo "FAIL: no run_pass_test: PASS line"; exit 1; }
+
+      # The raw matcher output is the evidence behind the two matcher gates;
+      # keep it so a red run can be read without re-running anything locally.
+      - name: Upload gate output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llvm-tooling-gate-output
+          path: |
+            ${{ runner.temp }}/selftest.out
+            ${{ runner.temp }}/coverage.out
+            ${{ runner.temp }}/pass.out
+            ~/logrange-study/raw-selftest.txt
+            ~/logrange-study/raw-coverage.txt
+            ~/logrange-pass/rewrite.log
+            ~/logrange-pass/test.out
+          if-no-files-found: warn

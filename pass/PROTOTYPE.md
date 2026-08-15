@@ -22,18 +22,21 @@ and rewrites the accumulator to streaming logsumexp state:
 | | linear original | rewritten state |
 |---|---|---|
 | init | `s = 0.0` | `m = -inf` (running max of `t_i`), `s = 0.0` (sum of `exp(t_i - m)`) |
-| per iter | `s += exp(t)` | `newm = maxnum(m, t)`; `s = s*exp(m - newm) + exp(t - newm)`; `m = newm` |
+| per iter | `s += exp(t)` | `newm = maxnum(m, t)`; `s = s*exp(dm) + exp(dt)`; `m = newm` — with `dm = (m oeq newm) ? 0 : m - newm`, `dt` likewise |
 | after loop | `s` | linear users get `exp(m + log(s))`; `m + log(s)` stored to `@__logrange_logsum` |
 
 Matched precisely (all required, no fallbacks — misses are declines):
 innermost loop, preheader + unique latch + unique exiting + unique exit
 block; exactly one FP phi in the header, `double`, initialized to constant
 `0.0`; backedge update a **plain `fadd(phi, X)`** (`fmuladd` out of scope);
-`X` is a call to `exp`/`expf`/`llvm.exp` through nothing but
-`fpext`/`fptrunc`; the call argument loop-varying; phi and update have no
-other in-loop users (the matcher's mid-loop-read guard); at least one
-out-of-loop user of the sum. One stderr line per rewrite:
-`REWRITE,<file>,<line>,<function>`.
+`X` is a call to **`llvm.exp.*`** through nothing but `fpext`/`fptrunc`;
+the call argument loop-varying; phi and update have no other in-loop users
+(the matcher's mid-loop-read guard); at least one out-of-loop user of the
+sum. One stderr line per rewrite: `REWRITE,<file>,<line>,<function>`.
+
+The normative contract is **`pass/ELIGIBILITY.md`**. This file is the
+design narrative and the measured record; where the two differ,
+ELIGIBILITY.md wins.
 
 ## The maxnum-based derivation
 
@@ -63,7 +66,34 @@ export store.
 First iteration works by construction: `m = -inf, s = 0` gives
 `newm = maxnum(-inf, t) = t`, `s*exp(-inf) = 0`, `exp(t-t) = 1` ⇒ `s = 1`.
 
-NaN stickiness (verified by test c): `maxnum(m, NaN) = m` ignores the NaN,
+### The infinity guard
+
+The raw differences `m - newm` and `t - newm` are `inf - inf = NaN` in two
+reachable cases: `t = -inf` while `m` is still `-inf` (a zero term —
+`exp(-inf) = 0` — which is ordinary input, not pathological), and `t = +inf`.
+The emitted code therefore computes each difference as
+
+```
+d = (x oeq newm) ? 0.0 : x - newm
+```
+
+4 extra instructions per iteration (2 `fcmp` + 2 `select`), against 2 `exp`
+calls. `0.0` is the correct exponent whenever `x == newm`, finite or not, so
+the guard changes no finite result — the benign relative error is unchanged
+at 1.37e-15.
+
+`oeq` is load-bearing. A NaN `t` is never equal to `newm`, so the subtract
+survives, `exp(NaN) = NaN`, and `s` is still poisoned: NaN propagation is
+preserved, including a NaN in the first position where `newm` is `-inf`
+(test g). `m` is never NaN — `maxnum(-inf, NaN) = -inf` — so its guard only
+fires on genuine equality.
+
+All terms `-inf`: `newm = -inf`, `s = k` after k iterations, and
+`exp(newm + log(k)) = exp(-inf) = 0` — the linear sum exactly, with the
+exported log form `-inf`. A later finite `t` rescales that state away through
+`exp(-inf - t) = 0`.
+
+NaN stickiness (verified by tests c and g): `maxnum(m, NaN) = m` ignores the NaN,
 but `exp(NaN - newm) = NaN` poisons `s`, and `s` stays NaN through every
 later iteration (`NaN*e1 + e2 = NaN`); the final `exp(m + log(NaN))` is
 NaN — matching the linear loop's propagation.
@@ -93,6 +123,122 @@ the transform legal"). Three layers, all verified:
 The test drives `force` (not `-ffast-math`) deliberately: fast-math's
 `nnan` would make the NaN-propagation check meaningless.
 
+### Exact semantics of the opt-in
+
+`force` means *the caller explicitly grants the reassociation this
+transform needs*. It waives reassociation **proof**, and nothing else. It
+does not override the structural match, the FP-environment screen, the
+`llvm.exp`-only errno contract, or special-value correctness — three of
+those four are checked before `force` is read at all.
+
+`"unsafe-fp-math"="true"` is **kept** as an alternate opt-in, and is only
+that: a record of a deliberate user action standing in for the grant. It is
+never read as evidence that special values may be discarded. It unlocks
+nothing that `force` does not, and neither unlocks anything below.
+
+### The default-FP-environment restriction
+
+The pass declines outright, at function granularity, before looking at any
+loop, emitting `DECLINE-FPENV,<file>,<line>,<function>,<reason>`:
+
+| reason | condition | why it is fatal |
+|---|---|---|
+| `strictfp` | function has the `strictfp` attribute | the rewrite changes the count and the operands of the FP operations; a dynamic rounding mode gives a different result and the exception record differs |
+| `constrained-fp` | any `llvm.experimental.constrained.*` operation | per-operation rounding/exception metadata that the plain `fadd`/`fmul`/`fsub` and `llvm.exp`/`llvm.log`/`llvm.maxnum` emitted here cannot express |
+| `denormal-fp-math` | `denormal-fp-math` or `denormal-fp-math-f32` is not IEEE | flush-to-zero changes *which* intermediates become zero, and the rewrite's intermediates are a different set of values entirely |
+
+None of the three is overridable by `force`.
+
+### Errno, and the retraction of the earlier stance
+
+This document previously asserted that libm `errno` behaviour was
+irrelevant. **That claim is withdrawn.** It was borrowed from the matcher,
+and it is correct *there*: `matcher/SumOfProductsMatcher.cpp` only
+recognizes shapes, and recognition observes nothing. It does not transfer
+to this pass, which *replaces* the computation.
+
+The rewrite deletes N source `exp` evaluations and emits 2N different
+exponentials plus a `log`. Every errno write and exception flag the source
+loop performed is gone or different. For a conforming program with
+`math_errno` in force, that is observable behaviour — so errno is a
+legality question for the pass, not a shape question.
+
+The pass therefore matches **only `llvm.exp.*`**. A direct `exp`/`expf`
+call is declined with
+`DECLINE-ERRNO,<file>,<line>,<function>,external-exp-call`.
+
+This is the errno contract itself, not an arbitrary narrowing: clang emits
+the intrinsic exactly when errno is already unobservable. Measured, LLVM
+21, on this kernel:
+
+```
+$ clang-21 -O1 -DKERNEL -S -emit-llvm pass/test_softmax.c
+  %call = tail call double @exp(double noundef %0)
+
+$ clang-21 -O1 -fno-math-errno -DKERNEL -S -emit-llvm pass/test_softmax.c
+  %1 = tail call double @llvm.exp.f64(double %0)
+```
+
+Source-level `exp`/`expf` may be accepted later, but only when IR
+attributes prove the call has no observable memory or errno effect (LLVM 21
+models this: an errno-writing declaration carries `memory(errnomem: write)`).
+That extension point is documented in the pass and left unimplemented —
+it needs its own accept and decline tests.
+
+### Harness consequence: `-fno-math-errno` is now required
+
+`run_pass_test.sh` compiles the kernels with `-fno-math-errno`. This is
+load-bearing, not tuning: without it clang emits `call double @exp` at
+`-O1` and the kernel **does not match at all**. The script asserts that
+directly — it compiles the same source without the flag and requires
+`DECLINE-ERRNO` and zero rewrites.
+
+The script also now pins `clang-21` alongside `opt-21`. It previously drove
+unversioned `clang` into `opt-21`: on any machine with more than one clang
+installed, the IR producer and consumer could differ by major version.
+
+### Finite rounding vs. special values
+
+Two different categories, and the distinction is the whole safety argument:
+
+- **Finite rounding differences: permitted and intentional.** The
+  accumulation algorithm changes, so finite results are not bitwise
+  identical. Measured 1.37e-15 relative on the benign case (bound 1e-12).
+  This is exactly what the reassociation grant pays for, and it is the only
+  thing it pays for.
+- **Special-value differences: forbidden.** NaN, `+inf`, `-inf`, signed
+  zero and zero-trip behaviour are preserved exactly. These are not
+  tolerances — a difference here is a bug. The `oeq`-guarded exponent
+  differences exist for this and may not be removed.
+
+## Status of Deliverable 2's "semantics preservation is exact" precondition
+
+**Closed.**
+
+Two defects stood in the way, and both are now shut:
+
+1. **`-inf` / `+inf` produced NaN.** Closed by the `oeq`-guarded exponent
+   differences. Tested against constants *and*, since the oracle fix above,
+   against an independent reference.
+2. **errno was observable.** Open until the `llvm.exp`-only restriction
+   landed — and it was the larger of the two. The old opt-in gate
+   (`"unsafe-fp-math"="true"` or `force`) conflated permission to
+   reassociate with permission to change errno, exception flags, rounding
+   mode, denormal handling and special values. That is not a sufficient
+   contract, and while it was the only gate the precondition could not be
+   claimed no matter how good the infinity handling was.
+
+With the restriction in place, plus the FP-environment screen, the
+precondition holds **for the shape the pass matches**, under the contract in
+`pass/ELIGIBILITY.md`: finite rounding may change (that is what the
+reassociation grant buys); errno, exception flags, rounding mode and
+denormal behaviour cannot be observed by any eligible program; and NaN,
+`±inf`, signed zero and zero-trip behaviour are preserved exactly.
+
+Scope note, so this is not over-read: "exact" is claimed for special values
+and for observable FP environment, not for finite bit patterns, and only for
+the one loop shape in section *What it does*.
+
 ## The export hook, and why it exists
 
 The linear replacement `exp(m + log(s))` equals the original sum in exact
@@ -118,10 +264,17 @@ surgery, visible in the build commands). Output, verbatim:
 
 ```
 == 1. build plugin ==
-plugin: ~/logrange-pass/build/LogRewrite.so
+plugin: /home/chels/logrange-pass/build/LogRewrite.so
 == 2. compile kernels to IR (identical source, two names) ==
 == 3. rewrite (force=1: the explicit reassociation grant) ==
-REWRITE,test_softmax.c,29,softmax_denom_rw
+REWRITE,pass/test_softmax.c,29,softmax_denom_rw,HIGH,exp-chain;exp-sum
+PASS,gate_declines_above_threshold
+PASS,unknown_parameter_refused
+== 3b. safety declines (force must NOT override any of these) ==
+PASS,decline_external_exp_call
+PASS,decline_strictfp_under_force
+PASS,decline_constrained_fp_under_force
+PASS,decline_denormal_env_under_force
 == 4. codegen, link, run ==
 INFO,benign,orig=1654.7821267630925,rw=1654.7821267630948,rel=1.37e-15,logsum=7.4114246336847733,logref=7.4114246336847733
 PASS,benign_linear_agree_1e-12
@@ -131,10 +284,40 @@ PASS,rescue_orig_underflows_to_zero
 PASS,rescue_exported_logsum_finite
 PASS,rescue_exported_logsum_correct
 INFO,rescue,rw_linear_underflows_too=1 (expected 1)
-INFO,nan,orig=nan,rw=nan,logsum=nan
+INFO,nan,orig=nan,rw=nan,logsum=nan,logref=nan
 PASS,nan_orig_propagates
 PASS,nan_rw_propagates
 PASS,nan_exported_logsum_propagates
+PASS,nan_matches_reference
+INFO,neginf,orig=1645.583106855303,rw=1645.5831068553036,rel=4.15e-16,logsum=7.4058500726414902,logref=7.4058500726414902
+PASS,neginf_rw_finite
+PASS,neginf_linear_agree_1e-12
+PASS,neginf_exported_logsum
+INFO,allneginf,orig=0,rw=0,logsum=-inf,logref=-inf
+PASS,allneginf_orig_zero
+PASS,allneginf_rw_zero
+PASS,allneginf_exported_logsum_neginf
+PASS,allneginf_matches_reference
+INFO,nan_first,orig=nan,rw=nan,logsum=nan,logref=nan
+PASS,nan_first_orig_propagates
+PASS,nan_first_rw_propagates
+PASS,nan_first_exported_logsum_propagates
+PASS,nan_first_matches_reference
+INFO,posinf,orig=inf,rw=inf,logsum=inf,logref=inf
+PASS,posinf_orig_is_inf
+PASS,posinf_rw_is_inf
+PASS,posinf_exported_logsum_is_inf
+PASS,posinf_matches_reference
+INFO,nan_with_infs,orig=nan,rw=nan,logsum=nan,logref=nan
+PASS,nan_with_infs_orig_propagates
+PASS,nan_with_infs_rw_propagates
+PASS,nan_with_infs_matches_reference
+INFO,zerotrip,orig=0,rw=0,logsum=12345,logref=-inf
+PASS,zerotrip_orig_zero
+PASS,zerotrip_rw_zero
+PASS,zerotrip_bitwise_identical
+PASS,zerotrip_export_not_written
+PASS,zerotrip_reference_neginf
 PASS,negctl_plain_sum_untouched
 PASS,negctl_dot_sum_untouched
 PASS,negctl_invariant_exp_untouched
@@ -148,10 +331,43 @@ run_pass_test: PASS
 - **Rescue** (values ≈ −800): the original sum is exactly 0.0, while the
   exported log form is −792.6197…, matching the reference to 1e-12 relative.
   The rw *linear* value is also 0.0.
-- **NaN**: one NaN input poisons original, rewritten, and exported values.
+- **NaN**: one NaN input poisons original, rewritten, and exported values,
+  in the first position (`m` still `-inf`) as well as mid-stream.
+- **`-inf`** (4 of 1000 terms, including `x[0]` and `x[999]`): linear results
+  agree to 4.15e-16 relative, exported logsum matches the reference. All 1000
+  terms `-inf`: both sums exactly 0.0, exported logsum `-inf`.
+- **`+inf`**: both sums `+inf`, exported logsum `+inf`.
+- **NaN mixed with infinities**: NaN wins, in kernel and reference alike.
+- **Zero trip count** (`n = 0`): both sums exactly `0.0` and bit-identical;
+  the export hook is *not* written (the loop guard bypasses the rewritten
+  exit block entirely), which the harness asserts against a sentinel rather
+  than glossing over.
+- **Safety declines** (section 3b, all under `force`): external `exp` call,
+  `strictfp`, constrained ops with `strictfp` stripped, and
+  `-fdenormal-fp-math=preserve-sign` each produce 0 rewrites and the
+  expected reason token.
 - **Negative controls** (same module): plain sum, dot product, and
   loop-invariant-`exp` sum are declined — the script asserts *exactly one*
   `REWRITE` line and the harness checks their orig/rw results bit-identical.
+
+### The reference oracle was wrong on infinities, and is now fixed
+
+`ref_logsumexp()` in `test_softmax.c` did the max-shift unconditionally.
+The shift is exactly what breaks on infinities: `x_i - M` is `inf - inf`
+whenever `M` is infinite and `x_i == M`. Measured, old version:
+
+```
+old_ref all_neg_inf  = -nan   (linear loop gives log(0) = -inf)
+old_ref pos_inf      = -nan   (linear loop gives log(inf) = inf)
+old_ref nan_with_inf = -nan   (linear loop gives nan)
+old_ref zero_trip    = -inf   (correct)
+```
+
+So the infinity tests added earlier were asserting against constants only —
+**not** reference-validated. The reference now handles NaN, `+inf` and
+all-`-inf` before the shift, in that order (NaN beats `+inf`, because the
+linear loop adds a NaN term whatever else it has added). The constant-based
+assertions are kept as belt and braces; the infinity cases now check both.
 
 Bug worth keeping on record: the first working version passed every test
 while never wiring in the linear replacement. `SplitEdge`'s LCSSA
@@ -164,11 +380,20 @@ consumed, and the benign case shows 1.37e-15.
 
 ## Limitations
 
-- **Single shape.** Plain `fadd` + direct `exp` only: no `fmuladd`, no
+- **Single shape.** Plain `fadd` + `llvm.exp` only: no `fmuladd`, no
   `sum += w[i]*exp(t)` (the mixture-likelihood shape), no float
   accumulators, no nonzero initial value, no multi-exit loops, only one FP
   phi per loop, update must dominate the exit branch (rotated loops).
   Everything else is declined, by design.
+- **`-fno-math-errno` required at the call site.** Source-level `exp`/`expf`
+  is declined outright, so a kernel compiled without the flag is not
+  eligible at all. This is the errno contract (see above), not a defect —
+  but it does mean the pass currently covers a strictly narrower set of real
+  translation units than the matcher reports hits in. The attribute-proved
+  extension point is the way out, and is unimplemented.
+- **Default FP environment required.** `strictfp`, any constrained-FP
+  operation, and any non-IEEE denormal mode are declined at function
+  granularity. No mechanism, including `force`, overrides this.
 - **No downstream log propagation.** The linear replacement re-underflows
   exactly when the rescue matters; the win is only observable through the
   export hook. Propagating `m + log(s)` into downstream users (softmax's
@@ -177,11 +402,6 @@ consumed, and the benign case shows 1.37e-15.
 - **The export hook is a prototype.** One process-global external symbol,
   last-rewrite-wins, and any module the pass rewrites must be linked
   against something defining `__logrange_logsum`.
-- **`-inf` inputs produce NaN.** `t = -inf` while `m = -inf` gives
-  `m - newm = -inf - -inf = NaN` in the rescale factor. The linear
-  original would compute `exp(-inf) = 0` and carry on. A matcher-side
-  guard (skip loops whose input can be −inf) or an explicit zero-guard in
-  the emitted code would fix it; documented rather than solved here.
 - **Profitability gating is wired, and cannot decline anything yet.** The
   pass computes the same risk verdict the matcher does and refuses to rewrite
   below `min-risk` (default HIGH), logging
@@ -205,7 +425,9 @@ consumed, and the benign case shows 1.37e-15.
 
 | file | role |
 |---|---|
+| `ELIGIBILITY.md` | **normative** contract: requirements and guarantees |
 | `LogRewritePass.cpp` | the plugin (`log-rewrite`, param `<force>`) |
 | `CMakeLists.txt` | standalone plugin build, same pattern as `matcher/` |
 | `test_softmax.c` | one-file kernel + harness, compiled three ways |
 | `run_pass_test.sh` | full build → rewrite → link → run; ends `PASS` |
+| `PROTOTYPE.md` | this file: design narrative and measured record |

@@ -12,6 +12,14 @@ Some sums fail in linear floating point: mixture likelihoods, forward-algorithm
 recursions, softmax denominators — anything where individual terms underflow or
 overflow. A naive loop returns 0.0, inf, or NaN.
 
+The header rescues all three. The diagnostic finds two of them: mixture
+likelihoods and softmax denominators are flagged HIGH, while the forward
+algorithm is not flagged in either form it is usually written — `out[j] += ...`
+is rejected at the mid-loop-read guard, and the register-accumulator form is
+seen but graded LOW, because its underflow accumulates across the enclosing
+time-step loop while each inner reduction looks unremarkable. See
+[DIAGNOSTIC.md](matcher/DIAGNOSTIC.md), "Scope limits".
+
 LogRange is a C++17 header-only library for signed log-domain accumulation.
 Values are `{sign, log|x|}`; the header provides pairwise arithmetic
 (`logsumexp2`, `log_add`, `log_mul`, `log_div`) and two accumulators:
@@ -98,9 +106,9 @@ Benchmarks (Release only):
 | `include/logrange/log_math.h` | library (the product) | benchmarked, formal error bound |
 | `tests/` | unit, contract, accuracy suites | run in CI |
 | `bench/` | benchmark harness | see BENCHMARKS.md |
-| `matcher/` | LLVM plugin + hit-rate study | [RESULTS.md](matcher/RESULTS.md) |
-| `matcher/diagnose.sh` | range lint | [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
-| `pass/` | LLVM pass prototype, opt-in | [PROTOTYPE.md](pass/PROTOTYPE.md) |
+| `matcher/` | LLVM plugin + hit-rate study | beta, gaps stated — [RESULTS.md](matcher/RESULTS.md) |
+| `matcher/diagnose.sh` | range lint | beta, the front door — [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
+| `pass/` | LLVM pass prototype, opt-in | prototype, not installed — [PROTOTYPE.md](pass/PROTOTYPE.md) |
 
 Matcher and pass: Linux/WSL, LLVM 21.
 Library and tests: C++17 compiler only.

@@ -38,6 +38,18 @@ warning rather than misread — regenerate the scan instead.
 
 ## Scope limits
 
+- **It is selective by design, and the base rate is worth knowing.** Across
+  the study corpus — GSL 2.8, darknet, libsvm — 2859 innermost FP loops
+  produced 783 shape hits (27.4%) and **5 HIGH findings on 4 source lines**
+  (0.17% of loops). One HIGH finding in a large codebase is the expected
+  outcome, not a sign the scan failed. The bulk of the shape hits are
+  benign-range dot products, correctly summarized as a LOW count.
+- **Two of the three shapes the README names as motivating this project are
+  covered.** Mixture likelihood and the softmax denominator triage HIGH. The
+  forward algorithm does not, in either form it is usually written — see the
+  two bullets below and RESULTS.md, "Coverage against the shapes this project
+  names". `coverage.c` plus `./run_study.sh coverage` assert that table in
+  both directions, so the gap cannot silently close or widen.
 - **This is a source-shape lint, not a range proof.** It reports that a
   reduction has the sum-of-products shape plus static risk signals
   (exp/log in the chain, deep factor chains, unbounded trip counts). It

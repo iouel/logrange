@@ -60,6 +60,55 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Changed — the rewrite pass's eligibility contract narrowed. Tooling only;
+the header is unaffected.**
+
+`pass/` is a labeled prototype, not installed and not packaged, so this
+changes no shipped interface. It is recorded because it retracts a documented
+stance and closes a stated precondition.
+
+- **Infinite terms produced NaN.** The streaming update's exponents are
+  differences against the running max, and `x - x` is NaN when `x` is
+  infinite. Two reachable cases: `t = -inf` arriving while the max is still
+  `-inf` (a zero term — `exp(-inf) = 0`, ordinary input, the documented one)
+  and `t = +inf` (undocumented, same root cause). Each difference is now
+  `(x oeq newm) ? 0.0 : x - newm` — 4 instructions per iteration against 2
+  `exp` calls, and no finite result moves. `oeq` is load-bearing: a NaN
+  operand is never equal to `newm`, so NaN still propagates.
+- **Errno.** PROTOTYPE.md previously stated that libm `errno` behaviour was
+  irrelevant. **Withdrawn.** That is true of `matcher/`, which recognizes
+  shapes and observes nothing; it does not transfer to a pass that *replaces*
+  the computation. The rewrite deletes N source `exp` evaluations and emits
+  2N different exponentials plus a `log`. The pass now matches **only
+  `llvm.exp.*`** and declines direct `exp`/`expf` with `DECLINE-ERRNO`.
+  Measured basis on LLVM 21: `-O1` emits `call double @exp`;
+  `-O1 -fno-math-errno` emits `llvm.exp.f64` — the intrinsic is exactly the
+  marker that errno is already unobservable.
+- **FP environment.** `strictfp` functions, functions containing
+  `llvm.experimental.constrained.*`, and non-IEEE `denormal-fp-math` modes
+  are declined with `DECLINE-FPENV`.
+- **`force` narrowed** to waive reassociation *proof* and nothing else — not
+  the structural match, not the FP-environment screen, not the errno
+  contract, not special-value correctness. `"unsafe-fp-math"="true"` is
+  retained as an alternate opt-in only, never as evidence that special values
+  may be discarded.
+- **New `pass/ELIGIBILITY.md`**, normative; PROTOTYPE.md is the design
+  narrative and measured record, and ELIGIBILITY.md wins on conflict.
+- **Fixed — the harness's reference oracle.** `ref_logsumexp()` applied the
+  max-shift unconditionally and returned NaN for all-`-inf` and for any input
+  containing `+inf`. The infinity assertions added earlier the same day were
+  therefore constant-based only, not reference-validated. Now handles NaN,
+  `+inf` and all-`-inf` before the shift.
+- **Harness.** Requires `-fno-math-errno` (without it the kernel no longer
+  matches), pins `clang-21` beside `opt-21`, and deletes the plugin before
+  building so a failed build cannot leave stale code under test.
+
+This closes Deliverable 2's "semantics preservation is exact" precondition
+for the one shape the pass matches. Finite rounding differences remain
+permitted and intentional — 1.37e-15 relative measured against a 1e-12 bound
+— which is what the reassociation grant buys. Special-value differences are
+forbidden.
+
 **Changed — bound presentation, after an independent read.**
 
 No counterexample to either corrected contract was found; these are

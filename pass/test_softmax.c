@@ -90,13 +90,44 @@ static double nrand(void) {
 }
 
 /* Max-shift logsumexp reference, computed independently in the harness:
- * log(sum exp(x_i)) = M + log(sum exp(x_i - M)),  M = max_i x_i. */
+ * log(sum exp(x_i)) = M + log(sum exp(x_i - M)),  M = max_i x_i.
+ *
+ * The special cases are handled BEFORE the shift, because the shift itself
+ * is what breaks on infinities: x_i - M is inf - inf = NaN whenever M is
+ * infinite and x_i == M. The earlier version of this function did the shift
+ * unconditionally and therefore returned NaN for all-(-inf) input and for
+ * any input containing +inf — i.e. it was not an oracle at all in exactly
+ * the cases the pass's infinity guard exists to get right, which is why the
+ * infinity tests below assert against constants as well.
+ *
+ * Order of the special cases matters and follows the linear loop being
+ * modelled, `s += exp(x_i)`:
+ *   NaN anywhere    -> some term is exp(NaN) = NaN, and NaN + anything is
+ *                      NaN, so the sum is NaN and log(NaN) is NaN. Checked
+ *                      first: NaN beats +inf here, because the linear loop
+ *                      adds a NaN term whatever else it has added.
+ *   +inf present    -> that term is exp(+inf) = +inf; every other term is
+ *                      non-negative and non-NaN, so the sum is +inf.
+ *   all -inf        -> every term is exp(-inf) = 0, the sum is exactly 0.0,
+ *                      and log(0) = -inf. Also the n == 0 (zero-trip) case:
+ *                      the empty sum is 0.0 and its log is -inf, which is
+ *                      what the loop below returns for m = -inf, s = 0.
+ * Remaining -inf entries are ordinary zero terms: M is then finite, so
+ * x_i - M = -inf is a well-defined exponent and exp gives exactly 0. */
 static double ref_logsumexp(const double *x, int n) {
+  int i;
+  for (i = 0; i < n; ++i)
+    if (isnan(x[i])) return NAN;
+  for (i = 0; i < n; ++i)
+    if (x[i] == INFINITY) return INFINITY;
+
   double m = -INFINITY;
-  for (int i = 0; i < n; ++i)
+  for (i = 0; i < n; ++i)
     if (x[i] > m) m = x[i];
-  double s = 0.0;
-  for (int i = 0; i < n; ++i)
+  if (m == -INFINITY) return -INFINITY; /* all terms -inf, or n == 0 */
+
+  double s = 0.0;   /* m is finite here, so every x_i - m is well defined */
+  for (i = 0; i < n; ++i)
     s += exp(x[i] - m);
   return m + log(s);
 }
@@ -158,10 +189,123 @@ int main(void) {
     double so = softmax_denom_orig(x, N);
     double sr = softmax_denom_rw(x, N);
     double lg = __logrange_logsum;
-    printf("INFO,nan,orig=%g,rw=%g,logsum=%g\n", so, sr, lg);
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,nan,orig=%g,rw=%g,logsum=%g,logref=%g\n", so, sr, lg, lref);
     check("nan_orig_propagates", isnan(so));
     check("nan_rw_propagates", isnan(sr));
     check("nan_exported_logsum_propagates", isnan(lg));
+    check("nan_matches_reference", isnan(lref) && isnan(lg));
+  }
+
+  /* (e) -inf inputs. A -inf log-magnitude encodes a zero term: exp(-inf)=0.
+   *     Ordinary input, not pathological. The streaming update must not
+   *     manufacture a NaN out of -inf - -inf. Leading -inf (x[0]) is the
+   *     hard case: the running max is still -inf, so newm == m == t. */
+  for (i = 0; i < N; ++i) x[i] = nrand();
+  x[0] = -INFINITY;
+  x[1] = -INFINITY;
+  x[500] = -INFINITY;
+  x[N - 1] = -INFINITY;
+  {
+    double so = softmax_denom_orig(x, N);
+    double sr = softmax_denom_rw(x, N);
+    double lg = __logrange_logsum;
+    double rel = fabs(sr - so) / fabs(so);
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,neginf,orig=%.17g,rw=%.17g,rel=%.3g,logsum=%.17g,logref=%.17g\n",
+           so, sr, rel, lg, lref);
+    check("neginf_rw_finite", isfinite(sr));
+    check("neginf_linear_agree_1e-12", rel < 1e-12);
+    check("neginf_exported_logsum", fabs(lg - lref) <= 1e-12 * fabs(lref));
+  }
+
+  /* (f) All terms -inf: the sum is exactly 0.0 and its log is -inf. */
+  for (i = 0; i < N; ++i) x[i] = -INFINITY;
+  {
+    double so = softmax_denom_orig(x, N);
+    double sr = softmax_denom_rw(x, N);
+    double lg = __logrange_logsum;
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,allneginf,orig=%.17g,rw=%.17g,logsum=%.17g,logref=%.17g\n",
+           so, sr, lg, lref);
+    check("allneginf_orig_zero", so == 0.0);
+    check("allneginf_rw_zero", sr == 0.0);
+    check("allneginf_exported_logsum_neginf", lg == -INFINITY);
+    check("allneginf_matches_reference", lref == -INFINITY && lg == lref);
+  }
+
+  /* (g) NaN in the first position: the -inf guard must not swallow it.
+   *     (Case (c) only covers a NaN arriving after the max is finite.) */
+  for (i = 0; i < N; ++i) x[i] = nrand();
+  x[0] = NAN;
+  {
+    double so = softmax_denom_orig(x, N);
+    double sr = softmax_denom_rw(x, N);
+    double lg = __logrange_logsum;
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,nan_first,orig=%g,rw=%g,logsum=%g,logref=%g\n",
+           so, sr, lg, lref);
+    check("nan_first_orig_propagates", isnan(so));
+    check("nan_first_rw_propagates", isnan(sr));
+    check("nan_first_exported_logsum_propagates", isnan(lg));
+    check("nan_first_matches_reference", isnan(lref) && isnan(lg));
+  }
+
+  /* (h) +inf input: the other inf - inf face of the same guard (t = +inf
+   *     makes newm = +inf, so t - newm would be NaN). Linear gives +inf. */
+  for (i = 0; i < N; ++i) x[i] = nrand();
+  x[7] = INFINITY;
+  {
+    double so = softmax_denom_orig(x, N);
+    double sr = softmax_denom_rw(x, N);
+    double lg = __logrange_logsum;
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,posinf,orig=%g,rw=%g,logsum=%g,logref=%g\n", so, sr, lg, lref);
+    check("posinf_orig_is_inf", so == INFINITY);
+    check("posinf_rw_is_inf", sr == INFINITY);
+    check("posinf_exported_logsum_is_inf", lg == INFINITY);
+    check("posinf_matches_reference", lref == INFINITY && lg == lref);
+  }
+
+  /* (i) NaN mixed WITH infinities: NaN must win, in both the kernel and the
+   *     reference. This is the case that pins the reference's ordering —
+   *     a +inf-first reference would report +inf and disagree with the
+   *     linear loop, which adds a NaN term and stays NaN. */
+  for (i = 0; i < N; ++i) x[i] = nrand();
+  x[3] = -INFINITY;
+  x[7] = INFINITY;
+  x[400] = NAN;
+  {
+    double so = softmax_denom_orig(x, N);
+    double sr = softmax_denom_rw(x, N);
+    double lg = __logrange_logsum;
+    double lref = ref_logsumexp(x, N);
+    printf("INFO,nan_with_infs,orig=%g,rw=%g,logsum=%g,logref=%g\n",
+           so, sr, lg, lref);
+    check("nan_with_infs_orig_propagates", isnan(so));
+    check("nan_with_infs_rw_propagates", isnan(sr));
+    check("nan_with_infs_matches_reference", isnan(lref) && isnan(lg));
+  }
+
+  /* (j) Zero trip count. n = 0: the empty sum is exactly 0.0. The rewritten
+   *     loop is bypassed entirely by its guard, so the rewritten exit block
+   *     never executes and the export hook is NOT written — assert that
+   *     rather than pretend otherwise. The reference's empty sum is
+   *     log(0) = -inf, consistent with the streaming state m=-inf, s=0. */
+  {
+    double sentinel = 12345.0;
+    __logrange_logsum = sentinel;
+    double so = softmax_denom_orig(x, 0);
+    double sr = softmax_denom_rw(x, 0);
+    double lg = __logrange_logsum;
+    double lref = ref_logsumexp(x, 0);
+    printf("INFO,zerotrip,orig=%.17g,rw=%.17g,logsum=%.17g,logref=%.17g\n",
+           so, sr, lg, lref);
+    check("zerotrip_orig_zero", so == 0.0);
+    check("zerotrip_rw_zero", sr == 0.0);
+    check("zerotrip_bitwise_identical", so == sr && signbit(so) == signbit(sr));
+    check("zerotrip_export_not_written", lg == sentinel);
+    check("zerotrip_reference_neginf", lref == -INFINITY);
   }
 
   /* (d) Negative controls: loops the pass must have declined. Both copies
