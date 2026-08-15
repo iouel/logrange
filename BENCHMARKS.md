@@ -125,6 +125,14 @@ claim. `bound_search` attacks the same claim directly and does refute it.
 Under the corrected bound, observed sits 6–1000× under on these scenarios and
 0.85× at the worst point the search could construct.
 
+Both new terms are small here, which is why these scenarios missed both
+mechanisms rather than just one. On the n=10⁶ row the bound moved 7.438e-15 →
+9.966e-15, so D + |log|S|| ≈ 22.8: about 18 of that is |log|S|| (the sum is
+~9e7) and 4–5 is D, because `logmag ~ N(0,3)` keeps every term within a few
+log units of the running reference. The search reaches the mechanisms by
+going where these scenarios do not — depth clusters for D, and output
+magnitudes out to |log|S|| ~ 500 for the reduction term.
+
 ## Second toolchain: the bound on glibc
 
 The bound assumes `exp()` accurate to within 1 ulp. Every number above comes

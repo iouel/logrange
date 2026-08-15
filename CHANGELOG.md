@@ -15,30 +15,43 @@ is recorded here with its old and new values.
 
 The 0.2.0 contract was `rel err ≤ cond·(3k+4)·u`. It was refuted, not
 adjusted: `tests/bound_search.cpp` searches for counterexamples and found
-151 of 400 random inputs violating it, worst case 15.8× over. A constructed
-counterexample reaches 5.8× at `cond = 1, k = 0`, where the old bound is bare
-`4u`. Two terms were missing.
+151 of 400 random inputs violating that form, worst case 15.8× over. A
+constructed counterexample reaches 5.8× at `cond = 1, k = 0`, where the old
+bound is bare `4u`. Two terms were missing.
 
 - **Argument rounding.** The derivation charged each term `2u` for its
   `exp()`. It ignored the rounding of `exp()`'s *argument*: `fl(L_i − m_i)`
   differs from the exact difference by up to `u·d_i` where `d_i = m_i − L_i`,
   and `exp` converts that into a relative error of the same size, so a term
-  costs `(d_i + 1)·u`. Terms at equal depth share one rounding error
-  coherently, with nothing to cancel it. Enters as `D`, the mass-weighted
-  mean insertion depth (~`ln n` for ordinary data, ≤ ~745 worst case).
+  costs `(d_i + 2)·u` — the `2u` is unchanged and still sits inside the `+4`,
+  and `d_i·u` is what was missing. Terms at equal depth share one rounding
+  error coherently, with nothing to cancel it. Enters as `D`, the
+  mass-weighted mean insertion depth, where depth is the gap in *log space*
+  below the running reference (~`ln n` for ordinary data, capped by the ~745
+  vanishing window since deeper terms scale to zero and leave the sum).
 - **Final reduction.** `out.log_abs = m_log + log|net|` rounds to within
   `u·|log|S||`, and absolute error in log space is relative error in linear
   space. Invisible for sums near 1; at `log|S| ~ 700` — the regime this
   library exists for — it is ~700u on its own, and it never touches `cond`.
   This is what most of the random refutations were hitting.
 
-New: `rel err ≤ cond·(3k + 4 + D)·u + |log|S||·u`. Worst observed/bound
-across the whole search is now 0.85, so it is tight enough to stay
-falsifiable. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
+New: `rel err ≤ cond·(3k + 4 + D)·u + |log|S||·u`. The search scores every
+input against both forms; the new one was exceeded zero times out of 400,
+worst observed/bound 0.85, so it is tight enough to stay falsifiable rather
+than padded until nothing can reach it. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
 
 Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
+
+**Decided**
+- **Double only, by design.** Stated in the header's Precision block rather
+  than left as an unmentioned limit. Every constant in the error contract is
+  double-specific (u = 2⁻⁵³, the ~745 log-unit vanishing window, and the new
+  D term that window caps), so a float variant means re-deriving the bound at
+  u = 2⁻²⁴ with a ~103 log-unit window and a finer accuracy reference — not a
+  typedef. The rewrite pass already declines float accumulators. Callers with
+  float data widen at the accumulator boundary.
 
 **Added**
 - `tests/bound_search.cpp` (ctest: `bound_search`), the adversarial search.

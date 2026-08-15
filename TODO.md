@@ -8,8 +8,9 @@ labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 Sections are not strictly in execution order. The bound review ran first, on
 the reasoning that it could move the error contract and the rest of 1.0 is
 written on top of it. **It did move the contract** (see below), which is why
-it ran first. **Next up is the float decision**, which is a statement about
-the scope of that now-corrected bound.
+it ran first. The float decision followed it, since that is a statement about
+the scope of the corrected bound. **Next up is the second-machine benchmark
+run**, then packaging.
 
 ## Blocking 1.0 — library
 
@@ -18,8 +19,9 @@ the scope of that now-corrected bound.
       windows-msvc + ubuntu-gcc + ubuntu-clang. The gcc/clang flag branch
       (`-Wall -Wextra -Werror -ffp-contract=off`) needed no code fixes:
       clean under gcc 15.2 and clang 21.1. test_accuracy holds on glibc with
-      4.5×–5100× slack, so the bound's 1-ulp `exp()` assumption survives a
-      second libm (BENCHMARKS.md, "Second toolchain"). Verified green on the
+      6×–5300× slack (against the corrected bound), so its 1-ulp `exp()`
+      assumption survives a second libm (BENCHMARKS.md, "Second toolchain").
+      Verified green on the
       runners (gcc 13.3, clang 18.1) as well as locally (gcc 15.2, clang
       21.1); the accuracy table is bit-identical across all four.
 - [x] **Version identity in the header.** Done 2026-08-15.
@@ -28,17 +30,17 @@ the scope of that now-corrected bound.
       is the source of truth: CMake parses it (the hardcoded `project(VERSION
       0.1)` had already drifted a release behind), and test_log_math checks
       the string against the numeric parts. Both guards negative-tested.
-- [ ] **Float support decision.** Everything is double-only. Either add
-      `log_value_f`/templates or state "double only, by design" in the
-      header contract. Deciding is the deliverable; implementing is optional.
-      *Rests on the bound review, and is close to settled by it.* The
-      contract is written in double-specific constants: u = 2⁻⁵³, the ~745
-      log-unit vanishing window (the subnormal floor at 2⁻¹⁰⁷⁴), and
-      test_accuracy's double-double reference. Float is not a typedef — it
-      means re-deriving at u = 2⁻²⁴, re-basing that reference, and a rescue
-      window of ~103 log units (2⁻¹⁴⁹). The pass already declines float
-      accumulators, so double-only is also the coherent answer for the
-      toolchain. Decide in the same pass that restates the bound.
+- [x] **Float support decision.** Decided 2026-08-15: **double only, by
+      design**, stated in the header's Precision block. The reasoning is the
+      bound's: every constant in the contract is double-specific — u = 2⁻⁵³,
+      the ~745 log-unit vanishing window (subnormal floor 2⁻¹⁰⁷⁴), and now
+      the depth term D that the same window caps. Float is not a typedef; it
+      needs the bound re-derived at u = 2⁻²⁴ with a ~103 log-unit window
+      (2⁻¹⁴⁹) and an accuracy reference finer than the tests' double-double.
+      The rewrite pass already declines float accumulators, so double-only is
+      coherent across the toolchain. Callers with float data widen at the
+      accumulator boundary. Implementing a float variant stays optional and
+      is now explicitly out of scope for 1.0.
 - [ ] **Second-machine benchmark run.** All numbers come from one Ryzen
       5800X. Criterion 2's "within noise" claim deserves one confirmation on
       different hardware (any second machine; the harness measures its own
@@ -71,6 +73,13 @@ the scope of that now-corrected bound.
       exists now is an author's derivation with an adversarial search
       behind it, which is strictly better than six fixed scenarios but is
       not independent review.
+
+      *Why it ran first, kept as the record of the call.* The bound is what
+      this library claims that every hand-rolled logsumexp lacks; it is the
+      product. The header contract, README, CHANGELOG and BENCHMARKS.md all
+      inherit from it, so a bound that moves moves them with it — and this
+      one moved. Work finished before the review might have needed redoing;
+      work finished after it will not.
 - [ ] **Bound review, second pass.** What the first pass left: `pos_accum`'s
       (n+3k+3)·u has had no review and no adversarial search (bound_search
       only attacks rp_accum, and the same argument-rounding mechanism
@@ -78,22 +87,13 @@ the scope of that now-corrected bound.
       independently; the n·u² threshold. An independent read of the
       corrected rp_accum derivation belongs here too.
 
-      *Why it goes first.* The bound is the thing this library claims that
-      every hand-rolled logsumexp lacks; it is the product. The header
-      contract, README, CHANGELOG, and BENCHMARKS.md all inherit from it, so
-      a bound that moves moves them with it. Work finished before the review
-      may have to be redone; work finished after it will not.
-
-      *Why re-derivation alone is the weak form.* It is the author
-      reproducing the author's own reasoning, blind in the same places —
-      including, specifically, the two items flagged above. Pair it with
-      adversarial search. `test_accuracy` asserts six fixed scenarios, while
-      the bound is a universal claim over all inputs, orderings, and k.
-      Sweep condition number, rescale count, term ordering, and pos/neg
-      correlation structure to maximize observed/bound, and report the worst
-      ratio found. Failing to break the bound across a wide search is
-      evidence independent of whether the algebra is right; breaking it is
-      the most valuable single result available here.
+      *Method: search, not just re-reading.* Re-derivation alone is the
+      author reproducing the author's own reasoning, blind in the same
+      places — which is exactly how the first pass went wrong, and the two
+      questions flagged in advance were not the ones that broke it. So
+      `pos_accum` needs its own families in `bound_search`, not a re-read:
+      depth clusters especially, since the argument-rounding mechanism
+      applies to it unchanged and its (n+3k+3)·u makes no allowance for one.
 - [ ] **BENCHMARKS.md refresh at 1.0 flags.** If anything above changes
       flags or code paths, the published numbers must be re-run, not edited.
 
