@@ -178,8 +178,22 @@ run**, then packaging.
 
 ## Tooling — ships as beta, gaps stated
 
-- [ ] **Wire triage → pass** (intent step 9): the pass should consume the
-      matcher's HIGH-risk verdict instead of rewriting every matched shape.
+- [x] **Wire triage → pass** (intent step 9). Done 2026-08-15, after the task
+      turned out to be blocked on a matcher bug. The pass now computes the
+      matcher's risk verdict for its matched loop, declines below `min-risk`
+      (default HIGH), and logs the verdict on every rewrite. Both branches
+      are tested, including that a misspelled parameter is refused rather
+      than silently reverting to the default.
+      *The blocker, and the real finding:* the matcher could not verdict the
+      pass's shape at all. Its `nMul >= 1` rule excluded plain sums of `exp`
+      — the softmax denominator, this project's marquee shape — so scanning
+      `pass/test_softmax.c` produced zero hits, and darknet's softmax had
+      matched only because it divides by a temperature. Fixed and the study
+      re-run: 783 hits against 781, HIGH 5 against 3 (matcher/RESULTS.md,
+      "The rule that excluded the marquee shape").
+      *Honest limit:* because the pass's only shape requires an `exp` call,
+      its verdict is always HIGH and the gate cannot currently decline a real
+      input. It becomes load-bearing when shape coverage widens.
 - [ ] **Diagnostic ergonomics.** One-command entry point (point it at a
       compile_commands.json or a build dir) instead of the manual
       cc-bc.sh/run_study.sh two-step; package the three tools' WSL/LLVM-21

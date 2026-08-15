@@ -3,7 +3,8 @@
  * below BEFORE any real-codebase numbers are collected. If this gate fails,
  * no study numbers exist that day.
  *
- * Expected: 4 HITs (dot, sop3, mixture_likelihood, fsub_reduction)
+ * Expected: 5 HITs (dot, sop3, mixture_likelihood, fsub_reduction,
+ *                   softmax_denom)
  *           2 examined-but-miss (plain_sum, midread)
  *           integer_loop not examined at all.
  */
@@ -38,8 +39,19 @@ double fsub_reduction(const double *a, const double *b, size_t n) {
   return s;
 }
 
-/* MISS (examined): plain sum, no product in the chain. Rescuable without
- * logsumexp; deliberately out of scope. */
+/* HIT (transcendental, exp-sum): the textbook softmax denominator — a plain
+ * sum of exp with no multiply anywhere. This is the shape pass/ rewrites and
+ * the one the intent names, and the nMul >= 1 rule used to drop it: darknet's
+ * softmax matched only because it divides by a temperature. Added when that
+ * was fixed, 2026-08-15. */
+double softmax_denom(const double *x, size_t n, double largest) {
+  double s = 0.0;
+  for (size_t i = 0; i < n; ++i) s += exp(x[i] - largest);
+  return s;
+}
+
+/* MISS (examined): plain sum, no product AND no exponent in the chain.
+ * Rescuable without logsumexp; deliberately out of scope. */
 double plain_sum(const double *a, size_t n) {
   double s = 0.0;
   for (size_t i = 0; i < n; ++i) s += a[i];

@@ -26,6 +26,7 @@ LOOP,./examples/go.c,290,run_mcts
 LOOP,./examples/go.c,518,run_mcts
 LOOP,./examples/go.c,290,run_mcts
 LOOP,./examples/go.c,562,pick_move
+HIT,./examples/go.c,562,pick_move,constant,3,0,transcendental,HIGH,exp-chain;exp-sum
 LOOP,./examples/go.c,565,pick_move
 LOOP,./examples/go.c,290,check_ko
 LOOP,./examples/go.c,806,ponder

@@ -132,9 +132,28 @@ void printLoc(raw_ostream &OS, const Instruction *I, const Function &F) {
   OS << "," << F.getName();
 }
 
+// Risk tiers, ordered, matching SumOfProductsMatcher.cpp's triage. Kept as a
+// plain enum rather than shared code because the two plugins build
+// independently; the rule they encode is one sentence and is stated in both.
+// None is above High deliberately: it is a threshold no verdict can reach, so
+// min-risk=none means "decline everything" and gives the gate's refusal path
+// something to do while every shape this prototype matches verdicts HIGH.
+enum class Risk { Low = 0, Med = 1, High = 2, None = 3 };
+
+const char *riskName(Risk R) {
+  switch (R) {
+  case Risk::None: return "NONE";
+  case Risk::High: return "HIGH";
+  case Risk::Med:  return "MED";
+  default:         return "LOW";
+  }
+}
+
 struct LogRewritePass : PassInfoMixin<LogRewritePass> {
   bool Force;
-  explicit LogRewritePass(bool Force) : Force(Force) {}
+  Risk MinRisk = Risk::High;
+  explicit LogRewritePass(bool Force, Risk MinRisk = Risk::High)
+      : Force(Force), MinRisk(MinRisk) {}
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
     // Opt-in gate. Being named in -passes got us here at all; on top of
@@ -252,6 +271,30 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!UpdDom)
         continue; // keep the prototype to the one verified configuration
 
+      // ---- Profitability gate (intent step 9) --------------------------
+      // Shape is not profitability. The matcher study found the abundant
+      // hits are benign-range dot products where a log rewrite only costs
+      // speed, and that the rescue-worthy subset is small; the risk verdict
+      // is the gate that separates them. Same rule as the matcher's:
+      // exp-family factor in the term chain => HIGH.
+      //
+      // For the one shape this prototype matches the verdict is HIGH by
+      // construction — the match REQUIRES an exp call — so this gate cannot
+      // decline any loop the pass can currently rewrite. That is stated
+      // rather than dressed up: the mechanism is here, wired, and logged,
+      // and it starts doing real work the moment shape coverage widens to
+      // the fmuladd and w[i]*exp(t) forms the matcher already recognizes at
+      // MED and LOW. MinRisk exists so both branches are reachable and
+      // testable today.
+      const Risk R = Risk::High; // exp call in the chain, established above
+      if (static_cast<int>(R) < static_cast<int>(MinRisk)) {
+        errs() << "DECLINE-RISK,";
+        printLoc(errs(), Upd, F);
+        errs() << "," << riskName(R) << ",below-min-" << riskName(MinRisk)
+               << "\n";
+        continue;
+      }
+
       // ---- All checks passed: build the streaming logsumexp state. ----
       Type *DTy = Acc->getType();
       IRBuilder<> HB(Header, Header->begin());
@@ -353,9 +396,11 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // itself; later DCE/ADCE may remove it. Deliberate: this pass adds
       // and redirects, it does not delete (prototype simplicity).
 
+      // Verdict is part of the record: a rewrite that fired should say what
+      // profitability signal let it through, not just that it happened.
       errs() << "REWRITE,";
       printLoc(errs(), Upd, F);
-      errs() << "\n";
+      errs() << "," << riskName(R) << ",exp-chain;exp-sum\n";
       Changed = true;
     }
 
@@ -370,15 +415,42 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
             PB.registerPipelineParsingCallback(
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
-                  if (Name == "log-rewrite") {
-                    FPM.addPass(LogRewritePass(/*Force=*/false));
-                    return true;
+                  // Parameters, SEMICOLON-separated inside <>: force, and
+                  // min-risk=high|med|low (default high). Semicolons, not
+                  // commas — the new-PM pipeline parser splits on commas at
+                  // the top level, so 'log-rewrite<force,min-risk=none>'
+                  // reaches this callback as the pass name
+                  // 'log-rewrite<force' and is rejected. min-risk is the
+                  // profitability gate; see the note at the gate itself for
+                  // why raising it above HIGH is currently the only way to
+                  // make it decline.
+                  if (!Name.consume_front("log-rewrite"))
+                    return false;
+                  bool Force = false;
+                  Risk MinRisk = Risk::High;
+                  if (!Name.empty()) {
+                    if (!Name.consume_front("<") || !Name.consume_back(">"))
+                      return false;
+                    while (!Name.empty()) {
+                      StringRef Tok = Name.take_until([](char C) { return C == ';'; });
+                      Name = Name.drop_front(Tok.size());
+                      Name.consume_front(";");
+                      if (Tok == "force")
+                        Force = true;
+                      else if (Tok == "min-risk=high")
+                        MinRisk = Risk::High;
+                      else if (Tok == "min-risk=med")
+                        MinRisk = Risk::Med;
+                      else if (Tok == "min-risk=low")
+                        MinRisk = Risk::Low;
+                      else if (Tok == "min-risk=none")
+                        MinRisk = Risk::None;
+                      else
+                        return false; // unknown parameter: refuse, do not ignore
+                    }
                   }
-                  if (Name == "log-rewrite<force>") {
-                    FPM.addPass(LogRewritePass(/*Force=*/true));
-                    return true;
-                  }
-                  return false;
+                  FPM.addPass(LogRewritePass(Force, MinRisk));
+                  return true;
                 });
           }};
 }

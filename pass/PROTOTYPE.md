@@ -182,12 +182,16 @@ consumed, and the benign case shows 1.37e-15.
   original would compute `exp(-inf) = 0` and carry on. A matcher-side
   guard (skip loops whose input can be −inf) or an explicit zero-guard in
   the emitted code would fix it; documented rather than solved here.
-- **No profitability gating yet.** The matcher study's triage
-  (matcher/RESULTS.md) found the abundant hits are mostly benign-range dot
-  products; the rescue-worthy transcendental subset is small. This
-  prototype fires on *every* matching shape once legality is granted —
-  the HIGH/MED/LOW risk signal from the study is the intended gate and is
-  not yet wired in.
+- **Profitability gating is wired, and cannot decline anything yet.** The
+  pass computes the same risk verdict the matcher does and refuses to rewrite
+  below `min-risk` (default HIGH), logging
+  `REWRITE,<file>,<line>,<fn>,HIGH,exp-chain;exp-sum` or
+  `DECLINE-RISK,...,below-min-<tier>`. But the one shape it matches requires
+  an `exp` call, so the verdict is HIGH by construction and no reachable
+  input is below the threshold. The mechanism is real and both branches are
+  tested — `min-risk=none` exercises the refusal path — but it starts doing
+  useful work only when shape coverage widens to the `fmuladd` and
+  `w[i]*exp(t)` forms, which the matcher already grades MED and LOW.
 - **The dead original is left in place.** The pass adds and redirects; it
   does not delete. The orphaned `phi`/`fadd`/`exp` chain feeds only itself
   and is left for later DCE/ADCE (harmless: it computes the original 0.0/

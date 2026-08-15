@@ -287,7 +287,17 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         CI.nMul = SpineMuls;
         SmallPtrSet<Value *, 32> Visited;
         for (Value *T : Terms) walkChain(T, *L, CI, Visited);
-        if (!CI.ok || CI.nMul == 0) continue; // plain sum or dirty chain: miss
+        if (!CI.ok) continue; // dirty chain: miss
+        // nMul was standing in for "this term's magnitude can compound".
+        // An exp-family factor does that on its own: exp(t) spans the whole
+        // range from t alone, no multiply needed. Requiring a multiply
+        // excluded the softmax denominator — this project's marquee shape,
+        // and the one the rewrite pass implements. darknet's softmax matched
+        // only because it divides by a temperature (FDiv counts as a
+        // multiply); the textbook `sum += exp(x[i] - max)` was invisible.
+        // Plain sums with no exponent stay out of scope: they are rescuable
+        // without logsumexp, which is why plain_sum is still a labeled miss.
+        if (CI.nMul == 0 && !CI.expChain) continue;
 
         const char *Trip = "unknown";
         if (SE.getSmallConstantTripCount(L) > 0) Trip = "constant";
@@ -305,6 +315,9 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
                                : "LOW";
         SmallVector<const char *, 4> Reasons;
         if (CI.expChain) Reasons.push_back("exp-chain");
+        // Separately tagged so the pre-2026-08-15 counts stay recoverable:
+        // every hit carrying exp-sum is one the nMul >= 1 rule used to drop.
+        if (CI.nMul == 0) Reasons.push_back("exp-sum");
         if (CI.logChain) Reasons.push_back("log-chain");
         if (deepChain) Reasons.push_back("deep-chain");
         if (unknownTrip) Reasons.push_back("unknown-trip");

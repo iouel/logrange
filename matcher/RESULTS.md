@@ -9,10 +9,15 @@ clang 21.1.6 / LLVM 21.1.8, matcher as an opt plugin.*
 
 | codebase | innermost FP loops | hits | hit rate | transcendental | const trip |
 |---|---|---|---|---|---|
-| GSL 2.8 (659 modules) | 2501 | 752 | 30.1% | 3 | 116 |
-| darknet (62 modules) | 283 | 18 | 6.4% | 2 | 1 |
+| GSL 2.8 (659 modules) | 2501 | 753 | 30.1% | 4 | 117 |
+| darknet (62 modules) | 283 | 19 | 6.7% | 3 | 2 |
 | libsvm (1 module) | 75 | 11 | 14.7% | 0 | 0 |
-| **total** | **2859** | **781** | **27.3%** | **5** | — |
+| **total** | **2859** | **783** | **27.4%** | **7** | — |
+
+*Re-scanned 2026-08-15 after a matcher correction described under "The rule
+that excluded the marquee shape" below. Pre-correction totals were 781 hits /
+5 transcendental / 3 HIGH; the two recovered hits carry `exp-sum` in their
+reasons, so either set is recoverable from `data/`.*
 
 The matcher passed its labeled ground-truth gate (selftest.c: 4 hits / 6 FP
 loops / 1 transcendental, exact) before any of these numbers were collected,
@@ -44,10 +49,10 @@ asserts `mixture_likelihood` triages HIGH with `exp-chain`.
 
 | codebase | hits | HIGH | MED | LOW |
 |---|---|---|---|---|
-| GSL 2.8 | 752 | 1 | 54 | 697 |
-| darknet | 18 | 2 | 0 | 16 |
+| GSL 2.8 | 753 | 2 | 54 | 697 |
+| darknet | 19 | 3 | 0 | 16 |
 | libsvm | 11 | 0 | 2 | 9 |
-| **total** | **781** | **3** | **56** | **722** |
+| **total** | **783** | **5** | **56** | **722** |
 
 All HIGH-risk sites:
 
@@ -55,7 +60,46 @@ All HIGH-risk sites:
 |---|---|---|
 | darknet `src/blas.c:315` | `softmax` | exp-chain |
 | darknet `src/blas.c:315` | `softmax_cpu` | exp-chain |
+| darknet `examples/go.c:562` | `pick_move` | exp-chain;exp-sum |
 | GSL `filter/gaussian.c:205` | `gsl_filter_gaussian_kernel` | exp-chain;deep-chain |
+| GSL `specfunc/zeta.c:757` | `gsl_sf_hzeta_e` | exp-chain;exp-sum |
+
+## The rule that excluded the marquee shape
+
+Found 2026-08-15 while wiring the triage into the rewrite pass, and it
+changes how the darknet result should be read.
+
+The matcher required `nMul >= 1` — at least one multiply or divide in the term
+chain — on the reasoning that a plain sum is "rescuable without logsumexp".
+That is true of `s += x[i]`. It is false of `s += exp(x[i] - max)`, which is
+the softmax denominator, the shape the intent names and the shape `pass/`
+rewrites. `exp` spans the whole representable range from its argument alone;
+no multiply is needed for magnitude to compound.
+
+**darknet's softmax matched by accident.** Its source is
+`exp(input[i*stride]/temp - largest/temp)`, and the `/temp` division is what
+supplied `nMul = 1`. Two variants compiled side by side, identical underflow
+exposure:
+
+| source | matcher verdict |
+|---|---|
+| `exp(x[i]/temp - largest/temp)` | HIT, HIGH, exp-chain |
+| `exp(x[i] - largest)` | no hit at all |
+
+A softmax without temperature scaling was invisible to the matcher, and so
+was `pass/test_softmax.c` — the study's own rewrite prototype produced **zero
+hits** when scanned.
+
+Fixed by accepting a term whose magnitude an exponent controls regardless of
+multiply count (`nMul >= 1 || expChain`), tagged `exp-sum` when it arrives
+with no multiply. `plain_sum` stays a labeled miss: no product *and* no
+exponent is genuinely out of scope. The selftest gate grew a `softmax_denom`
+case and now asserts 5 hits / 7 FP loops / 2 transcendental.
+
+**The headline barely moves; the actionable list grows by two thirds.**
+783 hits against 781, 27.4% against 27.3% — the decision rule is untouched.
+But HIGH went from 3 sites to 5, and both recoveries are genuine underflow
+candidates the old rule dropped silently.
 
 Three rows, one shared source line (darknet's softmax denominator, matched
 in two functions). Of 781 shape-hits, the static signal marks two source

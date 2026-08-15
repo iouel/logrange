@@ -63,15 +63,21 @@ selftest)
   hits=$(grep -c '^HIT,' "$WORK/raw-selftest.txt" || true)
   loops=$(grep -c '^LOOP,' "$WORK/raw-selftest.txt" || true)
   trans=$(grep -c ',transcendental,' "$WORK/raw-selftest.txt" || true)
-  # Labels in selftest.c: 4 hits out of 6 examined FP loops, 1 transcendental;
-  # the mixture_likelihood hit must triage HIGH with exp-chain in its reasons.
+  # Labels in selftest.c: 5 hits out of 7 examined FP loops, 2 transcendental;
+  # the mixture_likelihood hit must triage HIGH with exp-chain in its reasons,
+  # and softmax_denom (plain sum of exp, no multiply) must be HIGH with
+  # exp-sum — the shape the nMul >= 1 rule used to drop.
   ml_ok=0
   grep '^HIT,.*,mixture_likelihood,' "$WORK/raw-selftest.txt" \
     | grep ',HIGH,' | grep -q 'exp-chain' && ml_ok=1
-  if [ "$hits" = 4 ] && [ "$loops" = 6 ] && [ "$trans" = 1 ] && [ "$ml_ok" = 1 ]; then
-    echo "SELFTEST PASS (4 hits / 6 fp-loops / 1 transcendental / mixture_likelihood HIGH exp-chain)"
+  sd_ok=0
+  grep '^HIT,.*,softmax_denom,' "$WORK/raw-selftest.txt" \
+    | grep ',HIGH,' | grep -q 'exp-sum' && sd_ok=1
+  if [ "$hits" = 5 ] && [ "$loops" = 7 ] && [ "$trans" = 2 ] && [ "$ml_ok" = 1 ] \
+     && [ "$sd_ok" = 1 ]; then
+    echo "SELFTEST PASS (5 hits / 7 fp-loops / 2 transcendental / mixture_likelihood HIGH exp-chain / softmax_denom HIGH exp-sum)"
   else
-    echo "SELFTEST FAIL: hits=$hits (want 4) loops=$loops (want 6) trans=$trans (want 1) mixture-high=$ml_ok (want 1)"
+    echo "SELFTEST FAIL: hits=$hits (want 5) loops=$loops (want 7) trans=$trans (want 2) mixture-high=$ml_ok (want 1) softmax-exp-sum=$sd_ok (want 1)"
     exit 1
   fi
   ;;
