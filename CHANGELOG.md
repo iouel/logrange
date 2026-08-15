@@ -102,14 +102,34 @@ would be the wrong promise.
 package and checked against its analytic answer. CI installs to a temp prefix
 and builds it as a consumer on all three legs.
 
-**The exported target carries `-ffp-contract=off` / `/fp:precise`.** This is
-contractual, not cosmetic. `rp_accum`'s Neumaier compensation is written
-statement-per-step so the rounding error it recovers is not fused away; FMA
-contraction undoes that. Measured on the heavy-cancellation scenario:
-2.665e-09 with contraction off, 3.707e-08 with `-ffp-contract=fast -mfma` —
-14× worse, still inside the bound, and silent. x86-64 hides this because FMA
-is not in the baseline; `-march=native` and ARM do not.
-`-DLOGRANGE_PROPAGATE_FP_FLAGS=OFF` opts out.
+**Added — the header refuses to compile under fast-math.**
+
+`-ffast-math` / `/fp:fast` folds away the algebraic identities `rp_accum` uses
+to recover each addition's rounding error, degrading it to an uncompensated
+sum. Measured on a 40000-term cancellation set: log-magnitude
+−7.36251563240462303 normally, −7.36251072122148731 under `-ffast-math`, a
+relative error of 4.9e-6 — nine orders past the contract. Detected via
+`__FAST_MATH__` / `_M_FP_FAST`; `LOGRANGE_ALLOW_FAST_MATH` overrides. CI
+asserts both that the guard fires and that the override still builds.
+
+**Correction to an earlier entry in this same release.** A previous version of
+this changelog and README claimed the exported target must carry
+`-ffp-contract=off` because FMA contraction cost 14× accuracy. That was wrong
+and the flag has been removed from the consumer-facing target. On fixed
+inputs the accumulator is **bit-identical** with contraction on or off —
+structurally so, since the compensation path holds no multiply-add pair to
+fuse. The apparent 14× came from `test_accuracy`'s cancellation corpus being
+*generated* with multiply-add expressions that contract differently, changing
+the dataset. The tell was there and was missed: the uncompensated `log_add`
+fold rows moved too, and nothing in that algorithm could have been affected by
+compensation damage.
+
+`-ffp-contract=off` is still pinned on this project's own builds, for
+reproducibility of that corpus rather than for correctness — it is what keeps
+the accuracy table bit-identical across gcc 13/15 and clang 18/21.
+`LOGRANGE_PROPAGATE_FP_FLAGS` is gone; it existed only to serve the wrong
+diagnosis, and while it existed, setting it to OFF silently disarmed the flag
+in this project's own test suite.
 
 **Decided**
 - **Double only, by design.** Stated in the header's Precision block rather

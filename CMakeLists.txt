@@ -29,8 +29,6 @@ endif()
 
 option(LOGRANGE_BUILD_TESTING "Build LogRange's tests and benchmark"
        ${_lr_top_level})
-option(LOGRANGE_PROPAGATE_FP_FLAGS
-       "Give consumers the FP flag the error contract depends on" ON)
 
 # ---------------------------------------------------------------------------
 # The library. Header-only, so everything is INTERFACE.
@@ -45,22 +43,19 @@ target_include_directories(logrange INTERFACE
 # Consumers get C++17 from the target rather than having to know to set it.
 target_compile_features(logrange INTERFACE cxx_std_17)
 
-# The FP flag is part of the contract, not a style preference. rp_accum's
-# Neumaier compensation is written statement-per-step so the rounding error
-# it recovers is not fused away; with FMA contraction enabled the compiler
-# may contract those steps and the compensation degrades. Measured on the
-# heavy-cancellation scenario: 2.665e-09 with contraction off, 3.707e-08
-# with -ffp-contract=fast -mfma. Still inside the stated bound, but 14x
-# worse — and silently, which is the problem. x86-64 without FMA in the
-# baseline hides this; -march=native or any ARM target does not.
+# No compile flags are imposed on consumers, deliberately. An earlier version
+# of this file exported -ffp-contract=off on the belief that FMA contraction
+# damaged the compensation. That was wrong: measured on fixed inputs, the
+# accumulator is bit-identical with contraction on or off, because the
+# compensation path holds no multiply-add pair to fuse. The 14x "regression"
+# that prompted it was the *test's* data generation contracting differently
+# and producing a different dataset — the uncompensated log_add fold moved
+# too, which should have been the tell.
 #
-# Set LOGRANGE_PROPAGATE_FP_FLAGS=OFF to opt out; then the error contract is
-# yours to re-establish.
-if(LOGRANGE_PROPAGATE_FP_FLAGS)
-  target_compile_options(logrange INTERFACE
-    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<OR:$<CXX_COMPILER_ID:GNU>,$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>>>:-ffp-contract=off>
-    $<$<AND:$<COMPILE_LANGUAGE:CXX>,$<CXX_COMPILER_ID:MSVC>>:/fp:precise>)
-endif()
+# What genuinely breaks the accumulator is reassociating math, and a compile
+# flag cannot express "not fast-math". log_math.h refuses it with #error on
+# __FAST_MATH__ / _M_FP_FAST instead, which is enforceable rather than
+# advisory.
 
 # ---------------------------------------------------------------------------
 # Install / package. Header-only, so this is headers + a config package.
@@ -97,14 +92,23 @@ endif()
 
 # ---------------------------------------------------------------------------
 # Our own build flags. Deliberately NOT on the `logrange` target: a consumer
-# who does add_subdirectory() here must not inherit -Werror. Only the FP flag
-# above is contractual and therefore public.
+# who does add_subdirectory() here must not inherit -Werror.
+#
+# -ffp-contract=off / /fp:precise are pinned here unconditionally, and the
+# reason is reproducibility rather than correctness. tests/test_accuracy.cpp
+# generates its cancellation corpus with multiply-add expressions, which
+# contract differently between builds and yield a different dataset — that is
+# what made the published numbers appear to move by 14x. Pinning the flag is
+# what lets the accuracy table be bit-identical across gcc 13/15 and clang
+# 18/21. It is not what makes the accumulator correct.
 # ---------------------------------------------------------------------------
 add_library(logrange_build_flags INTERFACE)
 if(MSVC)
-  target_compile_options(logrange_build_flags INTERFACE /W4 /WX /permissive-)
+  target_compile_options(logrange_build_flags INTERFACE
+    /W4 /WX /permissive- /fp:precise)
 else()
-  target_compile_options(logrange_build_flags INTERFACE -Wall -Wextra -Werror)
+  target_compile_options(logrange_build_flags INTERFACE
+    -Wall -Wextra -Werror -ffp-contract=off)
 endif()
 
 enable_testing()

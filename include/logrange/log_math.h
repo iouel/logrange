@@ -40,6 +40,25 @@
 
 #pragma once
 
+// Fast-math is not survivable here, so it is refused rather than warned about.
+// rp_accum's compensation recovers each addition's rounding error through
+// algebraic identities ((sum - t) + x). Reassociating math folds those to
+// zero and the accumulator silently degrades to an uncompensated sum.
+// Measured on a 40000-term cancellation set: log-magnitude
+// -7.36251563240462303 built normally, -7.36251072122148731 under
+// -ffast-math — 4.9e-6 relative, nine orders past the stated contract.
+//
+// FMA contraction (-ffp-contract=fast) is a DIFFERENT flag and is harmless
+// here: the compensation path holds no multiply-add pair to fuse, and results
+// are bit-identical with contraction on. No flag is imposed on callers for it.
+//
+// Define LOGRANGE_ALLOW_FAST_MATH to proceed anyway; the error contract in
+// this header then does not describe your build.
+#if (defined(__FAST_MATH__) || defined(_M_FP_FAST)) && \
+    !defined(LOGRANGE_ALLOW_FAST_MATH)
+#error "LogRange: fast-math destroys rp_accum's error compensation (measured 4.9e-6 relative). Compile this translation unit without -ffast-math / /fp:fast, or define LOGRANGE_ALLOW_FAST_MATH to accept an uncompensated result."
+#endif
+
 // Version identity, so a vendored copy can be recognized in the wild.
 // This header is the single source of truth: CMakeLists.txt parses these
 // three macros rather than carrying its own copy of the number.

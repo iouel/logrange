@@ -58,14 +58,18 @@ target_link_libraries(your_target PRIVATE LogRange::logrange)
 Vendoring works too — `add_subdirectory(logrange)` gives the same target,
 builds no tests, and does not impose this project's `-Werror` on yours.
 
-**The imported target carries a compile flag, on purpose.** `-ffp-contract=off`
-(`/fp:precise` on MSVC) is part of the error contract, not a style choice:
-`rp_accum`'s compensation is written statement-per-step so the rounding error
-it recovers cannot be fused away, and FMA contraction undoes that. Measured on
-the heavy-cancellation scenario, contraction costs 14× accuracy — 2.7e-09
-becomes 3.7e-08 — silently, and by default on any target where FMA is in the
-baseline. Opt out with `-DLOGRANGE_PROPAGATE_FP_FLAGS=OFF` if you must; the
-contract is then yours to re-establish.
+**No compile flags are imposed on you.** One thing is refused rather than
+imposed: the header will not compile under `-ffast-math` / `/fp:fast`.
+Reassociating math folds away the algebraic identities `rp_accum` uses to
+recover each addition's rounding error, and the accumulator degrades to an
+uncompensated sum — measured at 4.9e-6 relative on a cancellation set, nine
+orders past the stated contract. That is a `#error`, with
+`LOGRANGE_ALLOW_FAST_MATH` to override it if you accept an uncompensated
+result.
+
+FMA contraction (`-ffp-contract=fast`) is a *different* flag and is fine: the
+compensation path contains no multiply-add pair to fuse, and results are
+bit-identical with it on. Your FMA optimizations are left alone.
 
 Version compatibility is `SameMinorVersion`, deliberately strict: pre-1.0 the
 error contract can move between minor versions, and it has.

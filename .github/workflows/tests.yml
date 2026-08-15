@@ -22,9 +22,11 @@ jobs:
             configure: cmake -S . -B build
           - name: ubuntu-gcc
             os: ubuntu-latest
+            cxx: g++
             configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
           - name: ubuntu-clang
             os: ubuntu-latest
+            cxx: clang++
             configure: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++
     steps:
       - uses: actions/checkout@v5
@@ -50,3 +52,15 @@ jobs:
         run: cmake --build "${{ runner.temp }}/lrconsumer" --config Release
       - name: Consumer run
         run: ctest --test-dir "${{ runner.temp }}/lrconsumer" -C Release --output-on-failure
+      # The fast-math refusal is a claim like any other. Assert it actually
+      # fires — an #error behind an unreachable condition would look exactly
+      # like a working guard.
+      - name: Fast-math guard fires
+        if: runner.os == 'Linux'
+        run: |
+          if ${{ matrix.cxx }} -std=c++17 -ffast-math -Iinclude -Itests -c tests/test_log_math.cpp -o /dev/null 2>/dev/null; then
+            echo "FAIL: header compiled under -ffast-math; the guard did not fire"
+            exit 1
+          fi
+          ${{ matrix.cxx }} -std=c++17 -ffast-math -DLOGRANGE_ALLOW_FAST_MATH -Iinclude -Itests -c tests/test_log_math.cpp -o /dev/null
+          echo "guard fires, and the documented opt-out still builds"
