@@ -644,7 +644,12 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
           errs() << "," << Kind << "\n";
         } else {
           // propagate=div enabled, structural clauses passed: check domination
-          // then emit exp(log(numerator) - LogSum).
+          // then emit exp(T - LogSum), where T is the pre-exp argument of an
+          // llvm.exp(T) numerator.  Arbitrary numerators are declined:
+          //   - a negative numerator would give log(negative) = NaN rather
+          //     than a negative quotient;
+          //   - the transform must not rely on a downstream InstCombine fold
+          //     of log(exp(t)) -> t to be correct.
           auto *FDiv = cast<BinaryOperator>(CU.User);
           if (!DT.dominates(ReplBB, FDiv->getParent())) {
             errs() << "DECLINE-PROP,";
@@ -652,11 +657,37 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
             errs() << ",not-dominated\n";
             continue;
           }
-          Value *Numerator = FDiv->getOperand(0);
+          // Peel fp casts to reach the potential llvm.exp call.
+          // Only FPExt/FPTrunc are peeled: the same constraint as the loop
+          // accumulation, where the loop-body exp argument passes through
+          // nothing but fp casts.  A non-fp cast terminates the peel and
+          // produces a decline (dyn_cast<CallBase> on the cast fails).
+          Value *NumV = FDiv->getOperand(0);
+          while (auto *Cast = dyn_cast<CastInst>(NumV)) {
+            if (Cast->getOpcode() != Instruction::FPExt &&
+                Cast->getOpcode() != Instruction::FPTrunc)
+              break;
+            NumV = Cast->getOperand(0);
+          }
+          Value *ExpArg = nullptr;
+          bool NumIsIntrinsicExp = false;
+          if (auto *NumCall = dyn_cast<CallBase>(NumV))
+            NumIsIntrinsicExp =
+                (classifyExpCall(NumCall, ExpArg) == ExpKind::Intrinsic);
+          if (!NumIsIntrinsicExp) {
+            errs() << "DECLINE-PROP,";
+            printLoc(errs(), FDiv, F);
+            errs() << ",numerator-not-exp\n";
+            continue;
+          }
           IRBuilder<> PB(FDiv);
-          Value *LogNum = PB.CreateUnaryIntrinsic(Intrinsic::log, Numerator,
-                                                  {}, "lr.lognum");
-          Value *Diff = PB.CreateFSub(LogNum, LogSum, "lr.diff");
+          Value *T = ExpArg;
+          // classifyExpCall accepts only float/double args, so T is at most
+          // float when FDiv is double.  Use CreateFPCast to handle both
+          // directions safely.
+          if (T->getType() != FDiv->getType())
+            T = PB.CreateFPCast(T, FDiv->getType(), "lr.t");
+          Value *Diff = PB.CreateFSub(T, LogSum, "lr.diff");
           Value *Result = PB.CreateUnaryIntrinsic(Intrinsic::exp, Diff, {},
                                                   "lr.pdiv");
           errs() << "PROPAGATE,";

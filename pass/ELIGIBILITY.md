@@ -214,24 +214,28 @@ and never a partial rewrite.
 | denominator | the divisor is the rewritten sum (the loop's final value, post-LCSSA), not the running sum | `not-the-sum` |
 | operator | `fdiv`, operand 1 is the sum; `fmul` by a reciprocal is *not* matched (a different rounding and a different NaN/inf profile) | `not-fdiv` |
 | type | `double` | `not-double` |
-| numerator | the dividend is loop-invariant with respect to the rewritten loop, or provably available and `double` at the use; it is *not* required to be an `exp` call (see 6.4) | `numeral-ineligible` |
+| numerator | the dividend is an in-function `llvm.exp.*` intrinsic call (the same accepted form as the loop body, possibly through `fpext`/`fptrunc`); arbitrary non-`exp` numerators are not accepted | `numerator-not-exp` |
 | placement | the consumer is in the same function and dominated by the replacement block | `not-dominated` |
 | uniqueness-of-form | the rewritten value is not also consumed by an ineligible use that *shares this instruction's* result (an instruction is rewritten whole or not at all) | `shared-result` |
 
 ### 6.4 The rewrite and its algebra
 
 ```
-y = fdiv(x, s)        where L = log(s) is available
+y = fdiv(llvm.exp(t), s)   where L = log(s) is available
   becomes
-y = llvm.exp( llvm.log(x) - L )
+y = llvm.exp( t - L )
 ```
 
 This is the softmax divide becoming a subtract in the log domain. The
-numerator is *not* required to be an `exp(xⱼ)` call: when it happens to be
-one, a later `exp(log(x))` pair is a folding opportunity for ordinary LLVM
-canonicalization, not something this pass performs or relies on. This pass
-emits `log(x) - L` and one `exp`; it does not pattern-match the numerator's
-provenance.
+numerator **must** be an in-function `llvm.exp(t)` intrinsic call; the
+pre-`exp` argument `t` is used directly in the emitted subtract. Arbitrary
+non-`exp` numerators are declined with `numerator-not-exp`.
+
+Using `t` directly — rather than `log(numerator) - L` — means the
+transform is correct without any downstream pass: when the original
+`exp(t)` underflows to `0.0`, `t` itself is still a healthy finite value,
+so `exp(t - L)` is finite and correct. Correctness must not depend on a
+later InstCombine fold of `log(exp(t)) → t`.
 
 ### 6.5 What propagation preserves
 
@@ -241,19 +245,22 @@ is not bitwise identical to `fdiv` even on benign inputs. This is the
 second thing the (separate) propagation grant pays for.
 
 Special values are preserved relative to the identically-flagged linear
-form, with one row added to the section-5 table's family:
+form, with one row added to the section-5 table's family.  All rows below
+assume the numerator is `exp(t)` and the denominator is the rewritten sum
+`s` with log form `L = log(s)`:
 
 | input | required behaviour |
 |---|---|
 | sum underflows (the rescue regime) | consumer yields a **finite, correct** value where the linear form yields `0.0` or NaN-from-`0/0`; this row is the entire point and is the one the linear program cannot produce |
-| NaN in numerator or any sum term | result is NaN |
-| numerator `0.0` | `log(0) = -inf`; `-inf - L` with finite `L` is `-inf`; `exp(-inf) = +0.0`, matching linear `0/s` |
-| numerator `+inf` / sum `+inf` | `inf/inf = NaN` linear; `log(inf) - inf = inf - inf` is guarded to NaN by the same `oeq` discipline as section 5 — NaN, matching linear |
+| `t = NaN` | `exp(NaN) = NaN`; linear gives NaN / s = NaN; propagated gives `exp(NaN - L) = NaN` — matching |
+| `t = -inf` (zero numerator) | `exp(-inf) = 0`; linear gives `0 / s = 0`; propagated gives `exp(-inf - L) = exp(-inf) = +0.0` — matching |
+| sum `+inf` (any term `+inf`) | `L = +inf`; linear gives `exp(t) / +inf = 0` for finite `t`, and `+inf / +inf = NaN` for `t = +inf`; propagated gives `exp(t - +inf) = exp(-inf) = 0` for finite `t`, and `exp(+inf - +inf) = exp(NaN) = NaN` for `t = +inf` — matching |
+| all terms `-inf` (zero-over-zero) | `L = -inf`; linear gives `exp(-inf) / 0 = 0 / 0 = NaN`; propagated gives `exp(-inf - (-inf)) = exp(NaN) = NaN` — matching |
 
 The rescue row is tested against the harness's independent max-shift
 reference on a full softmax (denominator loop plus normalize divide in one
 function), asserting correct finite probabilities where the original
-returns all-zero/NaN. NaN, ±inf, and zero-numerator rows are tested as
+returns all-zero/NaN.  NaN, ±inf, and zero-numerator rows are tested as
 constants and against the reference.
 
 ### 6.6 Not preserved, and the stopping rule

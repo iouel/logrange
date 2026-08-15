@@ -49,6 +49,17 @@ void softmax_add(const double *x, double *out, int n) {
     out[i] = exp(x[i]) + s;
 }
 
+/* Near-miss consumer: divide present, divisor is the sum, but the
+ * numerator is a plain load (not an llvm.exp call). Must be declined with
+ * numerator-not-exp by propagate=div. */
+void softmax_plain_div(const double *x, double *out, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += exp(x[i]);
+  for (int i = 0; i < n; ++i)
+    out[i] = x[i] / s;
+}
+
 /* Near-miss consumer: divide present, but the rewritten sum is not the
  * divisor. */
 void softmax_sum_div(const double *x, double *out, int n) {
@@ -103,6 +114,8 @@ extern void softmax_add_orig(const double *x, double *out, int n);
 extern void softmax_add_rw(const double *x, double *out, int n);
 extern void softmax_sum_div_orig(const double *x, double *out, int n);
 extern void softmax_sum_div_rw(const double *x, double *out, int n);
+extern void softmax_plain_div_orig(const double *x, double *out, int n);
+extern void softmax_plain_div_rw(const double *x, double *out, int n);
 extern double plain_sum_orig(const double *x, int n);
 extern double plain_sum_rw(const double *x, int n);
 extern double dot_sum_orig(const double *x, const double *y, int n);
@@ -394,13 +407,19 @@ int main(void) {
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_sum_div,max_rel=%.3g\n", rel);
     check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
+
+    softmax_plain_div_orig(x, out_orig, N);
+    softmax_plain_div_rw(x, out_rw, N);
+    rel = max_rel_diff(out_orig, out_rw, N);
+    printf("INFO,softmax_plain_div,max_rel=%.3g\n", rel);
+    check("softmax_plain_div_rw_agree_1e-12", rel < 1e-12);
   }
 
   /* (m) Rescue case for propagate=div: softmax_full_prop has its normalize
-   *     divide rewritten to exp(log(x) - L). On rescue-regime inputs the
-   *     numerator exp(x[i]) underflows to 0, but LLVM's instcombine folds
-   *     log(exp(t)) -> t, so the emitted code becomes exp(x[i] - LogSum),
-   *     which is finite and correct. The linear form yields 0.0/0.0 = NaN. */
+   *     divide rewritten to exp(x[i] - L) directly from the exp argument,
+   *     not exp(log(exp(x[i])) - L) -- no downstream InstCombine fold is
+   *     required for correctness.  On rescue-regime inputs the linear form
+   *     yields 0.0/0.0 = NaN; the propagated form is finite and correct. */
   {
     static double out_prop[N];
     int all_finite;
@@ -417,6 +436,55 @@ int main(void) {
     printf("INFO,prop_rescue,logref=%.17g,sum=%.17g\n", lref, prop_sum);
     check("prop_rescue_all_finite", all_finite);
     check("prop_rescue_sums_to_one", fabs(prop_sum - 1.0) < 1e-10);
+  }
+
+  /* (n) Special-value coverage for the propagated exp(t) form.
+   *     Each sub-case compares softmax_full_prop against the linear original
+   *     (softmax_full_orig), or asserts the NaN/zero behaviour directly.
+   *     The full-softmax input is N=2 for clarity; the denominator loop is
+   *     still eligible and is rewritten. */
+  {
+    static double sv[2], out_sv_prop[2], out_sv_orig[2];
+
+    /* n1: t = NaN in one slot. Both forms must yield NaN for that slot. */
+    sv[0] = NAN; sv[1] = 1.0;
+    softmax_full_orig(sv, out_sv_orig, 2);
+    softmax_full_prop(sv, out_sv_prop, 2);
+    printf("INFO,prop_sv_nan,orig=[%g,%g],prop=[%g,%g]\n",
+           out_sv_orig[0], out_sv_orig[1], out_sv_prop[0], out_sv_prop[1]);
+    check("prop_sv_nan_slot0_orig_nan", isnan(out_sv_orig[0]));
+    check("prop_sv_nan_slot0_prop_nan", isnan(out_sv_prop[0]));
+
+    /* n2: t = +inf in one slot. Linear gives +inf/+inf = NaN; propagated
+     *     gives exp(+inf - +inf) = exp(NaN) = NaN. Both are NaN. */
+    sv[0] = INFINITY; sv[1] = 1.0;
+    softmax_full_orig(sv, out_sv_orig, 2);
+    softmax_full_prop(sv, out_sv_prop, 2);
+    printf("INFO,prop_sv_posinf,orig=[%g,%g],prop=[%g,%g]\n",
+           out_sv_orig[0], out_sv_orig[1], out_sv_prop[0], out_sv_prop[1]);
+    check("prop_sv_posinf_slot0_orig_nan", isnan(out_sv_orig[0]));
+    check("prop_sv_posinf_slot0_prop_nan", isnan(out_sv_prop[0]));
+
+    /* n3: t = -inf in one slot (zero numerator). Linear gives 0/s = 0;
+     *     propagated gives exp(-inf - L) = exp(-inf) = +0.0. */
+    sv[0] = -INFINITY; sv[1] = 1.0;
+    softmax_full_orig(sv, out_sv_orig, 2);
+    softmax_full_prop(sv, out_sv_prop, 2);
+    printf("INFO,prop_sv_neginf,orig=[%g,%g],prop=[%g,%g]\n",
+           out_sv_orig[0], out_sv_orig[1], out_sv_prop[0], out_sv_prop[1]);
+    check("prop_sv_neginf_slot0_orig_zero", out_sv_orig[0] == 0.0);
+    check("prop_sv_neginf_slot0_prop_zero", out_sv_prop[0] == 0.0);
+
+    /* n4: all terms -inf (zero-over-zero). The denominator is exactly 0.0,
+     *     the log form is -inf.  Linear gives 0.0/0.0 = NaN; propagated
+     *     gives exp(-inf - (-inf)) = exp(NaN) = NaN.  Both are NaN. */
+    sv[0] = -INFINITY; sv[1] = -INFINITY;
+    softmax_full_orig(sv, out_sv_orig, 2);
+    softmax_full_prop(sv, out_sv_prop, 2);
+    printf("INFO,prop_sv_allneginf,orig=[%g,%g],prop=[%g,%g]\n",
+           out_sv_orig[0], out_sv_orig[1], out_sv_prop[0], out_sv_prop[1]);
+    check("prop_sv_allneginf_orig_nan", isnan(out_sv_orig[0]));
+    check("prop_sv_allneginf_prop_nan", isnan(out_sv_prop[0]));
   }
 
   printf(fails ? "OVERALL,FAIL\n" : "OVERALL,PASS\n");

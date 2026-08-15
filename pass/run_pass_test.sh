@@ -44,10 +44,12 @@ echo "== 2. compile kernels to IR (identical source, two names) =="
 KFLAGS="-O1 -g -fno-discard-value-names -fno-math-errno"
 RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dsoftmax_full=softmax_full_orig \
             -Dsoftmax_add=softmax_add_orig -Dsoftmax_sum_div=softmax_sum_div_orig \
+            -Dsoftmax_plain_div=softmax_plain_div_orig \
             -Dplain_sum=plain_sum_orig -Ddot_sum=dot_sum_orig \
             -Dinvariant_exp_sum=invariant_exp_sum_orig"
 RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
            -Dsoftmax_add=softmax_add_rw -Dsoftmax_sum_div=softmax_sum_div_rw \
+           -Dsoftmax_plain_div=softmax_plain_div_rw \
            -Dplain_sum=plain_sum_rw -Ddot_sum=dot_sum_rw \
            -Dinvariant_exp_sum=invariant_exp_sum_rw"
 $CLANG $KFLAGS -DKERNEL $RENAME_ORIG \
@@ -61,13 +63,14 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
        -S "$WORK/kernel_rw.ll" -o "$WORK/kernel_rw_opt.ll" \
        2> "$WORK/rewrite.log" || { cat "$WORK/rewrite.log"; exit 1; }
 cat "$WORK/rewrite.log"
-# Exactly FOUR rewrites: the standalone denominator plus the three new
-# consumer-shape kernels (one full softmax, two near misses). The
-# negative-control loops in the same module must still be declined.
+# Exactly FIVE rewrites: the standalone denominator plus the four
+# consumer-shape kernels (one full softmax, two fadd/wrong-divisor near
+# misses, one plain-div near miss). The negative-control loops must still
+# be declined.
 NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
-[ "$NREW" = "4" ] \
-  || { echo "FAIL: expected exactly 4 REWRITE lines, got $NREW"; exit 1; }
-for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw; do
+[ "$NREW" = "5" ] \
+  || { echo "FAIL: expected exactly 5 REWRITE lines, got $NREW"; exit 1; }
+for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw softmax_plain_div_rw; do
   grep -q "^REWRITE,.*,$fn,HIGH,exp-chain;exp-sum$" "$WORK/rewrite.log" \
     || { echo "FAIL: rewrite missing for $fn"; exit 1; }
 done
@@ -83,6 +86,8 @@ grep -q '^CONSUMER-DECLINE,.*,softmax_add_rw,not-fdiv$' "$WORK/rewrite.log" \
   || { echo "FAIL: fadd near-miss consumer did not log not-fdiv"; exit 1; }
 grep -q '^CONSUMER-DECLINE,.*,softmax_sum_div_rw,not-the-sum$' "$WORK/rewrite.log" \
   || { echo "FAIL: wrong-divisor near-miss consumer did not log not-the-sum"; exit 1; }
+grep -q '^CONSUMER-MATCH,.*,softmax_plain_div_rw,fdiv-of-sum$' "$WORK/rewrite.log" \
+  || { echo "FAIL: plain-div consumer did not log as fdiv-of-sum in no-propagate mode"; exit 1; }
 
 # The profitability gate (intent step 9) must be able to DECLINE, not just
 # permit. For this shape the verdict is HIGH by construction, so raising the
@@ -100,6 +105,8 @@ grep -q '^DECLINE-RISK,.*,softmax_add_rw,HIGH,below-min-NONE$' "$WORK/gate.log" 
   || { echo "FAIL: gate missed softmax-add decline"; exit 1; }
 grep -q '^DECLINE-RISK,.*,softmax_sum_div_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
   || { echo "FAIL: gate missed wrong-divisor decline"; exit 1; }
+grep -q '^DECLINE-RISK,.*,softmax_plain_div_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
+  || { echo "FAIL: gate missed plain-div decline"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/gate.log" || true)" = "0" ] \
   || { echo "FAIL: gate declined but rewrote anyway"; exit 1; }
 echo "PASS,gate_declines_above_threshold"
@@ -215,6 +222,7 @@ echo "PASS,decline_denormal_env_under_force"
 echo "== 3c. propagate=div: compile a _prop copy, run with propagate=div =="
 RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop \
             -Dsoftmax_add=softmax_add_prop -Dsoftmax_sum_div=softmax_sum_div_prop \
+            -Dsoftmax_plain_div=softmax_plain_div_prop \
             -Dplain_sum=plain_sum_prop -Ddot_sum=dot_sum_prop \
             -Dinvariant_exp_sum=invariant_exp_sum_prop"
 $CLANG $KFLAGS -DKERNEL $RENAME_PROP \
@@ -232,7 +240,18 @@ grep -q '^DECLINE-PROP,.*,softmax_add_prop,not-fdiv$' "$WORK/prop.log" \
   || { echo "FAIL: softmax_add_prop not declined with not-fdiv"; exit 1; }
 grep -q '^DECLINE-PROP,.*,softmax_sum_div_prop,not-the-sum$' "$WORK/prop.log" \
   || { echo "FAIL: softmax_sum_div_prop not declined with not-the-sum"; exit 1; }
+# Plain (non-exp) numerator must be declined with numerator-not-exp.
+grep -q '^DECLINE-PROP,.*,softmax_plain_div_prop,numerator-not-exp$' "$WORK/prop.log" \
+  || { echo "FAIL: softmax_plain_div_prop not declined with numerator-not-exp"; exit 1; }
 echo "PASS,propagate_div_rewrites_softmax_full"
+
+# The transformed IR must use the exp argument minus lr.logsum directly —
+# no llvm.log of the numerator should appear in the propagated form.
+grep -q 'lr\.lognum' "$WORK/kernel_prop_opt.ll" \
+  && { echo "FAIL: propagated IR contains lr.lognum — must use exp arg directly"; exit 1; }
+grep -q 'lr\.diff' "$WORK/kernel_prop_opt.ll" \
+  || { echo "FAIL: propagated IR lacks lr.diff fsub"; exit 1; }
+echo "PASS,propagated_ir_uses_exp_arg_not_log_numerator"
 
 # An unrecognised propagate= value must be refused, not silently ignored.
 if $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
