@@ -115,9 +115,15 @@ recorded but below the MED bar).
 ## Coverage against the shapes this project names
 
 The `nMul` bug above was found by asking whether the matcher could see a
-shape the project claims to target. `coverage.c` makes that a standing
-check rather than a one-off: it holds the shapes named in the README, the
-intent, and METHODOLOGY, and the answer is recorded here.
+shape the project claims to target. `coverage.c` holds the shapes named in
+the README, the intent, and METHODOLOGY, and `./run_study.sh coverage`
+asserts the table below — every expected hit with its risk and reasons, and
+every documented miss. It fails if a claim drifts in either direction: a
+named shape that stops being seen, or a documented gap that starts hitting
+and leaves this section stale.
+
+(That gate was added 2026-08-15, after this section had been published for a
+day describing `coverage.c` as a standing check when nothing ran it.)
 
 | named target | matcher sees it | verdict |
 |---|---|---|
