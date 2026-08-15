@@ -146,8 +146,13 @@ mirroring it back to `out[j]` on every iteration.
 
 The shape reaches the matcher and is rejected by the **mid-loop-read guard** —
 the update then has two in-loop users, the phi and that store, so `cleanUses`
-fails. Established by running an instrumented build that reports which check
-rejects:
+fails. Reproduce with the matcher's explain mode, which names the check that
+turned each candidate away:
+
+```
+opt-21 -load-pass-plugin=SopMatcher.so -passes='sop-matcher<explain>' \
+       -disable-output coverage.bc
+```
 
 ```
 REJECT,cleanUses,coverage.c,44,forward_step_mem,store-of-spine:invariant-addr
@@ -166,7 +171,8 @@ condition for refining the guard, tested on four hand-written variants at
 analysis is still required before accepting any such store.
 
 **Refining the guard was measured and declined for v1.** Scanning the same
-corpus with the instrumented build, serially and reproducibly:
+corpus with `./run_study.sh rejects`, which runs explain mode over the
+harvested bitcode and prints this census:
 
 | `cleanUses` rejects | 460 |
 |---|---|
@@ -183,12 +189,19 @@ them only as a count. Nor would the refinement recover the shape that prompted
 it: none of these three codebases contains forward-algorithm code, so
 `coverage.c`'s case is synthetic. Decision and revisit conditions in TODO.md.
 
-*Reproducibility note.* A first version of this count ran `opt` under
-`xargs -P4` and interleaved records onto shared lines, undercounting
-(451/20/6/133/291 against the serial 460/23/8/135/294). The numbers above are
-from two serial passes that are byte-identical with zero malformed lines.
-`run_study.sh`'s own `scan()` has always been serial, so the published hit
-counts were never exposed to this.
+*Reproducibility.* These numbers were first produced by a throwaway
+instrumented build on one machine, which made them unreproducible — the
+instrumentation is now committed as the `explain` parameter and the census as
+`./run_study.sh rejects`, and re-running it returns 460/23/8/135/294 exactly.
+Explain mode is silent when off: the selftest and coverage gates and the
+committed `data/raw-*.txt` are byte-identical with and without it.
+
+The count must stay serial. A first version ran `opt` under `xargs -P4`, whose
+concurrent writes to one stderr interleaved records and undercounted
+(451/20/6/133/291 against 460/23/8/135/294). `run_study.sh` scans serially, so
+the published hit counts were never exposed to this; the `rejects` subcommand
+also asserts that no emitted line lacks a record tag, which is what
+interleaving produces.
 
 **When the matcher can see it, the triage grades it LOW.** The register-
 accumulator version is a `nMul = 1` plain product chain with no

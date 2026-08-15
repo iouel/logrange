@@ -207,6 +207,42 @@ void printLoc(raw_ostream &OS, const Instruction *I, const Function &F) {
 }
 
 struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
+  // Explain mode: emit a REJECT record naming the check that turned a
+  // candidate away, and for the mid-loop-read guard, what the extra in-loop
+  // user was. Off by default and byte-silent when off — the study's raw
+  // output must not change shape because a diagnostic exists.
+  //
+  // This exists because RESULTS.md publishes a table of rejection causes.
+  // That table was first produced by a throwaway instrumented build living
+  // on one machine, which made it unreproducible; the numbers are only
+  // evidence if a reader can regenerate them. Drive it with
+  //   -passes='sop-matcher<explain>'
+  // or via ./run_study.sh rejects <name>.
+  bool Explain = false;
+  explicit SopMatcherPass(bool Explain = false) : Explain(Explain) {}
+
+  void reject(const char *Why, const Instruction *Upd, const Function &F,
+              const Loop *L, const Value *Spine) const {
+    if (!Explain) return;
+    errs() << "REJECT," << Why << ",";
+    printLoc(errs(), Upd, F);
+    if (Spine) {
+      for (const User *U : Spine->users()) {
+        const auto *UI = dyn_cast<Instruction>(U);
+        if (!UI || !L->contains(UI) || isa<PHINode>(UI)) continue;
+        if (const auto *St = dyn_cast<StoreInst>(UI)) {
+          errs() << ",store-of-spine:"
+                 << (L->isLoopInvariant(St->getPointerOperand())
+                         ? "invariant-addr"
+                         : "varying-addr");
+        } else {
+          errs() << ",other-user";
+        }
+      }
+    }
+    errs() << "\n";
+  }
+
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
     auto &LI = AM.getResult<LoopAnalysis>(F);
     auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
@@ -253,7 +289,10 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         SmallVector<Value *, 8> Terms;
         SmallVector<Instruction *, 8> Spine;
         unsigned SpineMuls = 0;
-        if (!spineToPhi(Upd, &Phi, *L, Terms, Spine, SpineMuls)) continue;
+        if (!spineToPhi(Upd, &Phi, *L, Terms, Spine, SpineMuls)) {
+          reject("spine", Upd, F, L, nullptr);
+          continue;
+        }
 
         // Every running value of the accumulator — the phi AND each spine
         // node — must have exactly one in-loop user (its consumer on the
@@ -281,13 +320,19 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
                                      : cast<User>(&Phi);
           cleanUses = (U == Expected);
         }
-        if (!cleanUses) continue;
+        if (!cleanUses) {
+          reject("cleanUses", Upd, F, L, Upd);
+          continue;
+        }
 
         ChainInfo CI;
         CI.nMul = SpineMuls;
         SmallPtrSet<Value *, 32> Visited;
         for (Value *T : Terms) walkChain(T, *L, CI, Visited);
-        if (!CI.ok) continue; // dirty chain: miss
+        if (!CI.ok) { // dirty chain: miss
+          reject("dirtyChain", Upd, F, L, nullptr);
+          continue;
+        }
         // nMul was standing in for "this term's magnitude can compound".
         // An exp-family factor does that on its own: exp(t) spans the whole
         // range from t alone, no multiply needed. Requiring a multiply
@@ -297,7 +342,10 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         // multiply); the textbook `sum += exp(x[i] - max)` was invisible.
         // Plain sums with no exponent stay out of scope: they are rescuable
         // without logsumexp, which is why plain_sum is still a labeled miss.
-        if (CI.nMul == 0 && !CI.expChain) continue;
+        if (CI.nMul == 0 && !CI.expChain) {
+          reject("noMulNoExp", Upd, F, L, nullptr);
+          continue;
+        }
 
         const char *Trip = "unknown";
         if (SE.getSmallConstantTripCount(L) > 0) Trip = "constant";
@@ -347,7 +395,14 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                 [](StringRef Name, FunctionPassManager &FPM,
                    ArrayRef<PassBuilder::PipelineElement>) {
                   if (Name == "sop-matcher") {
-                    FPM.addPass(SopMatcherPass());
+                    FPM.addPass(SopMatcherPass(/*Explain=*/false));
+                    return true;
+                  }
+                  // Parameters go inside <> and are semicolon-separated: the
+                  // new-PM pipeline parser splits on commas at the top level,
+                  // so a comma form never reaches this callback intact.
+                  if (Name == "sop-matcher<explain>") {
+                    FPM.addPass(SopMatcherPass(/*Explain=*/true));
                     return true;
                   }
                   return false;
