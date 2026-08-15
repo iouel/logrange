@@ -283,8 +283,8 @@ const char *classifyConsumerUse(const ConsumerUse &CU, const Loop &L) {
   if (!BO->getType()->isDoubleTy() || !BO->getOperand(0)->getType()->isDoubleTy() ||
       !CU.SeenAs->getType()->isDoubleTy())
     return "not-double";
-  if (auto *NumI = dyn_cast<Instruction>(BO->getOperand(0)))
-    if (L.contains(NumI))
+  if (auto *NumeratorI = dyn_cast<Instruction>(BO->getOperand(0)))
+    if (L.contains(NumeratorI))
       return "numeral-ineligible";
   if (!BO->hasOneUse())
     return "shared-result";

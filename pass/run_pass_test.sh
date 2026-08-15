@@ -61,9 +61,9 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
        -S "$WORK/kernel_rw.ll" -o "$WORK/kernel_rw_opt.ll" \
        2> "$WORK/rewrite.log" || { cat "$WORK/rewrite.log"; exit 1; }
 cat "$WORK/rewrite.log"
-# Exactly FOUR rewrites: the standalone denominator plus the three
-# full-softmax consumer-shape kernels. The negative-control loops in the same
-# module must still be declined.
+# Exactly FOUR rewrites: the standalone denominator plus the three new
+# consumer-shape kernels (one full softmax, two near misses). The
+# negative-control loops in the same module must still be declined.
 NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
 [ "$NREW" = "4" ] \
   || { echo "FAIL: expected exactly 4 REWRITE lines, got $NREW"; exit 1; }

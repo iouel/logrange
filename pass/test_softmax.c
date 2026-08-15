@@ -380,19 +380,19 @@ int main(void) {
     softmax_full_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_full,max_rel=%.3g\n", rel);
-    check("softmax_full_linear_agree_1e-12", rel < 1e-12);
+    check("softmax_full_rw_agree_1e-12", rel < 1e-12);
 
     softmax_add_orig(x, out_orig, N);
     softmax_add_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_add,max_rel=%.3g\n", rel);
-    check("softmax_add_linear_agree_1e-12", rel < 1e-12);
+    check("softmax_add_rw_agree_1e-12", rel < 1e-12);
 
     softmax_sum_div_orig(x, out_orig, N);
     softmax_sum_div_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_sum_div,max_rel=%.3g\n", rel);
-    check("softmax_sum_div_linear_agree_1e-12", rel < 1e-12);
+    check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
   }
 
   printf(fails ? "OVERALL,FAIL\n" : "OVERALL,PASS\n");
