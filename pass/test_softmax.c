@@ -1,8 +1,8 @@
 /* test_softmax.c — end-to-end test for pass/LogRewritePass.cpp ("log-rewrite").
  *
  * One source file, compiled three times (driven by run_pass_test.sh):
- *   1. -DKERNEL -Dsoftmax_denom=softmax_denom_orig   -> baseline kernel object
- *   2. -DKERNEL -Dsoftmax_denom=softmax_denom_rw     -> identical IR, then run
+ *   1. -DKERNEL with per-function renames             -> baseline kernel object
+ *   2. -DKERNEL with the same renames to *_rw        -> identical IR, then run
  *      through opt-21 -passes='log-rewrite<force>' before codegen
  *   3. (no -DKERNEL)                                 -> this main() harness
  * The -D renaming is how two copies of one function coexist in one binary.
@@ -30,8 +30,37 @@ double softmax_denom(const double *x, int n) {
   return s;
 }
 
+/* Full softmax: denominator loop + normalize divide in one function.
+ * This is the stretch-goal milestone shape (ELIGIBILITY.md section 6). */
+void softmax_full(const double *x, double *out, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += exp(x[i]);
+  for (int i = 0; i < n; ++i)
+    out[i] = exp(x[i]) / s;
+}
+
+/* Near-miss consumer: uses the sum in an fadd, not an fdiv. */
+void softmax_add(const double *x, double *out, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += exp(x[i]);
+  for (int i = 0; i < n; ++i)
+    out[i] = exp(x[i]) + s;
+}
+
+/* Near-miss consumer: divide present, but the rewritten sum is not the
+ * divisor. */
+void softmax_sum_div(const double *x, double *out, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += exp(x[i]);
+  for (int i = 0; i < n; ++i)
+    out[i] = s / exp(x[i]);
+}
+
 /* Negative controls — in-scope-looking loops the pass must DECLINE
- * (run_pass_test.sh asserts exactly one REWRITE line for this module, and
+ * (run_pass_test.sh asserts only the softmax-denominator family rewrites, and
  * the harness checks orig/rw results are bit-identical). Renamed per
  * compilation via -D exactly like softmax_denom. */
 
@@ -67,6 +96,12 @@ double invariant_exp_sum(double c, int n) {
 
 extern double softmax_denom_orig(const double *x, int n);
 extern double softmax_denom_rw(const double *x, int n);
+extern void softmax_full_orig(const double *x, double *out, int n);
+extern void softmax_full_rw(const double *x, double *out, int n);
+extern void softmax_add_orig(const double *x, double *out, int n);
+extern void softmax_add_rw(const double *x, double *out, int n);
+extern void softmax_sum_div_orig(const double *x, double *out, int n);
+extern void softmax_sum_div_rw(const double *x, double *out, int n);
 extern double plain_sum_orig(const double *x, int n);
 extern double plain_sum_rw(const double *x, int n);
 extern double dot_sum_orig(const double *x, const double *y, int n);
@@ -136,6 +171,18 @@ static int fails = 0;
 static void check(const char *name, int ok) {
   printf("%s,%s\n", ok ? "PASS" : "FAIL", name);
   if (!ok) ++fails;
+}
+
+static double max_rel_diff(const double *a, const double *b, int n) {
+  double worst = 0.0;
+  int i;
+  for (i = 0; i < n; ++i) {
+    double diff = fabs(a[i] - b[i]);
+    double scale = fmax(fabs(a[i]), fabs(b[i]));
+    double rel = scale == 0.0 ? diff : diff / scale;
+    if (rel > worst) worst = rel;
+  }
+  return worst;
 }
 
 #define N 1000
@@ -319,6 +366,33 @@ int main(void) {
           dot_sum_orig(x, y, N) == dot_sum_rw(x, y, N));
     check("negctl_invariant_exp_untouched",
           invariant_exp_sum_orig(0.5, N) == invariant_exp_sum_rw(0.5, N));
+  }
+
+  /* (k) Consumer-shape kernels. The spike only logs their consumer IR shape;
+   *     it does not rewrite the consumer, so orig/rw outputs must still
+   *     agree closely. */
+  {
+    static double out_orig[N], out_rw[N];
+    double rel;
+    for (i = 0; i < N; ++i) x[i] = nrand();
+
+    softmax_full_orig(x, out_orig, N);
+    softmax_full_rw(x, out_rw, N);
+    rel = max_rel_diff(out_orig, out_rw, N);
+    printf("INFO,softmax_full,max_rel=%.3g\n", rel);
+    check("softmax_full_rw_agree_1e-12", rel < 1e-12);
+
+    softmax_add_orig(x, out_orig, N);
+    softmax_add_rw(x, out_rw, N);
+    rel = max_rel_diff(out_orig, out_rw, N);
+    printf("INFO,softmax_add,max_rel=%.3g\n", rel);
+    check("softmax_add_rw_agree_1e-12", rel < 1e-12);
+
+    softmax_sum_div_orig(x, out_orig, N);
+    softmax_sum_div_rw(x, out_rw, N);
+    rel = max_rel_diff(out_orig, out_rw, N);
+    printf("INFO,softmax_sum_div,max_rel=%.3g\n", rel);
+    check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
   }
 
   printf(fails ? "OVERALL,FAIL\n" : "OVERALL,PASS\n");
