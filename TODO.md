@@ -193,21 +193,22 @@ run**, then packaging.
 
 ## Explicitly not blocking 1.0
 
-- [ ] **Formal-bound presentation cleanup.** The independent read found no
-      counterexample to the corrected accumulator contracts, but the proof
-      presentation should be tightened before a later release: explain why a
-      `pos == neg` reset's documented `Σ Aⱼ·u` absolute loss is already
-      covered by the relative `cond·(3k+4+D)·u` budget; label the published
-      forms as first-order bounds under their stated 1-ulp `exp()`,
-      vanishing-window, and neglected-higher-order assumptions; and clarify
-      the signed final-reduction discussion so the representation-floor term
-      and conditioning are not presented as competing explanations for
-      cancellation in `m_log + log(|net|)`. Update `log_math.h`,
-      `BENCHMARKS.md`, and `CHANGELOG.md` together.
-- [ ] **Installed-package comment cleanup.** `cmake/LogRangeConfig.cmake.in`
-      still says `LogRange::logrange` exports `-ffp-contract=off` / precise,
-      but consumers deliberately receive no floating-point flags. Correct the
-      stale generated-package comment to match CMakeLists.txt and README.md.
+- [x] **Formal-bound presentation cleanup.** Done 2026-08-15, in
+      `log_math.h`, `BENCHMARKS.md` and `CHANGELOG.md` together. Both forms
+      are labelled first-order under their stated assumptions; the reset
+      discard is shown to be inside the existing budget rather than listed
+      beside it; and `cond` versus `|log|S||·u` is stated as a division of
+      labor (error in computing the value versus error in representing it).
+      *One step added while writing it up:* the reset argument needs epoch
+      **disjointness** to hold. `Σ Aⱼ ≤ ½·cond·|S|` follows because each
+      reset's epoch is disjoint from the next (clear() starts a fresh one),
+      so the Aⱼ sum telescopes into the total mass. Without that step the
+      sum over ρ resets appears to grow without bound and the coverage
+      argument does not close.
+- [x] **Installed-package comment cleanup.** Done 2026-08-15. The template
+      described flag propagation that was removed when the FMA diagnosis was
+      corrected; the shipped file now matches CMakeLists.txt and README.md,
+      and says what actually protects the contract (the fast-math #error).
 - LLVM version breadth (21-only is fine for a research tool).
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,

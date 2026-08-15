@@ -1,10 +1,12 @@
 @PACKAGE_INIT@
 
 # LogRange is header-only: no library to find, no dependencies to chase.
-# The imported target LogRange::logrange carries the include directory, the
-# C++17 requirement, and the floating-point flag the error contract depends
-# on (-ffp-contract=off / precise). See the note in LogRangeTargets.cmake's
-# INTERFACE_COMPILE_OPTIONS and the header's precision floor section.
+# The imported target LogRange::logrange carries the include directory and the
+# C++17 requirement, and deliberately imposes no floating-point flags on you.
+# FMA contraction is harmless to the accumulators (measured bit-identical),
+# so nothing is forced for it. What the error contract cannot survive is
+# reassociating math, which no compile flag can express as a prohibition —
+# log_math.h refuses it with #error on __FAST_MATH__ / _M_FP_FAST instead.
 include("${CMAKE_CURRENT_LIST_DIR}/LogRangeTargets.cmake")
 
 check_required_components(LogRange)

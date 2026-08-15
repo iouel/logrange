@@ -60,6 +60,31 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Changed — bound presentation, after an independent read.**
+
+No counterexample to either corrected contract was found; these are
+presentation fixes, not corrections to the bounds.
+
+- Both forms are now labelled **first-order**, holding under the stated
+  assumptions (1-ulp `exp()`, the vanishing window, neglected O(n·u²)),
+  rather than reading as unconditional inequalities.
+- The per-reset `Σ Aⱼ·u` discard is no longer presented as a separate
+  absolute term alongside a relative bound. It is already covered: reset
+  epochs are disjoint and each carries mass ≥ 2Aⱼ, so Σ Aⱼ ≤ ½·cond·|S| and
+  the relative contribution is ≤ cond·u/2 — inside the existing 4u
+  coefficient, for any number of resets. The disjointness step is what keeps
+  it from growing with the reset count, and is stated explicitly.
+- `cond` and the `|log|S||` term are described as a division of labor rather
+  than competing explanations: `cond` covers cancellation in *forming* `net`,
+  `|log|S||·u` covers the single rounding of `m_log + log|net|` once `net` is
+  known. Error in computing the value versus error in representing it.
+
+**Fixed — the installed package's config comment.** `LogRangeConfig.cmake.in`
+still told consumers the imported target carries `-ffp-contract=off` /
+`/fp:precise`. That propagation was removed when the FMA diagnosis was
+corrected, but the template shipping inside the install tree was not updated
+with it.
+
 **Changed — `log_mul` / `log_div` were documented as exact. They are not.**
 
 The mapping is exact (multiplication is addition of logarithms); the
