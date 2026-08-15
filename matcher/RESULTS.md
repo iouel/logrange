@@ -112,6 +112,40 @@ its chain is `(alpha-1)*log(theta)` — a log-domain factor of linearly
 bounded magnitude, not an unbounded exp factor (nmul = 1, `log-chain`
 recorded but below the MED bar).
 
+## Coverage against the shapes this project names
+
+The `nMul` bug above was found by asking whether the matcher could see a
+shape the project claims to target. `coverage.c` makes that a standing
+check rather than a one-off: it holds the shapes named in the README, the
+intent, and METHODOLOGY, and the answer is recorded here.
+
+| named target | matcher sees it | verdict |
+|---|---|---|
+| mixture likelihood `w[i]*exp(logp[i])` | yes | HIGH exp-chain |
+| softmax denominator, textbook form | yes | HIGH exp-chain;exp-sum |
+| forward algorithm, register accumulator | yes | **LOW** |
+| forward algorithm, memory-carried | **no** | — |
+| hand-written logsumexp | yes | HIGH exp-chain;exp-sum |
+| kernel / weighted sum (libsvm family) | yes | LOW |
+| product of likelihoods | no — correct, exponent-tracking's job | — |
+
+Two gaps, and the second is not the documented one.
+
+**The forward algorithm as usually written is invisible.** `out[j] += ...`
+makes the accumulator an array cell, and memory-carried reductions never
+reach the matcher (METHODOLOGY.md, known blind spots). The README names this
+shape as a motivating case; the tooling cannot see it in its common form.
+
+**When the matcher can see it, the triage grades it LOW.** The register-
+accumulator version is a `nMul = 1` plain product chain with no
+transcendental, so the rule returns LOW — and the diagnostic would not flag
+it. That is not a rule bug so much as a limit of what one loop can show:
+the forward algorithm underflows because probabilities decay across time
+steps, and each individual inner reduction looks unremarkable. Static
+per-loop risk cannot see a magnitude trend that lives in the outer loop.
+Worth stating plainly, because "the diagnostic flags the shapes we care
+about" is exactly the claim a reader would assume.
+
 ## Audit (per METHODOLOGY.md)
 
 - **Precision** (random hits, source eyeballed): 6/8 confirmed genuine

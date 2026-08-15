@@ -203,7 +203,22 @@ run**, then packaging.
       Extend or document per shape.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
-      docs stay the answer.
+      docs stay the answer. Now has evidence attached (`matcher/coverage.c`,
+      RESULTS.md "Coverage against the shapes this project names"): the
+      forward algorithm, a README-named target, is invisible in its usual
+      `out[j] += ...` form because the accumulator is an array cell.
+      Memory-carried reductions are no longer a hypothetical gap — one of
+      the three motivating shapes lands in it.
+- [ ] **Per-loop risk cannot see cross-loop decay.** Found 2026-08-15 by the
+      coverage audit. When the matcher *can* see the forward algorithm (the
+      register-accumulator form), the triage grades it LOW: `nMul = 1`, no
+      transcendental. The underflow is real but lives in the outer loop —
+      probabilities decay across time steps while each inner reduction looks
+      unremarkable. So the diagnostic would not flag one of the shapes the
+      README names as motivating the library. Either the risk rule gains a
+      cross-loop signal (magnitude trend across an enclosing loop), or the
+      docs stop implying the diagnostic covers this family. Decide before
+      the diagnostic is called shippable.
 
 ## Explicitly not blocking 1.0
 

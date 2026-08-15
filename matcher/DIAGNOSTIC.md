@@ -47,7 +47,15 @@ warning rather than misread — regenerate the scan instead.
   cheap static complement.
 - **Memory-carried reductions are not covered.** An accumulator updated
   through an array cell in place never reaches the matcher (METHODOLOGY.md,
-  known blind spots) and therefore never reaches this report.
+  known blind spots) and therefore never reaches this report. This is not
+  hypothetical: the forward algorithm, one of the three shapes the README
+  names as motivating this project, is usually written `out[j] += ...` and
+  lands squarely in the gap (RESULTS.md, "Coverage against the shapes this
+  project names").
+- **Risk is judged one loop at a time.** A reduction whose magnitude decays
+  across an *enclosing* loop — the forward algorithm again, probabilities
+  shrinking over time steps — has unremarkable inner iterations and grades
+  LOW. This lint will not flag it even when the matcher can see it.
 - **Vectorized/unrolled loops are not covered.** The study pipeline
   deliberately compiles with `-fno-vectorize -fno-slp-vectorize
   -fno-unroll-loops`; scans of ordinary optimized builds will miss
