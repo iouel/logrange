@@ -93,28 +93,37 @@ Conclusions, now encoded in code and tests (`test_accuracy` scenario 2b):
 Stated in `log_math.h` and machine-checked in `test_accuracy` (k recomputed
 from the input data; the accumulator carries no instrumentation):
 
-> **rp_accum worst-case relative error ≤ cond · (3k + 4) · u**, u = 2⁻⁵³,
-> where k = rescale events (expected O(ln n) for random order, worst n−1);
+> **rp_accum worst-case relative error ≤ cond · (3k + 4 + D) · u + |log|S|| · u**,
+> u = 2⁻⁵³, where k = rescale events (expected O(ln n) for random order,
+> worst n−1), D = mass-weighted mean insertion depth, S = the exact sum;
 > plus the documented per-reset discard (≤ Σ Aⱼ·u absolute) and the ~745
 > log-unit vanishing contract. `pos_accum`: ≤ (n + 3k + 3)·u, no cond term
 > (positive sums cannot cancel) — the n·u summation drift is the accepted
 > price of the fast path.
 
+The D and |log|S|| terms were added after the original cond·(3k+4)·u form was
+refuted by adversarial search; see CHANGELOG.md for old and new values and
+the two mechanisms it missed. The bound column below is the corrected form.
+
 ## Accuracy vs double-double reference (v0.2, `test_accuracy`)
 
-| scenario | n | v0.1 observed | v0.2 observed | formal bound |
+| scenario | n | v0.1 observed | v0.2 observed | corrected bound |
 |---|---|---|---|---|
-| long positive sum (rel err), k=21 | 10⁶ | 1.5e-14 | **9.3e-16** | 7.4e-15 |
+| long positive sum (rel err), k=21 | 10⁶ | 1.5e-14 | **9.3e-16** | 1.0e-14 |
 | heavy cancellation, cond = 2.3e9 (rel err) | 2×10⁴ | 4.8e-6 | **1.6e-8** | 1.6e-5 |
-| same data shuffled | 2×10⁴ | — | **4.4e-10** | 5.7e-6 |
+| same data shuffled | 2×10⁴ | — | **4.4e-10** | 6.4e-6 |
 | `log_add` fold, paired / shuffled (no contract) | 2×10⁴ | 2.8e-8 | 2.8e-8 / 4.1e-6 | — |
 | magnitude staircase (log-abs err) | 461 | 0.0 | 0.0 | (below resolution) |
 | forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 1.0e64 | 4.4e65 (k·A·u) |
 
 Long sums are ε-level and n-independent — the residual error is the per-term
-`exp()` rounding, not summation drift. Observed sits 5–1000× under the formal
-bound, consistent with worst-case-vs-random-signs slack; the bound is tight
-enough to be falsifiable and holds on every scenario.
+`exp()` rounding, not summation drift.
+
+These six scenarios never exceeded even the old bound, which is exactly the
+limitation of fixed scenarios: they can only fail to refute a universal
+claim. `bound_search` attacks the same claim directly and does refute it.
+Under the corrected bound, observed sits 6–1000× under on these scenarios and
+0.85× at the worst point the search could construct.
 
 ## Second toolchain: the bound on glibc
 
@@ -130,13 +139,13 @@ control. Run of 2026-08-15, WSL2 Ubuntu, gcc 15.2.0 and clang 21.1.8,
   clang 18.1.3 (run 31842013920). Four compiler versions across two majors
   each, one set of numbers.
 
-| scenario | n | glibc observed | bound | slack |
+| scenario | n | glibc observed | corrected bound | slack |
 |---|---|---|---|---|
-| long positive sum, k=13 | 10³ | 0.0 | 4.8e-15 | — |
-| long positive sum, k=11 | 10⁵ | 1.2e-16 | 4.1e-15 | 35× |
-| long positive sum, k=21 | 10⁶ | 1.7e-15 | 7.4e-15 | 4.5× |
-| heavy cancellation, cond = 1.8e9 | 2×10⁴ | 2.7e-9 | 1.4e-5 | 5100× |
-| same data shuffled | 2×10⁴ | 1.1e-8 | 6.3e-6 | 600× |
+| long positive sum, k=13 | 10³ | 0.0 | 6.2e-15 | — |
+| long positive sum, k=11 | 10⁵ | 1.2e-16 | 6.3e-15 | 53× |
+| long positive sum, k=21 | 10⁶ | 1.7e-15 | 1.0e-14 | 6.0× |
+| heavy cancellation, cond = 1.8e9 | 2×10⁴ | 2.7e-9 | 1.4e-5 | 5300× |
+| same data shuffled | 2×10⁴ | 1.1e-8 | 6.9e-6 | 650× |
 | `log_add` fold, paired / shuffled | 2×10⁴ | 4.9e-8 / 1.7e-6 | (no contract) | — |
 | magnitude staircase (log-abs err) | 461 | 0.0 | 1e-12 | — |
 | forced pos==neg resets, k=20 (abs err) | 147 | 1.0e64 | 4.4e65 | 44× |
@@ -146,7 +155,7 @@ control. Run of 2026-08-15, WSL2 Ubuntu, gcc 15.2.0 and clang 21.1.8,
 `normal_distribution` and `uniform_real_distribution` are not, so the same
 seeds generate different datasets: the cancellation scenario draws cond =
 1.8e9 here versus 2.3e9 on Windows. What transfers is the verdict, which is
-the property under test — the bound holds on both libms, with 4.5×–5100×
+the property under test — the bound holds on both libms, with 6×–5300×
 slack on glibc. No evidence of `exp()` exceeding the assumed 1 ulp.
 
 ## Next

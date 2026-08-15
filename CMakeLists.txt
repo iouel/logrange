@@ -52,6 +52,13 @@ add_executable(test_accuracy tests/test_accuracy.cpp)
 target_link_libraries(test_accuracy PRIVATE logrange)
 add_test(NAME accuracy COMMAND test_accuracy)
 
+# Adversarial search against the error contract. test_accuracy checks fixed
+# scenarios, which can only fail to refute a universal claim; this one hunts
+# for a counterexample. Kept as a test so a bound change cannot land quietly.
+add_executable(bound_search tests/bound_search.cpp)
+target_link_libraries(bound_search PRIVATE logrange)
+add_test(NAME bound_search COMMAND bound_search)
+
 # Benchmark harness (intent Deliverable 1 / First Action step 4). Not a test:
 # timing runs are manual and only meaningful in the Release config (/O2).
 # Inherits the global /W4 /WX /fp:precise flags deliberately — the harness

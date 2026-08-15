@@ -28,42 +28,7 @@
 
 using namespace logrange;
 
-// ---------------------------------------------------------------------------
-// Double-double compensated summation (the reference).
-//
-// TwoSum (Knuth): s = fl(a+b) plus the exact rounding error e, valid for any
-// a, b. Operations are kept in separate statements through named temporaries
-// so the compiler cannot fuse or reorder the compensation; /fp:precise
-// (MSVC) / -ffp-contract=off (GCC/Clang) preserve the identities. There are
-// no multiplies here, so FMA contraction is not a concern either.
-// ---------------------------------------------------------------------------
-struct dd_sum {
-  double hi = 0.0;
-  double lo = 0.0;
-
-  void add(double x) {
-    // TwoSum(hi, x) -> (s, e) with s + e == hi + x exactly.
-    const double s   = hi + x;
-    const double bv  = s - hi;
-    const double ea  = hi - (s - bv);
-    const double eb  = x - bv;
-    const double e   = ea + eb;
-    // Fold the exact error into the low word, then renormalize (Fast2Sum;
-    // |s| >= |lo2| holds because lo2 is far below s's last bit).
-    const double lo2 = lo + e;
-    const double h2  = s + lo2;
-    const double t   = h2 - s;
-    const double l2  = lo2 - t;
-    hi = h2;
-    lo = l2;
-  }
-
-  double value() const { return hi + lo; }
-
-  // log(|sum|) with the low word folded in as a relative correction:
-  // |hi + lo| = |hi| * (1 + lo/hi), so log|sum| = log|hi| + log1p(lo/hi).
-  double log_abs() const { return std::log(std::fabs(hi)) + std::log1p(lo / hi); }
-};
+#include "dd_sum.h" // the reference, shared with bound_search.cpp
 
 // ---------------------------------------------------------------------------
 // Formal-bound helpers (header error contract, rp_accum v0.2):
@@ -87,8 +52,26 @@ static std::size_t count_rescales(const std::vector<log_value>& terms) {
   return k;
 }
 
-static double formal_bound(double cond, std::size_t k) {
-  return cond * (3.0 * static_cast<double>(k) + 4.0) * U;
+// Mass-weighted mean insertion depth: sum|x_i|*(m_i - L_i) / sum|x_i|, with
+// m_i the running reference when term i was added. This is the term the
+// original cond*(3k+4)*u form omitted — see log_math.h and bound_search.cpp.
+static double weighted_depth(const std::vector<log_value>& terms) {
+  dd_sum mass, wdepth;
+  double m = -std::numeric_limits<double>::infinity();
+  for (const log_value& v : terms) {
+    if (v.is_zero()) continue;
+    if (v.log_abs > m) m = v.log_abs;
+    const double w = std::fabs(v.to_linear());
+    mass.add(w);
+    wdepth.add(w * (m - v.log_abs));
+  }
+  return (mass.value() > 0.0) ? wdepth.value() / mass.value() : 0.0;
+}
+
+static double formal_bound(double cond, std::size_t k, double depth,
+                           double log_abs_sum) {
+  return cond * (3.0 * static_cast<double>(k) + 4.0 + depth) * U +
+         std::fabs(log_abs_sum) * U;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,12 +97,15 @@ static void test_long_positive_sum() {
 
     rp_accum acc;
     dd_sum ref;
+    std::vector<log_value> terms; // kept so the depth term can be recomputed
+    terms.reserve(n);
     std::size_t k = 0; // rescale events, tracked from the data
     double m = -std::numeric_limits<double>::infinity();
     for (std::size_t i = 0; i < n; ++i) {
       log_value v;
       v.log_abs = logmag(rng);
       v.sign = 1.0;
+      terms.push_back(v);
       if (v.log_abs > m) { if (i > 0) ++k; m = v.log_abs; }
       acc.add(v);
       ref.add(std::exp(v.log_abs)); // same linear term the accumulator sees
@@ -128,7 +114,8 @@ static void test_long_positive_sum() {
     const double truth = ref.value();
     const double rel   = std::fabs(got - truth) / std::fabs(truth);
     // Positive-only sum: cond == 1 exactly. Assert the header's formal bound.
-    const double bound = formal_bound(1.0, k);
+    const double bound = formal_bound(1.0, k, weighted_depth(terms),
+                                      ref.log_abs());
 
     char label[64];
     std::snprintf(label, sizeof label, "rp_accum long +sum n=%zu (rel err, k=%zu)", n, k);
@@ -198,7 +185,9 @@ static void test_heavy_cancellation(const cancel_data& d) {
 
   const double got   = acc.to_log_value().to_linear();
   const double rel   = std::fabs(got - d.truth) / std::fabs(d.truth);
-  const double bound = formal_bound(d.cond, count_rescales(d.terms));
+  const double bound = formal_bound(d.cond, count_rescales(d.terms),
+                                    weighted_depth(d.terms),
+                                    std::log(std::fabs(d.truth)));
 
   char label[64];
   std::snprintf(label, sizeof label, "rp_accum heavy cancel (rel err, cond=%.1e)", d.cond);
@@ -246,7 +235,9 @@ static void test_ordering_sensitivity(const cancel_data& d) {
 
   // rp_accum answers to the formal contract bound with k from THIS ordering;
   // the fold has no such contract — it keeps the old generous sanity bound.
-  const double rp_bound   = formal_bound(d.cond, count_rescales(shuffled));
+  const double rp_bound   = formal_bound(d.cond, count_rescales(shuffled),
+                                         weighted_depth(shuffled),
+                                         std::log(std::fabs(d.truth)));
   const double fold_bound = d.cond * static_cast<double>(d.terms.size()) * 1e-14;
   report_row("rp_accum heavy cancel SHUFFLED (rel err)", d.terms.size(), rp_rel, rp_bound);
   report_row("log_add fold heavy cancel SHUFFLED (rel err)", d.terms.size(), fold_rel, fold_bound);

@@ -11,7 +11,44 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Changed — the error contract moved. Old and new values below.**
+
+The 0.2.0 contract was `rel err ≤ cond·(3k+4)·u`. It was refuted, not
+adjusted: `tests/bound_search.cpp` searches for counterexamples and found
+151 of 400 random inputs violating it, worst case 15.8× over. A constructed
+counterexample reaches 5.8× at `cond = 1, k = 0`, where the old bound is bare
+`4u`. Two terms were missing.
+
+- **Argument rounding.** The derivation charged each term `2u` for its
+  `exp()`. It ignored the rounding of `exp()`'s *argument*: `fl(L_i − m_i)`
+  differs from the exact difference by up to `u·d_i` where `d_i = m_i − L_i`,
+  and `exp` converts that into a relative error of the same size, so a term
+  costs `(d_i + 1)·u`. Terms at equal depth share one rounding error
+  coherently, with nothing to cancel it. Enters as `D`, the mass-weighted
+  mean insertion depth (~`ln n` for ordinary data, ≤ ~745 worst case).
+- **Final reduction.** `out.log_abs = m_log + log|net|` rounds to within
+  `u·|log|S||`, and absolute error in log space is relative error in linear
+  space. Invisible for sums near 1; at `log|S| ~ 700` — the regime this
+  library exists for — it is ~700u on its own, and it never touches `cond`.
+  This is what most of the random refutations were hitting.
+
+New: `rel err ≤ cond·(3k + 4 + D)·u + |log|S||·u`. Worst observed/bound
+across the whole search is now 0.85, so it is tight enough to stay
+falsifiable. `pos_accum`'s `(n+3k+3)·u` is unreviewed and unchanged.
+
+Bounds that moved in `test_accuracy` (observed values did not change):
+n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
+shuffled 5.7e-6 → 6.4e-6.
+
 **Added**
+- `tests/bound_search.cpp` (ctest: `bound_search`), the adversarial search.
+  Constructed families for coherent argument rounding, cancellation, and the
+  `k = n−1` worst case, plus 400 randomized trials over size, magnitude,
+  depth spread, sign mix, and ordering. Scores every input against the
+  contract and fails if anything exceeds it.
+- `tests/dd_sum.h` — the double-double reference, factored out of
+  test_accuracy so both suites agree on what "truth" means, plus
+  `two_diff_err` for measuring argument-subtraction loss exactly.
 - `LOGRANGE_VERSION_MAJOR` / `_MINOR` / `_PATCH`, `LOGRANGE_VERSION`,
   `LOGRANGE_VERSION_STRING`. A vendored copy can now be identified.
 - CI matrix: ubuntu-gcc and ubuntu-clang alongside windows-msvc. The

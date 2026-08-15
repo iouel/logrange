@@ -5,9 +5,11 @@ it must be trustworthy on a machine we've never seen. The tooling (matcher,
 diagnostic, pass) ships alongside at whatever maturity it honestly has, each
 labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 
-Sections are not strictly in execution order. **Next up is the bound review**
-under "honesty debts", ahead of the remaining library items: it can move the
-error contract, and the rest of 1.0 is written on top of that contract.
+Sections are not strictly in execution order. The bound review ran first, on
+the reasoning that it could move the error contract and the rest of 1.0 is
+written on top of it. **It did move the contract** (see below), which is why
+it ran first. **Next up is the float decision**, which is a statement about
+the scope of that now-corrected bound.
 
 ## Blocking 1.0 — library
 
@@ -51,11 +53,30 @@ error contract, and the rest of 1.0 is written on top of that contract.
 
 ## Blocking 1.0 — honesty debts
 
-- [ ] **Bound review pass. Do this before the remaining library items.** The
-      (3k+4)·u derivation is a sketch reviewed by its author. Re-derive it
-      cold before the contract is called 1.0. Special attention:
-      rescale-error correlation between pos and neg (currently bounded
-      independently) and the n·u² small-print threshold.
+- [x] **Bound review pass.** Done 2026-08-15, and the bound did not survive.
+      The cond·(3k+4)·u form is refuted: `tests/bound_search.cpp` finds 151
+      of 400 random inputs over it (worst 15.8×) and a constructed
+      counterexample at 5.8× with cond=1, k=0. Two terms were missing — the
+      rounding of exp's *argument* (mass-weighted mean depth D) and the
+      final m_log + log|net| reduction (|log|S||·u, which never touches
+      cond and dominates at the extreme magnitudes this library targets).
+      New contract: cond·(3k+4+D)·u + |log|S||·u, worst observed/bound 0.85
+      across the search. Header, CHANGELOG, BENCHMARKS and test_accuracy
+      updated together.
+      *Still open:* the two originally flagged questions were not the ones
+      that broke it. Pos/neg rescale-error correlation and the n·u²
+      threshold remain unexamined, and `pos_accum`'s (n+3k+3)·u has had no
+      review at all — bound_search only attacks rp_accum. An independent
+      human read of the corrected derivation is still worth having; what
+      exists now is an author's derivation with an adversarial search
+      behind it, which is strictly better than six fixed scenarios but is
+      not independent review.
+- [ ] **Bound review, second pass.** What the first pass left: `pos_accum`'s
+      (n+3k+3)·u has had no review and no adversarial search (bound_search
+      only attacks rp_accum, and the same argument-rounding mechanism
+      applies to it); pos/neg rescale-error correlation, still bounded
+      independently; the n·u² threshold. An independent read of the
+      corrected rp_accum derivation belongs here too.
 
       *Why it goes first.* The bound is the thing this library claims that
       every hand-rolled logsumexp lacks; it is the product. The header
