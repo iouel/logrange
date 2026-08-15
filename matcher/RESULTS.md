@@ -159,6 +159,31 @@ condition for refining the guard, tested on four hand-written variants at
 `-O1`; it is not evidence that a refined rule is sound in general, and alias
 analysis is still required before accepting any such store.
 
+**Refining the guard was measured and declined for v1.** Scanning the same
+corpus with the instrumented build, serially and reproducibly:
+
+| `cleanUses` rejects | 460 |
+|---|---|
+| extra user is an invariant-address store — what a refinement would admit | **23 (5.0%)** |
+| extra user is a varying-address store — correctly rejected | 8 |
+| extra user is a non-store | 135 |
+| no extra user on the update; rejected via the phi or another spine node | 294 (64%) |
+
+The 23 are `gsl_spblas_dgemv`, `gsl_eigen_nonsymmv`,
+`genv_get_right_eigenvectors`, `cquad`, `steffen_eval_integ`, darknet's
+`mean_cpu`, `forward_avgpool_layer`, `backward_batchnorm_layer` and similar —
+no `exp` in any chain, so all would grade LOW and `diagnose.sh` would print
+them only as a count. Nor would the refinement recover the shape that prompted
+it: none of these three codebases contains forward-algorithm code, so
+`coverage.c`'s case is synthetic. Decision and revisit conditions in TODO.md.
+
+*Reproducibility note.* A first version of this count ran `opt` under
+`xargs -P4` and interleaved records onto shared lines, undercounting
+(451/20/6/133/291 against the serial 460/23/8/135/294). The numbers above are
+from two serial passes that are byte-identical with zero malformed lines.
+`run_study.sh`'s own `scan()` has always been serial, so the published hit
+counts were never exposed to this.
+
 **When the matcher can see it, the triage grades it LOW.** The register-
 accumulator version is a `nMul = 1` plain product chain with no
 transcendental, so the rule returns LOW — and the diagnostic would not flag

@@ -55,6 +55,13 @@ warning rather than misread — regenerate the scan instead.
   forward algorithm — one of the three shapes the README names as motivating
   this project — is usually written that way and goes unreported (RESULTS.md,
   "Coverage against the shapes this project names").
+
+  Admitting that case was considered and declined for v1 on measured yield:
+  23 of 460 such rejects across the study corpus (5.0%), every one a
+  linear-algebra or mean reduction with no `exp` in its chain, hence LOW and
+  summarized as a count rather than reported. Revisit only alongside
+  alias/dependence analysis and cross-loop risk modelling; the latter is what
+  would make these sites worth printing (TODO.md).
 - **Risk is judged one loop at a time.** A reduction whose magnitude decays
   across an *enclosing* loop — the forward algorithm again, probabilities
   shrinking over time steps — has unremarkable inner iterations and grades

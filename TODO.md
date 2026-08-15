@@ -212,17 +212,31 @@ run**, then packaging.
       the update ends up with two in-loop users. Genuinely memory-carried
       reductions remain a separate, still-open gap; this shape is a
       guard-precision problem, tracked in the next item.
-- [ ] **Mid-loop-read guard is too coarse.** It rejects any update with a
-      second in-loop user, which catches both prefix sums (`midread`, where
-      the intermediate values really are observed and rejection is correct)
-      and accumulators merely mirrored to a fixed cell (`out[j] += ...`,
-      where nothing in the loop reads them). A differential set at `-O1`
-      shows `L->isLoopInvariant` on the store address separates the two, and
-      that a store which does not store the accumulator does not trip the
-      guard at all. That makes invariance a candidate refinement — not a
-      validated one: it is four hand-written variants on one compiler, and
-      accepting such a store additionally needs alias analysis, since a
-      loop-invariant address can still alias a load in the loop.
+- [x] **Mid-loop-read guard precision — decided 2026-08-15: not for v1.**
+      The guard rejects any update with a second in-loop user, catching both
+      prefix sums (`midread`, correctly — the intermediates are observed) and
+      accumulators merely mirrored to a fixed cell (`out[j] += ...`). A
+      differential set at `-O1` showed `L->isLoopInvariant` on the store
+      address separates the two, so admitting the mirrored case looked
+      plausible. Measuring the yield first killed it.
+      Over the study corpus, serially and reproducibly (see below):
+      **23 of 460 cleanUses rejects, 5.0%**, would be admitted. All are
+      linear-algebra and mean reductions — `gsl_spblas_dgemv`,
+      `gsl_eigen_nonsymmv`, `genv_get_right_eigenvectors`, `cquad`,
+      `steffen_eval_integ`, darknet's `mean_cpu`, `forward_avgpool_layer`,
+      `backward_batchnorm_layer` — with no `exp` in any chain, so all would
+      grade LOW, which `diagnose.sh` prints only as a count. It would also
+      not recover the shape that prompted it: there is no forward-algorithm
+      code in GSL, darknet or libsvm, so `coverage.c`'s case is synthetic.
+      Meanwhile 294 of 460 rejects (64%) come from extra users on the phi or
+      another spine node and are untouched by this refinement.
+      Verdict: alias-analysis machinery for a 5% slice yielding LOW-risk
+      sites the diagnostic does not print. Not worth it for v1. Mirrored
+      accumulators are documented as outside diagnostic coverage instead
+      (DIAGNOSTIC.md), and `coverage.c` stays as the standing check.
+      *Revisit only if* the project later grows alias/dependence analysis and
+      cross-loop risk modelling — the second is what would make these sites
+      worth reporting at all, and it is the open item above.
 - [ ] **Per-loop risk cannot see cross-loop decay.** Found 2026-08-15 by the
       coverage audit. When the matcher *can* see the forward algorithm (the
       register-accumulator form), the triage grades it LOW: `nMul = 1`, no
