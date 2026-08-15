@@ -2976,6 +2976,7 @@ HIT,./source_dot_c.h,31,cblas_zdotu_sub,runtime,7,2,plain,LOW,none
 HIT,./source_dot_c.h,32,cblas_zdotu_sub,runtime,6,2,plain,LOW,none
 LOOP,./source_scal_c_s.h,29,cblas_zdscal
 LOOP,zeta.c,757,gsl_sf_hzeta_e
+HIT,zeta.c,757,gsl_sf_hzeta_e,constant,4,0,transcendental,HIGH,exp-chain;exp-sum
 LOOP,zeta.c,760,gsl_sf_hzeta_e
 LOOP,./cheb_eval.c,18,gsl_sf_zeta_e
 HIT,./cheb_eval.c,19,gsl_sf_zeta_e,constant,9,1,plain,LOW,none

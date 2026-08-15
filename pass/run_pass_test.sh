@@ -42,8 +42,31 @@ cat "$WORK/rewrite.log"
 NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
 [ "$NREW" = "1" ] \
   || { echo "FAIL: expected exactly 1 REWRITE line, got $NREW"; exit 1; }
-grep -q '^REWRITE,.*softmax_denom_rw$' "$WORK/rewrite.log" \
-  || { echo "FAIL: rewrite fired on the wrong function"; exit 1; }
+grep -q '^REWRITE,.*,softmax_denom_rw,HIGH,exp-chain;exp-sum$' "$WORK/rewrite.log" \
+  || { echo "FAIL: rewrite fired on the wrong function, or without its risk verdict"; exit 1; }
+
+# The profitability gate (intent step 9) must be able to DECLINE, not just
+# permit. For this shape the verdict is HIGH by construction, so raising the
+# threshold above HIGH is the only way to exercise the refusal path — do it,
+# rather than ship a gate whose decline branch has never run.
+opt-21 -load-pass-plugin="$BUILD/LogRewrite.so" \
+       -passes='log-rewrite<force;min-risk=none>' \
+       -S "$WORK/kernel_rw.ll" -o /dev/null \
+       2> "$WORK/gate.log" || { cat "$WORK/gate.log"; exit 1; }
+grep -q '^DECLINE-RISK,.*,softmax_denom_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
+  || { echo "FAIL: gate did not decline when the threshold was raised"; exit 1; }
+[ "$(grep -c '^REWRITE,' "$WORK/gate.log" || true)" = "0" ] \
+  || { echo "FAIL: gate declined but rewrote anyway"; exit 1; }
+echo "PASS,gate_declines_above_threshold"
+
+# An unrecognised parameter must be refused, not silently ignored — a typo in
+# min-risk that quietly reverted to the default would disable the gate.
+if opt-21 -load-pass-plugin="$BUILD/LogRewrite.so" \
+          -passes='log-rewrite<force;min-risk=hgih>' \
+          -S "$WORK/kernel_rw.ll" -o /dev/null > /dev/null 2>&1; then
+  echo "FAIL: misspelled parameter was accepted"; exit 1
+fi
+echo "PASS,unknown_parameter_refused"
 grep -q 'llvm.maxnum.f64' "$WORK/kernel_rw_opt.ll" \
   || { echo "FAIL: rewritten IR lacks the streaming state"; exit 1; }
 # The replacement value must actually be CONSUMED, not just defined —
