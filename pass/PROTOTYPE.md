@@ -253,6 +253,25 @@ a documented hook: each rewrite stores `m + log(s)` to the external global
 consuming link must define it; last rewrite executed wins). The test
 harness defines that global and reads it after each call.
 
+## Consumer-shape logging spike (section 6 reconnaissance)
+
+The first stretch-goal spike now records, but does not rewrite, the IR shape
+of consumers reached from a rewritten denominator sum after LCSSA/exit-edge
+plumbing:
+
+- the full-softmax kernel at `-O1 -fno-math-errno` reaches an LCSSA phi and
+  then an `fdiv` with the sum in operand 1 — logged as
+  `CONSUMER-MATCH,...,fdiv-of-sum`;
+- the `exp(x[i]) + s` near miss logs `CONSUMER-DECLINE,...,not-fdiv`;
+- the `s / exp(x[i])` near miss logs
+  `CONSUMER-DECLINE,...,not-the-sum`;
+- the standalone denominator still logs its return consumer as
+  `CONSUMER-DECLINE,...,not-fdiv`.
+
+This is deliberately measurement only. No consumer IR changes yet; the pass
+still rewires every out-of-loop use to the linear replacement plus the export
+hook exactly as before.
+
 ## Verified results
 
 `bash pass/run_pass_test.sh` inside WSL (clang/opt 21, Ubuntu). Build

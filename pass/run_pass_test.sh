@@ -42,10 +42,14 @@ echo "== 2. compile kernels to IR (identical source, two names) =="
 # the kernel does not match at all — it is declined as DECLINE-ERRNO.
 # Section 3b asserts that decline directly.
 KFLAGS="-O1 -g -fno-discard-value-names -fno-math-errno"
-RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dplain_sum=plain_sum_orig \
-             -Ddot_sum=dot_sum_orig -Dinvariant_exp_sum=invariant_exp_sum_orig"
-RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dplain_sum=plain_sum_rw \
-           -Ddot_sum=dot_sum_rw -Dinvariant_exp_sum=invariant_exp_sum_rw"
+RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dsoftmax_full=softmax_full_orig \
+            -Dsoftmax_add=softmax_add_orig -Dsoftmax_sum_div=softmax_sum_div_orig \
+            -Dplain_sum=plain_sum_orig -Ddot_sum=dot_sum_orig \
+            -Dinvariant_exp_sum=invariant_exp_sum_orig"
+RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
+           -Dsoftmax_add=softmax_add_rw -Dsoftmax_sum_div=softmax_sum_div_rw \
+           -Dplain_sum=plain_sum_rw -Ddot_sum=dot_sum_rw \
+           -Dinvariant_exp_sum=invariant_exp_sum_rw"
 $CLANG $KFLAGS -DKERNEL $RENAME_ORIG \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_orig.ll"
 $CLANG $KFLAGS -DKERNEL $RENAME_RW \
@@ -57,17 +61,28 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
        -S "$WORK/kernel_rw.ll" -o "$WORK/kernel_rw_opt.ll" \
        2> "$WORK/rewrite.log" || { cat "$WORK/rewrite.log"; exit 1; }
 cat "$WORK/rewrite.log"
-# Exactly ONE rewrite: softmax_denom_rw fires, the three negative-control
-# loops in the same module must be declined.
+# Exactly FOUR rewrites: the standalone denominator plus the three
+# full-softmax consumer-shape kernels. The negative-control loops in the same
+# module must still be declined.
 NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
-[ "$NREW" = "1" ] \
-  || { echo "FAIL: expected exactly 1 REWRITE line, got $NREW"; exit 1; }
-grep -q '^REWRITE,.*,softmax_denom_rw,HIGH,exp-chain;exp-sum$' "$WORK/rewrite.log" \
-  || { echo "FAIL: rewrite fired on the wrong function, or without its risk verdict"; exit 1; }
+[ "$NREW" = "4" ] \
+  || { echo "FAIL: expected exactly 4 REWRITE lines, got $NREW"; exit 1; }
+for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw; do
+  grep -q "^REWRITE,.*,$fn,HIGH,exp-chain;exp-sum$" "$WORK/rewrite.log" \
+    || { echo "FAIL: rewrite missing for $fn"; exit 1; }
+done
 # On the intended build flags nothing should be declined for a safety reason.
 # A DECLINE line here means -fno-math-errno or the FP environment regressed.
 [ "$(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)" = "0" ] \
   || { echo "FAIL: unexpected safety decline on the reference build"; exit 1; }
+grep -q '^CONSUMER-DECLINE,.*,softmax_denom_rw,not-fdiv$' "$WORK/rewrite.log" \
+  || { echo "FAIL: standalone denominator consumer shape was not logged"; exit 1; }
+grep -q '^CONSUMER-MATCH,.*,softmax_full_rw,fdiv-of-sum$' "$WORK/rewrite.log" \
+  || { echo "FAIL: full softmax divide consumer did not log as a match"; exit 1; }
+grep -q '^CONSUMER-DECLINE,.*,softmax_add_rw,not-fdiv$' "$WORK/rewrite.log" \
+  || { echo "FAIL: fadd near-miss consumer did not log not-fdiv"; exit 1; }
+grep -q '^CONSUMER-DECLINE,.*,softmax_sum_div_rw,not-the-sum$' "$WORK/rewrite.log" \
+  || { echo "FAIL: wrong-divisor near-miss consumer did not log not-the-sum"; exit 1; }
 
 # The profitability gate (intent step 9) must be able to DECLINE, not just
 # permit. For this shape the verdict is HIGH by construction, so raising the
@@ -79,6 +94,12 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
        2> "$WORK/gate.log" || { cat "$WORK/gate.log"; exit 1; }
 grep -q '^DECLINE-RISK,.*,softmax_denom_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
   || { echo "FAIL: gate did not decline when the threshold was raised"; exit 1; }
+grep -q '^DECLINE-RISK,.*,softmax_full_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
+  || { echo "FAIL: gate missed full-softmax decline"; exit 1; }
+grep -q '^DECLINE-RISK,.*,softmax_add_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
+  || { echo "FAIL: gate missed softmax-add decline"; exit 1; }
+grep -q '^DECLINE-RISK,.*,softmax_sum_div_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
+  || { echo "FAIL: gate missed wrong-divisor decline"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/gate.log" || true)" = "0" ] \
   || { echo "FAIL: gate declined but rewrote anyway"; exit 1; }
 echo "PASS,gate_declines_above_threshold"
