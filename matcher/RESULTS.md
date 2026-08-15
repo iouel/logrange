@@ -101,11 +101,11 @@ case and now asserts 5 hits / 7 FP loops / 2 transcendental.
 But HIGH went from 3 sites to 5, and both recoveries are genuine underflow
 candidates the old rule dropped silently.
 
-Three rows, one shared source line (darknet's softmax denominator, matched
-in two functions). Of 781 shape-hits, the static signal marks two source
-sites: the softmax-denominator idiom and a Gaussian-kernel construction.
-That count supports a diagnostic flagging a handful of sites over a rewrite
-touching hundreds. The MED tier is all deep-chain (libsvm's `svm_train`
+Five rows across four source lines; darknet's softmax denominator accounts
+for two of them, matched in two functions at the same `blas.c:315`. Of 783
+shape hits, the static signal marks four source lines — 0.14% of the 2859
+loops examined. That count supports a diagnostic flagging a handful of sites
+over a rewrite touching hundreds. The MED tier is all deep-chain (libsvm's `svm_train`
 4–5-factor products; 54 GSL sites, none log-chain). The `dirichlet.c:147`
 pair triages LOW under this rule:
 its chain is `(alpha-1)*log(theta)` — a log-domain factor of linearly

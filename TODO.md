@@ -194,6 +194,93 @@ run**, then packaging.
       *Honest limit:* because the pass's only shape requires an `exp` call,
       its verdict is always HIGH and the gate cannot currently decline a real
       input. It becomes load-bearing when shape coverage widens.
+- [x] **Shipping posture** (intent step 9, second half). Decided
+      2026-08-16: **diagnostic-first**. Four artifacts, three labels — the
+      header is *the product* at 1.0; `matcher/diagnose.sh` is the **front
+      door**, labeled beta with its coverage gaps enumerated; `matcher/` is
+      the diagnostic's engine and study instrument at the same maturity;
+      `pass/` is a **labeled prototype**, opt-in, not installed, outside
+      1.0's supported surface. Full statement and reasoning:
+      `logrange_intent.md`, "Shipping Posture — decided 2026-08-16".
+      *What drove it:* 5 HIGH rows in 2859 scanned loops (0.17%; 4 distinct
+      source lines, 0.6% of the 783 shape hits) — a lint naming 5 sites is
+      proportionate, a rewrite firing on shape would touch hundreds of
+      benign dot products and buy each a transcendental per term. Plus two
+      facts about the pass specifically: its rescue is observable only
+      through the `__logrange_logsum` side global (the linear replacement
+      re-underflows at exactly the motivating inputs), and Deliverable 2's
+      "semantics preservation is exact" precondition was unmet at the
+      committed state this was written against (`-inf` term → NaN where
+      linear gives 0; a fix was in flight in the tree). The posture is
+      stated to hold either way.
+      *Six conditions for the pass to lose the prototype label*, all
+      post-1.0, none blocking: (1) `-inf` matches linear, asserted in
+      `run_pass_test.sh`; (2) the rescue is observable without the side
+      global — last-rewrite-wins is not shippable under any label; (3)
+      shape coverage reaches `fmuladd` and `w[i]*exp(t)`, without which
+      the risk gate cannot decline anything; (4) a stated error bound for
+      the emitted streaming state; (5) the pass runs in CI on push, not as
+      a manual WSL script (`.github/workflows/llvm-tooling.yml` was landing
+      as this was written); (6) dead original removed or a required DCE run
+      documented. 1 and 2 are correctness/interface blockers, 3–6 are label
+      blockers.
+      *If the `-inf` fix lands:* condition 1 closes and all three of
+      Deliverable 2's stated preconditions are met, so the pass becomes
+      blocked on product concerns rather than on preconditions. The
+      posture does not change — neither number that drove it moves.
+- [ ] **Diagnostic coverage statements** (blocks calling the diagnostic
+      shippable, even as beta). The posture is only honest if the reader
+      meets the gaps where they meet the tool. DIAGNOSTIC.md's "Scope
+      limits" already carries the mechanical ones (shape-lint-not-range-
+      proof, memory-carried, mirrored cell, cross-loop decay, vectorized,
+      risk-is-an-ordering). Two statements are missing, and both live
+      *outside this tracker's file ownership* — proposed text is in the
+      posture report, to be applied by whoever owns those files:
+      * README.md names three motivating shapes; the diagnostic flags
+        **two**. The forward algorithm is unreported in the `out[j] +=`
+        form (mid-loop-read guard) and graded LOW in the register form
+        (cross-loop decay). README must stop implying coverage.
+      * DIAGNOSTIC.md must state measured selectivity — 5 HIGH in 783
+        hits in 2859 loops — so a one-finding report can be read.
+      Found while writing the posture, same owners: RESULTS.md's triage
+      prose still reads "Three rows... the static signal marks two source
+      sites". That predates the `nMul` correction. The table above it now
+      lists **5 rows across 4 distinct source lines** (`blas.c:315` twice,
+      `go.c:562`, `gaussian.c:205`, `zeta.c:757`).
+- [x] **Pass eligibility contract** (intent Deliverable 2, precondition 2).
+      Done 2026-08-16. The old gate — `"unsafe-fp-math"="true"` or `<force>`
+      — conflated reassociation permission with permission to change errno,
+      FP exception flags, rounding mode, denormal handling and special
+      values. Four restrictions now, none overridable by `force`, which
+      waives reassociation *proof* and nothing else: **`llvm.exp.*` only**
+      (measured — at `-O1` clang emits `call double @exp`, with
+      `-fno-math-errno` it emits `llvm.exp.f64`, so the intrinsic *is* the
+      errno contract, since the rewrite deletes N source `exp` evaluations
+      and emits 2N different ones plus a `log`); **`strictfp` rejected**;
+      **constrained-FP ops rejected**; **non-IEEE `denormal-fp-math`
+      rejected**. Contract in `pass/ELIGIBILITY.md` (normative; PROTOTYPE.md
+      is the narrative and measured record).
+      Four decline tests, each observed failing against the previous build
+      first: it rewrote both the errno case and the denormal case under
+      `force`, and emitted nothing at all for strict-FP.
+      *Consequence:* the harness needs `-fno-math-errno` or the kernel no
+      longer matches; it now also pins `clang-21` beside `opt-21` (it fed
+      unversioned `clang` into `opt-21` before) and deletes the plugin
+      before building, so a failed build cannot leave stale code under test.
+      *Honest limit:* the pass now covers a strictly narrower set of real
+      TUs than the matcher reports hits in. The way out is the documented
+      extension point — accept a direct `exp` when IR attributes prove no
+      errno effect — unimplemented, and it needs accept and decline tests.
+- [x] **Pass reference oracle corrected.** Done 2026-08-16.
+      `ref_logsumexp()` in `pass/test_softmax.c` applied the max-shift
+      unconditionally, so `x_i - M` was `inf - inf`: it returned NaN for
+      all-`-inf` and for any input containing `+inf`. The infinity tests
+      added hours earlier asserted against constants only and were
+      therefore **not** reference-validated, which is weaker than they
+      read. Fixed by handling NaN, `+inf` and all-`-inf` before the shift;
+      constants kept as belt and braces. Added NaN-mixed-with-infinities
+      (which pins the ordering: NaN beats `+inf`, matching the linear loop)
+      and a zero-trip case asserting the export global is *not* written.
 - [ ] **Diagnostic ergonomics.** One-command entry point (point it at a
       compile_commands.json or a build dir) instead of the manual
       cc-bc.sh/run_study.sh two-step; package the three tools' WSL/LLVM-21
@@ -247,6 +334,12 @@ run**, then packaging.
       cross-loop signal (magnitude trend across an enclosing loop), or the
       docs stop implying the diagnostic covers this family. Decide before
       the diagnostic is called shippable.
+      *Decided 2026-08-16 by the shipping posture: the docs branch, for
+      1.0.* A cross-loop signal is the same analysis the guard-refinement
+      measurement already declined to fund, and it is the item that would
+      make those 23 sites worth printing — so it stays open as the
+      revisit condition, not as 1.0 work. The doc change itself is the
+      README bullet under "Diagnostic coverage statements" above.
 
 ## Explicitly not blocking 1.0
 

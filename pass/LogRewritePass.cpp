@@ -10,7 +10,8 @@
 //   - exactly one FP-typed phi in the header, of type double, initialized
 //     to constant 0.0 from the preheader
 //   - its backedge update is a plain fadd(phi, X)  (fmuladd out of scope)
-//   - X is a call to exp/expf/llvm.exp, possibly through fpext/fptrunc only
+//   - X is a call to llvm.exp.*, possibly through fpext/fptrunc only
+//     (source-level exp/expf declined: errno — see the errno contract below)
 //   - the call argument is loop-varying (an instruction inside the loop)
 //   - the phi and the update have no other in-loop users (the matcher's
 //     mid-loop-read guard: a prefix-sum-style read would change meaning)
@@ -22,7 +23,9 @@
 //   header:  m = phi double [ -inf, preheader ], [ newm,  latch ]
 //            s = phi double [  0.0, preheader ], [ snext, latch ]
 //   body:    newm  = llvm.maxnum(m, t)              ; t = the exp() argument
-//            snext = s * llvm.exp(m - newm) + llvm.exp(t - newm)
+//            dm    = (m oeq newm) ? 0.0 : m - newm  ; inf - inf guard
+//            dt    = (t oeq newm) ? 0.0 : t - newm
+//            snext = s * llvm.exp(dm) + llvm.exp(dt)
 //   exit:    logsum = newm + llvm.log(snext)        ; == log(sum) exactly
 //            sum'   = llvm.exp(logsum)              ; linear replacement
 //            store logsum -> @__logrange_logsum     ; prototype export hook
@@ -33,8 +36,11 @@
 // accumulate step) — one formula covers both branches of the textbook
 // update, which is why no select (and no block split) is needed.
 // First iteration: m=-inf, s=0 -> newm=t, s*exp(-inf)=0, snext=exp(0)=1. OK.
-// Known caveat: t=-inf on the first iteration gives -inf - -inf = NaN
-// (documented in PROTOTYPE.md, not solved here).
+// Infinite terms: the raw differences are inf - inf = NaN when t = -inf while
+// m is still -inf (a zero term, exp(-inf)=0 — ordinary input), and when
+// t = +inf. The oeq-guarded differences make both exact: all-(-inf) gives
+// newm=-inf, snext=k, exp(newm + log(k)) = 0 = the linear sum; a later finite
+// t rescales that state to 0 through exp(-inf - t) = 0.
 // NaN stickiness: maxnum(m, NaN)=m, but exp(NaN - newm)=NaN poisons s, and
 // s stays NaN through every later iteration; the final exp(newm + log(NaN))
 // is NaN — matching the linear loop's NaN propagation.
@@ -49,11 +55,38 @@
 // covers the structural reassociation performed here, not further FP
 // relaxation of the emitted code.
 //
+// What force means, precisely: "the caller explicitly grants the
+// reassociation this transform needs". It waives reassociation PROOF, and
+// nothing else. It does NOT waive, and cannot override:
+//   - the structural match conditions above;
+//   - strictfp / llvm.experimental.constrained.* rejection;
+//   - non-default denormal-fp-math environment rejection;
+//   - the llvm.exp-only errno contract;
+//   - special-value correctness (the oeq infinity guard).
+// Full contract: pass/ELIGIBILITY.md.
+//
+// Errno contract. The rewrite deletes N source exp evaluations and emits 2N
+// different exponentials plus a log, so errno-visible behaviour changes for
+// a conforming math_errno program. Matching ONLY llvm.exp.* is therefore
+// the errno contract, not an arbitrary narrowing: clang emits the intrinsic
+// exactly when errno is already unobservable. Measured, LLVM 21, on the
+// test kernel: at -O1 the source `s += exp(x[i])` emits
+// `call double @exp`; adding -fno-math-errno emits `llvm.exp.f64`.
+//
+// FP environment. Functions the pass cannot model are declined outright,
+// before any loop is examined, and force does not reach these:
+//   strictfp attribute / any llvm.experimental.constrained.* operation /
+//   a denormal-fp-math or denormal-fp-math-f32 mode other than IEEE.
+//
 // Emits one line per rewrite on stderr:  REWRITE,<file>,<line>,<function>
+// Declines are logged too: DECLINE-FPENV,<file>,<line>,<fn>,<reason> and
+// DECLINE-ERRNO,<file>,<line>,<fn>,external-exp-call.
 //
 // Usage: opt-21 -load-pass-plugin=./LogRewrite.so \
 //               -passes='log-rewrite<force>' -S in.ll -o out.ll
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/LoopInfo.h"
@@ -81,32 +114,100 @@ namespace {
 // the softmax divide — is future work; see PROTOTYPE.md.
 constexpr const char *ExportGlobalName = "__logrange_logsum";
 
-// Accept exp as libm call (exp/expf; may write errno — irrelevant to shape,
-// same stance as the matcher's isKnownLibmCall) or as the llvm.exp
-// intrinsic. Scalar float/double argument only.
-bool isExpCall(CallBase *CB, Value *&ArgOut) {
+// How an exp-shaped call may be used by this pass.
+//   Intrinsic   — llvm.exp.*: accepted.
+//   ExternalExp — a direct call to the libm names exp/expf: DECLINED, and
+//                 worth a diagnostic because it is a near miss.
+//   No          — not exp at all: silent decline, indistinguishable from
+//                 the many other loops in a module.
+enum class ExpKind { No, Intrinsic, ExternalExp };
+
+// Errno contract, not a shape preference. The matcher (recognition only)
+// treats libm errno as irrelevant, and correctly so: recognizing a shape
+// observes nothing. This pass REPLACES the computation — it deletes N
+// source exp evaluations and emits 2N different exponentials plus a log —
+// so every errno write and FP-exception flag the source loop performed is
+// gone or different. For a conforming program compiled with
+// math_errno in force, that is observable behaviour.
+//
+// llvm.exp.* is exactly the marker that errno is already unobservable:
+// clang emits it only under -fno-math-errno / -ffast-math (measured on the
+// test kernel, LLVM 21 — see the file header). Restricting to the
+// intrinsic is therefore the errno contract itself, not a narrowing chosen
+// for convenience. force does not waive it: force grants reassociation,
+// which has nothing to say about errno.
+//
+// EXTENSION POINT (deliberately not taken here). A direct external call to
+// exp/expf may be accepted once the IR itself proves the call has no
+// observable memory or errno effect — i.e. the call site's memory effects
+// exclude writes to errno memory and to inaccessible memory
+// (CallBase::getMemoryEffects(), checking the ErrnoMem and
+// InaccessibleMem locations, which LLVM 21 models explicitly: an
+// errno-writing exp declaration carries memory(errnomem: write)).
+// Implementing it requires its own decline/accept tests; until those
+// exist, external calls are declined unconditionally.
+ExpKind classifyExpCall(CallBase *CB, Value *&ArgOut) {
   Value *A = nullptr;
+  ExpKind Kind;
   if (auto *II = dyn_cast<IntrinsicInst>(CB)) {
     if (II->getIntrinsicID() != Intrinsic::exp)
-      return false;
+      return ExpKind::No;
     A = II->getArgOperand(0);
+    Kind = ExpKind::Intrinsic;
   } else {
     if (CB->isIndirectCall())
-      return false;
+      return ExpKind::No;
     Function *Callee = CB->getCalledFunction();
     if (!Callee)
-      return false;
+      return ExpKind::No;
     StringRef N = Callee->getName();
     if (N != "exp" && N != "expf")
-      return false;
+      return ExpKind::No;
     if (CB->arg_size() != 1)
-      return false;
+      return ExpKind::No;
     A = CB->getArgOperand(0);
+    Kind = ExpKind::ExternalExp;
   }
   if (!A->getType()->isFloatTy() && !A->getType()->isDoubleTy())
-    return false;
+    return ExpKind::No;
   ArgOut = A;
-  return true;
+  return Kind;
+}
+
+// FP-environment screen, applied to the whole function before any loop is
+// looked at. Each condition names an environment the emitted streaming
+// state cannot preserve; none of them is overridable by force.
+//
+//   strictfp        — the function opted into a dynamic rounding mode and
+//                     strict exception semantics. The rewrite changes both
+//                     the number and the operands of the FP operations, so
+//                     the exception record and the rounding-mode-dependent
+//                     result both change.
+//   constrained-fp  — llvm.experimental.constrained.* carries per-operation
+//                     rounding/exception metadata that the plain fadd/fmul/
+//                     fsub/intrinsics emitted here cannot express.
+//   denormal-fp-math — a non-IEEE denormal mode (flush-to-zero,
+//                     preserve-sign) changes which intermediate values are
+//                     zero. The rewrite's intermediates are exp() of
+//                     differences against a running max — a different set
+//                     of values entirely from the source loop's exp(x_i) —
+//                     so which of them flush is not preservable.
+//
+// Returns a stable reason token, or nullptr if the environment is the
+// ordinary default one.
+const char *fpEnvRejectReason(const Function &F) {
+  if (F.hasFnAttribute(Attribute::StrictFP))
+    return "strictfp";
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB)
+      if (isa<ConstrainedFPIntrinsic>(&I))
+        return "constrained-fp";
+  // getDenormalMode resolves denormal-fp-math for double and
+  // denormal-fp-math-f32 for float, defaulting to IEEE when absent.
+  if (F.getDenormalMode(APFloat::IEEEdouble()) != DenormalMode::getIEEE() ||
+      F.getDenormalMode(APFloat::IEEEsingle()) != DenormalMode::getIEEE())
+    return "denormal-fp-math";
+  return nullptr;
 }
 
 // Sole in-loop user, exactly as in SumOfProductsMatcher.cpp.
@@ -126,6 +227,17 @@ const User *soleInLoopUser(const Value *V, const Loop &L) {
 void printLoc(raw_ostream &OS, const Instruction *I, const Function &F) {
   if (const DebugLoc &DL = I->getDebugLoc()) {
     OS << DL->getFilename() << "," << DL.getLine();
+  } else {
+    OS << "<nodbg>,0";
+  }
+  OS << "," << F.getName();
+}
+
+// Function-level declines have no single instruction to blame; use the
+// subprogram's own location so the line format stays uniform.
+void printFnLoc(raw_ostream &OS, const Function &F) {
+  if (const DISubprogram *SP = F.getSubprogram()) {
+    OS << SP->getFilename() << "," << SP->getLine();
   } else {
     OS << "<nodbg>,0";
   }
@@ -160,12 +272,35 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
     // that, reassociation legality must be granted by the caller: either
     // the function is already marked unsafe-fp-math (e.g. -ffast-math) or
     // the pass was instantiated with the force parameter.
+    //
+    // "unsafe-fp-math"="true" is retained as an alternate opt-in, and is
+    // ONLY that: an explicit user action (-ffast-math /
+    // -funsafe-math-optimizations) standing in for the caller's grant of
+    // reassociation. It is never read as evidence that special values may
+    // be discarded. Nothing below is unlocked by it — NaN/inf/signed-zero
+    // correctness, the FP-environment screen and the errno contract all
+    // apply identically on both opt-in paths. See pass/ELIGIBILITY.md.
     bool OptIn =
         Force || F.getFnAttribute("unsafe-fp-math").getValueAsString() == "true";
     if (!OptIn)
       return PreservedAnalyses::all();
 
     auto &LI = AM.getResult<LoopAnalysis>(F);
+
+    // FP-environment screen. Ordered before the loop walk because these are
+    // properties of the whole function, and before any use of Force because
+    // force may not override them. Reported only for functions that contain
+    // a loop: a loop-free function was never a candidate, and logging it
+    // would be noise.
+    if (const char *Reason = fpEnvRejectReason(F)) {
+      if (!LI.empty()) {
+        errs() << "DECLINE-FPENV,";
+        printFnLoc(errs(), F);
+        errs() << "," << Reason << "\n";
+      }
+      return PreservedAnalyses::all();
+    }
+
     auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
     bool Changed = false;
 
@@ -232,7 +367,22 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       }
       auto *ExpCall = dyn_cast<CallBase>(X);
       Value *Arg = nullptr;
-      if (!ExpCall || !L->contains(ExpCall) || !isExpCall(ExpCall, Arg))
+      if (!ExpCall || !L->contains(ExpCall))
+        continue;
+      ExpKind EK = classifyExpCall(ExpCall, Arg);
+      // A source-level exp/expf is the errno case: the exact shape this
+      // pass targets, declined because replacing it would change observable
+      // errno behaviour. Worth saying out loud — silence here would read as
+      // "shape not recognized", which is the wrong diagnosis and would send
+      // the next reader hunting the matcher instead of the build flags.
+      // Fix at the call site: compile with -fno-math-errno.
+      if (EK == ExpKind::ExternalExp) {
+        errs() << "DECLINE-ERRNO,";
+        printLoc(errs(), Upd, F);
+        errs() << ",external-exp-call\n";
+        continue;
+      }
+      if (EK != ExpKind::Intrinsic)
         continue;
 
       // The exp argument must be loop-varying — an invariant argument is a
@@ -310,10 +460,26 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
         T = B.CreateFPExt(T, DTy, "lr.t"); // expf(float) case
       Value *NewM =
           B.CreateBinaryIntrinsic(Intrinsic::maxnum, MPhi, T, {}, "lr.newm");
-      Value *E1 = B.CreateUnaryIntrinsic(
-          Intrinsic::exp, B.CreateFSub(MPhi, NewM, "lr.dm"), {}, "lr.e1");
-      Value *E2 = B.CreateUnaryIntrinsic(
-          Intrinsic::exp, B.CreateFSub(T, NewM, "lr.dt"), {}, "lr.e2");
+      // Infinity guard. The exponents are differences against the running
+      // max, and x - x is NaN when x is infinite: m = t = -inf (a zero term
+      // arriving while the max is still -inf) and t = +inf both produce
+      // inf - inf. Replace the difference by 0.0 exactly when the operand
+      // already equals newm, which is the mathematically correct exponent in
+      // every finite case too (x - x == 0). `oeq` is deliberate: a NaN t is
+      // never equal to newm, so the subtract survives, exp(NaN) = NaN, and
+      // NaN still poisons s — the linear loop's propagation is preserved.
+      // MPhi is never NaN (maxnum(-inf, NaN) = -inf), so its guard only ever
+      // fires on genuine equality.
+      auto guardedSub = [&](Value *V, const char *Name) -> Value * {
+        Value *Eq = B.CreateFCmpOEQ(V, NewM, Twine(Name) + ".eq");
+        return B.CreateSelect(Eq, ConstantFP::get(DTy, 0.0),
+                              B.CreateFSub(V, NewM, Twine(Name) + ".raw"),
+                              Name);
+      };
+      Value *E1 = B.CreateUnaryIntrinsic(Intrinsic::exp,
+                                         guardedSub(MPhi, "lr.dm"), {}, "lr.e1");
+      Value *E2 = B.CreateUnaryIntrinsic(Intrinsic::exp,
+                                         guardedSub(T, "lr.dt"), {}, "lr.e2");
       Value *SNext =
           B.CreateFAdd(B.CreateFMul(SPhi, E1, "lr.srescale"), E2, "lr.snext");
       MPhi->addIncoming(NewM, Latch);
