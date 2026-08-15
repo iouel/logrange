@@ -60,6 +60,44 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Added — `propagate=div`, the stretch goal's first milestone. Tooling only.**
+
+The pass can carry the log form out of the accumulation loop and into the
+softmax normalize divide, so the rescued value reaches an observable result
+without the `__logrange_logsum` side global. Behind its own named grant;
+`force` alone does not trigger it, and an unrecognized `propagate=` value is
+refused rather than ignored.
+
+`fdiv(llvm.exp(t), sum)` becomes `exp(t - L)`. Measured at inputs near −800,
+where the linear form computes `0.0/0.0` and every output is NaN: the
+propagated form returns probabilities summing to 1.0000000000000262.
+
+- **The divisor's log form travels through the loop-exit merge.** clang
+  guards the accumulation loop, so the consumer divides by an LCSSA phi
+  merging the rewritten sum with `0.0` from the zero-trip path, and no block
+  dominates the divide. Requiring one declined the only shape the milestone
+  is about. A value's log form is now derived structurally — `LogSum` for the
+  rewritten sum, `log(c)` for a constant with `0.0 → -inf`, a parallel phi
+  for a phi, decline otherwise — which is the design's phi transfer function.
+  `-inf` on the bypass reproduces the linear answers: `x/0 = +inf` against
+  `exp(t + inf)`, and `0/0 = NaN` against `exp(NaN)`.
+- **The numerator is not re-logged.** `exp(t)` underflows to `0.0` at these
+  inputs, so `log(numerator)` was `log(0) = -inf` and the propagated result
+  collapsed exactly where the rescue is the point. The pre-`exp` argument `t`
+  is used directly, so correctness does not rest on a later InstCombine fold
+  of `log(exp(t)) → t`.
+- **Accuracy, measured against a long-double reference on benign inputs:**
+  2.3e-16 for the pure linear path, 1.6e-15 for the linear re-conversion,
+  2.4e-15 for the propagated form. **Propagation is the least accurate of the
+  three where all three work**, because the subtract `t - L` carries absolute
+  rounding `u·|t - L|` — the same representation floor that moved both
+  accumulator bounds. It buys range, not precision. The stretch goal's
+  success criterion claiming the opposite is refuted and amended in
+  `logrange_intent.md`.
+- The test asserts the linear path is broken on the rescue inputs. Without
+  that, it checked only the propagated output, and a numerically wrong
+  transform would have passed.
+
 **Changed — the rewrite pass's eligibility contract narrowed. Tooling only;
 the header is unaffected.**
 
