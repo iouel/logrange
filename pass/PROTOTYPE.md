@@ -60,6 +60,15 @@ matcher disagree on verdicts for reachable shapes, and the pass is silent on
 several the matcher grades HIGH. The differences are tabulated in
 ELIGIBILITY.md 7.1 rather than summarized as "scope agreement".
 
+One direction of that relationship *is* gated, because it is the only one
+that is a safety property: **every loop the pass rewrites is graded HIGH by
+the matcher** (section 3d of the gate). The matcher runs over the same
+`kernel_rw.ll` the pass consumed rather than a fresh compile, so a
+disagreement is evidence about the two analyses and not about two builds.
+Verdict *equality* is not asserted — it is false, and asserting it would
+either fail on day one or force a chain walk the pass does not otherwise
+need.
+
 The normative contract is **`pass/ELIGIBILITY.md`**. This file is the
 design narrative and the measured record; where the two differ,
 ELIGIBILITY.md wins.
@@ -356,6 +365,8 @@ DECLINE-RISK,pass/test_softmax.c,95,dot_sum_prop,LOW,below-min-HIGH
 PASS,propagate_div_rewrites_softmax_full
 PASS,unknown_propagate_refused
 PASS,force_alone_does_not_propagate
+== 3d. matcher agreement, soundness direction only ==
+PASS,every_rewrite_is_matcher_high
 == 4. codegen, link, run ==
 INFO,benign,orig=1654.7821267630925,rw=1654.7821267630948,rel=1.37e-15,logsum=7.4114246336847733,logref=7.4114246336847733
 PASS,cover_softmax_denom_rw_benign_1e-12
