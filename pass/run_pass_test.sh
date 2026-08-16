@@ -415,6 +415,37 @@ while IFS=, read -r _tag mfile mline mfn _rest; do
 done < <(grep '^REWRITE,' "$WORK/rewrite.log")
 echo "PASS,every_rewrite_is_matcher_high"
 
+# --- the dead original chain, and which pass actually removes it -----------
+# Posture condition 6. The pass adds and redirects; it never deletes, so the
+# original phi/fadd/exp chain survives, feeding only itself.
+#
+# ADCE specifically, not DCE, and that distinction was wrong in two files
+# until 2026-08-17. The orphan is a loop-carried CYCLE — phi feeds update,
+# update feeds phi — so every instruction in it has a use and plain DCE cannot
+# get started. Asserted here rather than described, because "later DCE/ADCE
+# may remove it" is exactly the kind of unchecked mechanism claim this repo
+# keeps finding to be wrong.
+DEAD_BEFORE="$(grep -c 'llvm.exp.f64' "$WORK/kernel_rw_opt.ll" || true)"
+$OPT -load-pass-plugin="$BUILD/LogRewrite.so" -passes='dce' \
+     -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_dce.ll"
+$OPT -load-pass-plugin="$BUILD/LogRewrite.so" -passes='adce' \
+     -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_adce.ll"
+DEAD_DCE="$(grep -c 'llvm.exp.f64' "$WORK/after_dce.ll" || true)"
+DEAD_ADCE="$(grep -c 'llvm.exp.f64' "$WORK/after_adce.ll" || true)"
+echo "INFO,dead_chain,after_rewrite=$DEAD_BEFORE,after_dce=$DEAD_DCE,after_adce=$DEAD_ADCE"
+[ "$DEAD_DCE" = "$DEAD_BEFORE" ] \
+  || { echo "FAIL: plain dce removed something; the documented reason ADCE is"
+       echo "      required (a dead loop-carried cycle) no longer holds"; exit 1; }
+# One dead llvm.exp.f64 per rewritten f64 loop. expf_widened is f32, so it is
+# not counted here; derive the expectation rather than hardcoding it.
+NF64="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
+NF32="$(grep -c '^REWRITE,.*,expf_widened_rw,' "$WORK/rewrite.log" || true)"
+EXPECT=$((DEAD_BEFORE - (NF64 - NF32)))
+[ "$DEAD_ADCE" = "$EXPECT" ] \
+  || { echo "FAIL: adce left $DEAD_ADCE llvm.exp.f64 calls, expected $EXPECT"
+       echo "      (one dead exp per rewritten f64 loop)"; exit 1; }
+echo "PASS,adce_removes_the_dead_original,$DEAD_BEFORE->$DEAD_ADCE"
+
 echo "== 4. codegen, link, run =="
 $CLANG -O1 -c "$WORK/kernel_orig.ll"      -o "$WORK/kernel_orig.o"
 $CLANG -O1 -c "$WORK/kernel_rw_opt.ll"    -o "$WORK/kernel_rw.o"
