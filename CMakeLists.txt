@@ -113,7 +113,7 @@ endif()
 
 enable_testing()
 
-foreach(_lr_test log_math rp_accum pos_accum accuracy)
+foreach(_lr_test log_math rp_accum pos_accum accuracy rescale_compensation)
   add_executable(test_${_lr_test} tests/test_${_lr_test}.cpp)
   target_link_libraries(test_${_lr_test} PRIVATE logrange logrange_build_flags)
   add_test(NAME ${_lr_test} COMMAND test_${_lr_test})
