@@ -123,12 +123,54 @@ The accumulation algorithm changes. `s += exp(x_i)` becomes streaming
 logsumexp with rescaling; the operations, their order, and their operands
 all differ. Finite results are therefore not bitwise identical.
 
-Measured on the reference kernel (n=1000, ~N(0,1)): 1.37e-15 relative,
-against a 1e-12 bound. That is a permitted, expected difference, and what
-buys back the range.
-
 This is the one thing the reassociation grant in section 1 pays for. It is
-the only thing it pays for.
+the only thing it pays for. How much it may change is bounded:
+
+### Error contract for the emitted code
+
+For a rewritten `s += exp(x_i)` loop whose exact sum `S` is a normal double:
+
+    WORST-CASE RELATIVE ERROR  <=  (n + 3k + 4 + D) * u  +  |log|S|| * u
+
+`u`, `k` and `D` are the runtime's, defined at `rp_accum` in
+`include/logrange/log_math.h`: `k` counts adds that strictly raise the
+running reference, `D` is the mass-weighted mean insertion depth. `n` is the
+trip count. The exported log form `__logrange_logsum` satisfies the same
+bound as an absolute error in log space, which is the same statement one
+`exp` earlier.
+
+This is `pos_accum`'s `(n + 3k + 3 + D)*u + |log|S||*u` plus `1u` for the
+final `exp(m + log(s))` that the runtime does not perform. Term for term the
+emitted arithmetic is `pos_accum`'s: under the `oeq` guard, `t <= m` gives
+`dm` exactly `0`, `exp(0)` is exactly `1.0`, and `s*1.0` is exact, so the
+accumulate step rounds once. **Those two exactness facts are load-bearing
+here and are asserted at startup by the search**; a merely-1-ulp `exp(0)`
+would add `n*u` the runtime never pays.
+
+Three scope conditions, all of them real:
+
+- **The result must be a normal double.** The emitted code returns a linear
+  value, so `|log|S||` cannot exceed 709.78 and the reduction term is capped
+  near `710u`. The runtime's `log_value` form has no such ceiling. Outside
+  the normal range this contract says nothing; that is overflow, not
+  accumulation error.
+- **First-order, under the runtime's assumptions**: `exp` within 1 ulp, the
+  ~745-log-unit vanishing window, higher-order terms neglected.
+- **`n` up to ~2.1e8.** Derived, not searched: recursive summation's
+  classical `(n-1)u/(1-(n-1)u)` exceeds the `(n+4)u` charged here once
+  `(n-1)(n+4)u > 5`. Past that the neglected second-order term eats the
+  constant.
+
+Status: **held**, not proved. `pass/emitted_bound_search.c` searches it on
+every `run_pass_test.sh` run and fails the gate on any violation. 6985
+trials, worst observed/bound **0.99**, at a large one-depth cluster where the
+running sum's roundings align and the observed error is the classical
+`(n-1)u`. The same run scores the form *without* the reduction term, which is
+exceeded on 321 trials at up to **39x**: that term is required by
+measurement here, not inherited by analogy.
+
+Measured on the reference kernel (n=1000, ~N(0,1)): 1.37e-15 relative,
+against a 1e-12 test tolerance.
 
 ### Special values are PRESERVED — required
 

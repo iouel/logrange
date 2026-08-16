@@ -258,4 +258,24 @@ $CLANG "$WORK/main.o" "$WORK/kernel_orig.o" "$WORK/kernel_rw.o" "$WORK/kernel_pr
 
 grep -q '^OVERALL,PASS$' "$WORK/test.out" \
   || { echo "run_pass_test: FAIL"; exit 1; }
+
+# == 5. the emitted code's error bound ==
+#
+# Links the SAME rewritten object against a search driver. Bounds get
+# searched, not sampled (CONTRIBUTING.md): three stated bounds in this repo
+# were refuted by exactly this method, two of them within minutes.
+echo "== 5. emitted-code error bound search =="
+$CLANG -O1 -c "$PASSDIR/emitted_bound_search.c" -o "$WORK/ebs.o"
+$CLANG "$WORK/ebs.o" "$WORK/kernel_orig.o" "$WORK/kernel_rw.o" -lm \
+      -o "$WORK/emitted_bound_search"
+if "$WORK/emitted_bound_search" | tee "$WORK/bound.out"; then
+  grep -q '^HELD,' "$WORK/bound.out" \
+    || { echo "FAIL: search neither HELD nor REFUTED"; exit 1; }
+  echo "PASS,emitted_bound_held"
+else
+  echo "FAIL: the emitted code's error bound was refuted"
+  grep '^REFUTED,' "$WORK/bound.out" || true
+  exit 1
+fi
+
 echo "run_pass_test: PASS"

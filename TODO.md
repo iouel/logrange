@@ -308,6 +308,36 @@ tooling tier, which ships as beta with its gaps stated.
       nothing. Sentence added; case 11 now extracts the token list from
       `SumOfProductsMatcher.cpp` and fails when the fixture or the renderer
       misses one.
+- [x] **Emitted-code error bound** (posture condition 4). Done 2026-08-16.
+      `rel err <= (n + 3k + 4 + D)*u + |log|S||*u`, normative in
+      `pass/ELIGIBILITY.md`, searched by `pass/emitted_bound_search.c` against
+      the object the pass actually rewrote, gated in `run_pass_test.sh`.
+      **Held across 6985 trials, worst observed/bound 0.99.** The gate was
+      negative-tested by halving the bound: 1261 violations, worst 1.98, exit
+      1.
+      *The derivation is pos_accum's plus 1u for the final `exp`, and that
+      inheritance is not free.* The branchless guarded form matches
+      `pos_accum` term for term only because `exp(0)` is exactly `1.0` and
+      `s*1.0` is exact. Under a merely-1-ulp `exp(0)` the emitted code would
+      pay `n*u` the runtime never pays. Both facts are asserted at startup
+      rather than trusted.
+      *The expected refutation did not materialize.* `3k*u` charges nothing
+      for the size of a reference jump, the same omission that refuted
+      `rp_accum`; ascending families reach only 0.23. Mass is why: after a
+      jump of `J` the old sum's share is `s/(s + e^J)`, so the surviving
+      error is `J*s/(s+e^J)*u`, maximized near `J ~ ln n` and worth a
+      fraction of a `u` against a `3u` budget. The binding case is instead a
+      one-depth cluster where the running sum's roundings align, giving the
+      classical `(n-1)u`; the ratio approaches 1 from below and plateaus at
+      0.990 for N = 2048, 4096, 8192 and 16384.
+      *Two things the runtime's contract does not have.* The emitted code
+      returns a linear double, so `|log|S||` cannot exceed 709.78 and the
+      reduction term is capped near `710u`. And the first-order form needs
+      `n` under ~2.1e8, derived from `(n-1)(n+4)u > 5`, where recursive
+      summation's second-order term eats the constant. The search reaches
+      n=16385, four orders below it.
+      *The reduction term is required here by measurement.* Every run also
+      scores the form without it: exceeded on 321 of 6985 trials, worst 39x.
 - [ ] **Pass shape coverage.** fmuladd spines and fsub accumulators match in
       the *matcher* but the *pass* only rewrites plain `fadd(phi, exp(t))`.
       Extend or document per shape.
