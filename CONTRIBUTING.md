@@ -13,9 +13,17 @@ fail, restore it. Every gate in this repo has been negative-tested that way,
 and three were found to be checking nothing: `coverage.c` had no runner, the
 `propagate=div` test asserted a log line and no number, and the first version
 of the rewrite pass passed every test while never wiring in its replacement.
+Confirm the mutation moved the measured quantity: editing `LOOP,` to `LOOP,X`
+still matches `^LOOP,`, and the check stayed green.
 
 **Write the failing test first.** If a new assertion passes before the fix, it
 is not testing the fix.
+
+**Assert the property, not a list you maintain.** Two hand-maintained lists
+that agree are not a check. `run_pass_test.sh` named 4 rewritten functions and
+4 untouched controls with nothing tying the sets, and a relaxed weight clause
+then rewrote `s += 0.5*exp(x)` with the `0.5` dropped, every assertion green.
+The rewritten set is now derived from the tool's output.
 
 **A failed build leaves the old binary on disk.** Check build exit status, not
 just test output. A `-Werror` failure once produced a green run against stale
@@ -32,33 +40,26 @@ about the outcome and wrong about the cause: FMA contraction was blamed for a
 guard was blamed on memory-carried accumulators when the accumulator was in a
 register. Read the IR, run the differential, then write the explanation.
 
-**Published numbers must be reproducible from committed tooling.** The
-rejection census was first produced by a throwaway build on one machine, which
-made it unreproducible. It is now `./run_study.sh rejects`.
+**A mechanism named in prose needs a gate.** `PROTOTYPE.md` and the pass source
+said the dead original chain is left for later DCE. `dce` removes nothing: the
+orphan is a loop-carried cycle and every instruction in it has a use. `adce`
+takes 26 `exp` calls to 22, and now runs in the gate.
 
-**A figure is derived or it is wrong.** Reproducible-by-tooling is not enough:
-a number hand-copied out of a tool's output into prose is an independent
-assertion from that moment on, and it rots silently. Every published corpus
-figure must have exactly one executable derivation, reading committed
-evidence, checked on every push. `matcher/run_study.sh figures` is that
-derivation; `matcher/data/FIGURES.txt` is its committed output and the gate
-diffs against it. Prose cites the derivation. Adding a new figure means
-extending `figures`, not typing a number into a document.
+**A figure is derived or it is wrong.** `0 w*exp(t) sites in 2859 loops`
+reached four files under the weaker rule that numbers be reproducible from
+committed tooling. A number hand-copied into prose is an independent assertion
+from that moment. Every published corpus figure now has one executable
+derivation over committed evidence, gated on every push:
+`matcher/run_study.sh figures`, diffed against `matcher/data/FIGURES.txt`.
 
-*What this rule was written for.* "0 `w*exp(t)` sites in 2859 loops" shipped
-into four files and a commit title. The weight census is gated on
-`CI.expChain` and runs after the `HIT` is emitted, so its population was the
-5 exp-chain hits, never 2859. The figure was not stale — it named the wrong
-denominator, and it was used to argue against building a feature. The prior
-rule did not catch it, because the census *was* reproducible from committed
-tooling; it just needed a corpus nobody else has, and the number reached the
-docs by hand. Within a minute of existing, `figures` corrected a second
-miscount in the replacement text.
+**A figure must name its population.** `0 sites` is not a measurement without
+its denominator and filter. That census is gated on `expChain` and runs after
+the hit, so its population was 5, and it cannot see a loop rejected upstream.
 
-**A figure must name its population.** "0 sites" is not a measurement without
-the denominator and the filter that produced it. State what was examined, what
-was excluded, and where the instrument is blind — that census cannot see any
-loop rejected upstream, which is where the shape most plausibly lives.
+**A correction is a claim.** Verify it to the standard the original should have
+met, and quote the text being corrected. Two corrections here were wrong: a
+handoff was called backwards on `-ffp-contract` when it was correct, and a
+replacement figure said 3 of 5 rows carried `nMul=0` when 2 do.
 
 **Collect records serially.** Running `opt` under `xargs -P4` interleaved
 records onto shared lines and undercounted. The census asserts that every
@@ -96,8 +97,10 @@ Library: `cmake -S . -B build`, `cmake --build build --config Release`,
 `ctest --test-dir build -C Release`. Five suites.
 
 Matcher and pass: WSL, LLVM 21, install in `SETUP.md`. `matcher/run_study.sh
-selftest | coverage | rejects`, `bash matcher/test_scan.sh`, and `bash
-pass/run_pass_test.sh`. All four are gated in CI by
-`.github/workflows/llvm-tooling.yml`. WSL `/tmp` does not persist between
-separate `wsl.exe` invocations; keep state under `~/logrange-pass` or
-`~/logrange-study` and do multi-step work in one invocation.
+selftest | coverage | figures | rejects | weights`, `bash matcher/test_scan.sh`,
+and `bash pass/run_pass_test.sh`. Five are gated in CI by
+`.github/workflows/llvm-tooling.yml`; `figures` needs no corpus and no plugin,
+which is why it runs there. `rejects` and `weights` need harvested bitcode and
+do not. WSL `/tmp` does not persist between separate `wsl.exe` invocations;
+keep state under `~/logrange-pass` or `~/logrange-study` and do multi-step work
+in one invocation.
