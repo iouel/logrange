@@ -70,7 +70,7 @@ one was per-term (`2u` for a term's `exp` ignoring its argument, which became
   `L = -log(n)`. Then `net = n` exactly, integer adds below 2^53 are exact so
   there is no summation error at all, `cond = 1`, `k = 0`, `D = 0`, and
   `|log|S|| = 0` — the entire old budget is `4u`. At n = 166463 the measured
-  error is **7.97u**, a ratio of **1.99**. Worst against the new form: 0.50.
+  error is **7.97u**, a ratio of **1.99**. Worst against the new form: 0.83.
 - **`pos_accum` is not refuted** (worst 0.80) and carries the new term anyway,
   for correctness rather than because it binds: `|log|net|| <= log n` and its
   `n*u` term already dominates `log n`. `rp_accum` is exposed precisely
@@ -98,13 +98,14 @@ pair to ~61 bits. Validated by identities needing no external constant
 `exp(a)exp(b) == exp(a+b)`); `bound_search` refuses to report if they fail.
 Resolution: ~1e-30 relative, about 1e-14 u.
 
-Two assumptions became measurements: `std::exp` is worst **0.99u** over 20001
-points in [-700, 700], and `expl` is worst **5.8e-4 u**. The first confirms
-the floor the old file claimed.
+One assumption became a measurement: `std::exp` is worst **1.00u** against
+`dd_exp` over 20001 points in [-700, 700], confirming the floor the old file
+claimed. `bound_search` reports it on every run, so it is reproducible rather
+than a figure from a scratch file.
 
 Honest scope: family E's 1.99 would have been visible against the old
 reference too. The family is what found the defect; the reference is what
-makes the marginal cases readable and the 0.50 worst-case trustworthy.
+makes the marginal cases readable and the 0.83 worst-case trustworthy.
 
 **Changed: the error contract moved.**
 

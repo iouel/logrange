@@ -33,7 +33,7 @@ using namespace logrange;
 
 // Feed one exact term into a dd_sum. dd_exp gives exp(L) as a pair; adding
 // both words keeps the reference independent of libm's exp, whose measured
-// worst error is 0.99u (dd_exp.h). This file keeps dd_sum's collapse at
+// worst error is 1.00u (dd_exp.h). This file keeps dd_sum's collapse at
 // value(), worth up to u/2, because its scenarios run 6x-1000x under the
 // bound and a tripwire does not need bound_search's ~1e-14 u resolution.
 static void add_exp_term(dd_sum& acc, double log_abs, double sign = 1.0) {
