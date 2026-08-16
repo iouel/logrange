@@ -81,11 +81,80 @@ Why each is fatal rather than merely risky:
 
 Innermost loop with preheader, unique latch, unique exiting block, unique
 exit block; exactly one FP phi in the header, of type `double`, initialized
-to constant `0.0` from the preheader; backedge update a plain
-`fadd(phi, X)`; `X` an accepted `exp` call through nothing but
+to constant `0.0` from the preheader; the backedge update one of the three
+spines in 3.1; `X` an accepted `exp` call through nothing but
 `fpext`/`fptrunc`; the call argument loop-varying; phi and update with no
 other in-loop users; at least one out-of-loop user of the sum; the update
 dominating the exit branch.
+
+### 3.1 Accepted spines, and which of them is rewritten
+
+**Matched is not rewritten.** Three spines are matched; one is rewritten.
+
+| spine | matched | rewritten |
+|---|---|---|
+| `fadd(phi, X)` | yes | **yes** |
+| `fadd(phi, fmul(W, X))` | yes | no — declined by 3.3 |
+| `llvm.fmuladd(W, X, phi)` | yes | no — declined by 3.3 |
+
+The weighted spines are matched **in order to be declined with a stated
+reason**. A shape the pass cannot rewrite and says nothing about is
+indistinguishable, to a reader, from a shape it failed to recognize.
+
+Both weighted forms are required because which one clang emits is
+`-ffp-contract`, a flag the pass does not control. Measured on
+`pass/test_softmax.c`, LLVM 21: `=on` (the default) emits `llvm.fmuladd`;
+`=off` and `=fast` emit `fmul` + `fadd`. `run_pass_test.sh` compiles the
+kernel at all three and asserts the same decline from each, and asserts the
+uncontracted builds contain no `llvm.fmuladd` so the check cannot go vacuous.
+
+In the `fmuladd` and `fmul` forms the accumulator must be the **addend**. As
+a multiplicand it is a product recurrence, not a sum. The `fmul` is a spine
+node and takes the same clean-use discipline as the update: its only in-loop
+user must be the add.
+
+Of a product's two operands, `X` is the one reaching an `exp` and `W` is the
+other. With no `exp` on either side the split is arbitrary and unused: that
+verdict is LOW and 3.2 declines first.
+
+### 3.2 No multiply and no `exp` is not a match
+
+A backedge update with neither a multiply nor an `exp` in its term is **not
+matched at all**, and is silent — not a decline. This is the matcher's
+`noMulNoExp` rule, held to so the two tools agree on what is in scope: such a
+reduction is rescuable without logsumexp. `plain_sum` in
+`pass/test_softmax.c` is the named case on both sides.
+
+### 3.3 A weighted term is declined
+
+`DECLINE-WEIGHT,<file>,<line>,<function>,unbounded-weight`.
+
+Folding `w_i` into the term makes the emitted state accumulate
+`sum(w_i * exp(t_i - m))` rather than `sum(exp(t_i - m))`, and `w_i` is not
+proven bounded. Every scaled term is at most `|w_i|`, so the state reaches
+`sum|w_i|`, which has no ceiling — where the unweighted state is at most `n`
+by construction, the exponents being `<= 0`. Measured on the emitted state
+machine at `n = 2`: `w = (1e308, 1e308)`, `t = (-700, -700)` drives the state
+to `inf` and the result to `inf`; the linear loop gives `19719.4`. No
+reduction recovers a state that has already overflowed.
+
+A second failure exists and is **not** the reason for this clause. The
+emitted reduction is `exp(m + log(s))`, so `w = (1, -2)`, `t = (0, 0)` drives
+the state to `-1` and its log to NaN where the linear loop gives `-1`. That
+is a property of the reduction, not of the state, and it is fixable:
+`copysign(exp(m + log|s|), s)` is correct for a negative sum. Recorded as
+work a weighted rewrite would have to do.
+
+Clause order is **normative**: the section 7 risk gate runs first, this
+clause second. Reversed, this clause shadows the gate and the only
+LOW-verdict input the pass matches never reaches it.
+
+**Extension point, deliberately not taken.** A weight proven bounded — a
+constant is the easy case — is rewritable. It needs the sign handling above,
+the section 5 error contract re-derived (it is `pos_accum`'s, for unit
+weights), and its own accept and decline tests. Measured yield before
+building any of it: **0** `w*exp(t)` sites in 2859 corpus loops
+(`matcher/run_study.sh weights`).
 
 ## 4. Source-level `exp`/`expf` is not accepted
 
@@ -362,3 +431,54 @@ arbitrary consumers is the stretch goal's second step and is **out of
 scope** for this section; if the frontier turns out to sit immediately
 outside the first loop on real code, that is a documented result, not a
 failure to be patched over.
+
+## 7. Profitability gate
+
+*Numbered last, ordered third. The gate runs on a loop that has passed
+sections 1–4, before section 3.3's weight clause and before any section 6
+propagation. It was undocumented here until 2026-08-17.*
+
+Shape is not profitability. The matcher study found the abundant hits are
+benign-range dot products, where a log rewrite costs a transcendental per
+term and buys nothing; the rescue-worthy subset is 5 HIGH rows in 2859 loops
+(`matcher/RESULTS.md`). The risk verdict is what separates them.
+
+### 7.1 The verdict
+
+Same rule as the matcher's: **an exp-family factor in the term chain gives
+HIGH**, because `exp(t)` spans the whole range from `t` alone. Otherwise LOW.
+
+MED is not computed, because it is unreachable for these spines. The matcher
+grades MED on `nMul >= 4`, or a log-domain chain with `nMul >= 2`; every
+spine in 3.1 carries at most one multiply. A pass reporting a tier it can
+never reach would be claiming an agreement with the matcher that has not
+been tested.
+
+### 7.2 The threshold
+
+Parameter `min-risk=<low|med|high|none>`, default `high`. A verdict below the
+threshold is declined:
+
+    DECLINE-RISK,<file>,<line>,<function>,<verdict>,below-min-<threshold>
+
+An unrecognized value is **refused** — the pipeline fails to parse rather
+than silently reverting to the default, which would disable the gate on a
+typo.
+
+`none` is ordered above `high` deliberately: it is a threshold no verdict can
+reach, so `min-risk=none` means "decline everything".
+
+### 7.3 The gate declines a real input
+
+`dot_sum` in `pass/test_softmax.c` — `llvm.fmuladd(x, y, phi)`, no `exp` — is
+matched by 3.1, verdicts LOW, and is refused at the **default** threshold.
+
+This is new as of the 3.1 widening. Before it, the only matchable spine
+required an `exp` call, so the verdict was HIGH by construction and the
+refusal path was reachable only by raising `min-risk` synthetically. That
+limitation was stated rather than dressed up while it held, and closes
+"Shipping Posture" condition 3 in `TODO.md`.
+
+Both branches are gated in `run_pass_test.sh`, and the decline branch is
+negative-tested two ways: hardcoding the verdict HIGH, and reordering 3.3
+ahead of this section. Each makes the `dot_sum` assertion fail.

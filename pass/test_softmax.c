@@ -72,6 +72,22 @@ double plain_sum(const double *x, int n) {
   return s;
 }
 
+/* Mixture likelihood: the weighted spine. At the harness's flags clang emits
+ * llvm.fmuladd(w, exp(t), phi); at -ffp-contract=off and =fast it emits
+ * fmul + fadd. Both forms must be MATCHED and then DECLINED: folding w into
+ * the term makes the state accumulate sum(w_i * exp(t_i - m)), which reaches
+ * sum|w_i| and has no ceiling, where the unweighted state is at most n.
+ * Measured on the emitted state machine at n=2: w=(1e308,1e308),
+ * t=(-700,-700) drives the state to inf while the linear loop gives 19719.4.
+ * Measured absent from the study corpus: 0 sites in 2859 loops
+ * (matcher/run_study.sh weights). */
+double weighted_sum(const double *w, const double *x, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += w[i] * exp(x[i]);
+  return s;
+}
+
 /* Dot product: fmuladd/fmul update, not fadd(phi, exp(t)). */
 double dot_sum(const double *x, const double *y, int n) {
   double s = 0.0;
@@ -107,6 +123,8 @@ extern double plain_sum_orig(const double *x, int n);
 extern double plain_sum_rw(const double *x, int n);
 extern double dot_sum_orig(const double *x, const double *y, int n);
 extern double dot_sum_rw(const double *x, const double *y, int n);
+extern double weighted_sum_orig(const double *w, const double *x, int n);
+extern double weighted_sum_rw(const double *w, const double *x, int n);
 extern double invariant_exp_sum_orig(double c, int n);
 extern double invariant_exp_sum_rw(double c, int n);
 
@@ -365,6 +383,10 @@ int main(void) {
           plain_sum_orig(x, N) == plain_sum_rw(x, N));
     check("negctl_dot_sum_untouched",
           dot_sum_orig(x, y, N) == dot_sum_rw(x, y, N));
+    /* Matched and declined, unlike the two either side of it, which are not
+     * matched at all. A decline must leave the loop bit-identical too. */
+    check("negctl_weighted_sum_untouched",
+          weighted_sum_orig(y, x, N) == weighted_sum_rw(y, x, N));
     check("negctl_invariant_exp_untouched",
           invariant_exp_sum_orig(0.5, N) == invariant_exp_sum_rw(0.5, N));
   }

@@ -11,6 +11,50 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Pass (prototype, outside 1.0's supported surface): shape coverage widened
+to the weighted spines, and the profitability gate now declines a real
+input.**
+
+`log-rewrite` matches three backedge spines — `fadd(phi, X)`,
+`fadd(phi, fmul(W, X))` and `llvm.fmuladd(W, X, phi)` — and rewrites only the
+first. Which weighted form clang emits is `-ffp-contract`, a flag the pass
+does not control: `=on` (default) gives `llvm.fmuladd`, `=off` and `=fast`
+give `fmul` + `fadd`. All three are gated.
+
+Weighted spines are **matched in order to be declined**,
+`DECLINE-WEIGHT,...,unbounded-weight`. Rewriting one would make the state
+accumulate `sum(w_i * exp(t_i - m))`, reaching `sum|w_i|`, which has no
+ceiling — the unweighted state is at most `n`, its exponents being `<= 0`.
+
+**The risk gate declines a real input at the default threshold for the first
+time.** `dot_sum`'s `llvm.fmuladd(x, y, phi)` has no `exp` in its chain,
+verdicts LOW, and is refused. Previously every matchable shape required an
+`exp` call, so the verdict was HIGH by construction and the refusal path was
+reachable only by raising `min-risk` synthetically. This closes "Shipping
+Posture" condition 3. The posture itself does not move: neither number that
+drove it changed.
+
+Clause order is now normative (ELIGIBILITY.md 3.3): risk gate first, weight
+clause second. Reversed, the weight clause shadows the gate and the only
+LOW-verdict input never reaches it.
+
+**Corrected: the weight-overflow witness published 2026-08-16 was wrong in
+both constants.**
+
+Old: `w=1e300, t=-700` overflows the state at `n>=2` while the linear sum is
+~1e-5.
+New: it does not overflow at `n=2` — the state reaches 2e300, and `sum|w_i|`
+at that weight needs `n ~ 1.8e8` — and the linear sum is 1.97e-4.
+Measured witness: `w=(1e308,1e308)`, `t=(-700,-700)` drives the state to
+`inf` at `n=2` while the linear loop gives 19719.4.
+
+The conclusion the old figures were offered for is unchanged: magnitude is
+the constraint, and it is unbounded. Separately recorded and **not** the
+reason for the decline: the emitted reduction `exp(m + log(s))` gives NaN for
+a negative state, which is a property of the reduction rather than the state
+and is fixable with `copysign` — consistent with the 2026-08-16 retraction of
+the claim that negative weights break semantics outright.
+
 **Documented: `add_scaled`'s scaling cost, which no contract term named.**
 
 Both accumulators implement `add_scaled(v, c)` as
