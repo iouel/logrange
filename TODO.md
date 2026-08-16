@@ -338,7 +338,40 @@ tooling tier, which ships as beta with its gaps stated.
       n=16385, four orders below it.
       *The reduction term is required here by measurement.* Every run also
       scores the form without it: exceeded on 321 of 7285 trials, worst 39x.
-- [ ] **`add_scaled` injects `|log c|·u` that no contract term names.** Both
+- [x] **`add_scaled` injects `|log c|·u` that no contract term names.**
+      Closed 2026-08-16. **Decided: a documented scaling cost stated at
+      `add_scaled`, not a change to the accumulator contract.** A caller
+      writing `add_log(v.log_abs + std::log(c))` by hand pays exactly the
+      same, so it is the price of entering log space at that scale, not of
+      the accumulation. Folding it into the headline bound would misattribute
+      it.
+      *Measured, swept:* the injected error is `ulp(|log c|)/2`, landing on
+      8u, 64u, 256u, 512u at `|log c|` = 10, 100, 400, 690 — exact powers of
+      two, the signature of a half-ulp effect. At the top of the range that is
+      **128x** the 4u a single term gets. The stated claim
+      `(|log c| + 4)*u` holds at worst **0.74**, searched and asserted by
+      `bound_search` family F.
+      *The representation floor does not cover it*, which is what made this
+      a real gap rather than a restatement: that floor is `|log|x||*u` for
+      the value being represented, and here the scaled term's own magnitude
+      is ~0 while the injected error is 512u. It is set by an **input's**
+      magnitude, not the result's — the third instance of the class that
+      required `D` and then `|log|net||`.
+      *Caller guidance, measured:* when `c*|x|` is representable, forming it
+      and using `add()` costs **1.9u independent of scale**, against 512u
+      here. Callers whose product overflows have no cheaper route.
+      *Two measurement traps, both now pinned by the gate.* The first probe
+      built `c = exp(-L)` and measured 0.6u, three orders under prediction.
+      `exp` and `log` are self-consistent round trips, so `log(exp(-m))`
+      lands within `u` of the double `-m`, which at `|log c| ~ 690` is 1e-3
+      of an ulp: the rounding being hunted is hidden by construction. The
+      second version swept `c` but still built it through `exp()` and
+      measured the same. Only an arbitrary mantissa exposes it. Mutation-
+      tested both ways: dropping `|log c|` from the claim fails the
+      assertion, and rebuilding `c` via `exp()` collapses the ratio to 0.04
+      and trips the "the cost is real" check.
+      *Original entry:*
+- [ ] ~~**`add_scaled` injects `|log c|·u` that no contract term names.**~~ Both
       accumulators implement `add_scaled(v, c)` as
       `add_log(v.log_abs + std::log(c))`. `std::log(c)` is computed, so it
       carries an absolute error of `|log c|·u`, which lands directly in that

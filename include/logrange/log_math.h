@@ -480,6 +480,33 @@ struct rp_accum {
     if (pos + pos_c == neg + neg_c) clear();
   }
 
+  // SCALING COST, and it is not covered by the contract above. This forms
+  // log(c) and adds it, so the term enters carrying the rounding of log(c):
+  //
+  //   absolute error in log space  <=  ulp(|log c|)/2  <=  |log c| * u
+  //
+  // which is a relative error of the same size on that term. Measured, swept
+  // over arbitrary c (bound_search family F): 8u at |log c| ~ 10, 64u at 100,
+  // 256u at 400, 512u at 690, landing exactly on ulp(|log c|)/2 each time.
+  // Against a single-term budget of 4u that is 128x at the top of the range.
+  //
+  // It is stated here rather than folded into the accumulator's bound because
+  // it is the cost of ENTERING log space at that scale, not of the
+  // accumulation: a caller writing add_log(v.log_abs + std::log(c)) by hand
+  // pays exactly the same. The contract above covers what the accumulator
+  // does with the terms it is given.
+  //
+  // The representation floor at log_value does NOT cover this. That floor is
+  // |log|x||*u for the value being represented; here the scaled term's own
+  // magnitude can be ~0 while the injected error is 512u, because it is set
+  // by an INPUT's magnitude, not the result's. That is the same distinction
+  // that made |log|net|| necessary in the reduction.
+  //
+  // If c * |x| is representable in linear, form it and use add() instead:
+  // measured 1.9u independent of scale, against 512u here. Callers whose
+  // product overflows or underflows have no cheaper route, and this is the
+  // price.
+  //
   // Add c * v for a linear scalar c > 0. (c <= 0 or NaN c poisons —
   // silently ignoring a bad scale would violate NaN-in/NaN-out.)
   void add_scaled(const log_value& v, double c) {
@@ -638,6 +665,10 @@ struct pos_accum {
     add_log(v.log_abs);
   }
 
+  // Scaling cost: log(c) rounds, so the term enters carrying up to
+  // ulp(|log c|)/2 <= |log c|*u, relative, and the accumulator's contract
+  // does not cover it. Stated in full at rp_accum::add_scaled.
+  //
   // Add c * v for a linear scalar c > 0. (c <= 0 or NaN c poisons —
   // silently ignoring a bad scale would violate NaN-in/NaN-out.)
   void add_scaled(const log_value& v, double c) {
