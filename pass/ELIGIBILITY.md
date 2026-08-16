@@ -168,9 +168,21 @@ LOW-verdict input the pass matches never reaches it.
 **Extension point, deliberately not taken.** A weight proven bounded — a
 constant is the easy case — is rewritable. It needs the sign handling above,
 the section 5 error contract re-derived (it is `pos_accum`'s, for unit
-weights), and its own accept and decline tests. Measured yield before
-building any of it: **0** `w*exp(t)` sites in 2859 corpus loops
-(`matcher/run_study.sh weights`).
+weights), and its own accept and decline tests.
+
+**The yield evidence is thinner than it was published as, and does not settle
+the question.** The census found **0** `w*exp(t)` multiplies, but its
+population is the **5** exp-carrying reductions the matcher accepted — not
+2859 loops, which is how this was stated until 2026-08-17. Of those 5, 2 have
+`nMul=0` and so contain no multiply at all; the other 3 carry theirs inside
+the `exp` argument. Derivation: `matcher/run_study.sh figures`, from committed
+evidence.
+
+Two limits on that measurement, both structural: the census is gated on
+`CI.expChain` and runs *after* the `HIT`, so it cannot see any loop rejected
+upstream — including the mirrored `out[j] += w*exp(t)` form, which
+`cleanUses` rejects and which is where this shape most plausibly lives. n=5
+is not a basis for concluding the spine is absent from real code.
 
 ## 4. Source-level `exp`/`expf` is not accepted
 

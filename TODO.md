@@ -531,9 +531,15 @@ tooling tier, which ships as beta with its gaps stated.
       `copysign` — consistent with the 2026-08-16 retraction. Magnitude is the
       durable constraint, since no reduction recovers an overflowed state.
       *Still open from the original item:* fsub accumulators.
-      *Yield, measured before building any of it:* 0 `w*exp(t)` sites in 2859
-      corpus loops, so the extension point (a weight proven bounded) stays
-      deliberately untaken.
+      *Yield evidence, corrected 2026-08-17 and weaker than published:* the
+      census found 0 `w*exp(t)` multiplies, but among the **5** exp-carrying
+      reductions the matcher accepted — not among 2859 loops, which is how it
+      was stated in four files. It is gated on `expChain` and runs after the
+      `HIT`, so it cannot see loops rejected upstream, including the mirrored
+      `out[j] += w*exp(t)` form that `cleanUses` rejects. n=5 does not settle
+      whether the extension point is worth taking; deciding that needs the
+      census moved ahead of the rejection filters. Derivation:
+      `matcher/run_study.sh figures`.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
       docs stay the answer.

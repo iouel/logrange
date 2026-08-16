@@ -36,6 +36,30 @@ register. Read the IR, run the differential, then write the explanation.
 rejection census was first produced by a throwaway build on one machine, which
 made it unreproducible. It is now `./run_study.sh rejects`.
 
+**A figure is derived or it is wrong.** Reproducible-by-tooling is not enough:
+a number hand-copied out of a tool's output into prose is an independent
+assertion from that moment on, and it rots silently. Every published corpus
+figure must have exactly one executable derivation, reading committed
+evidence, checked on every push. `matcher/run_study.sh figures` is that
+derivation; `matcher/data/FIGURES.txt` is its committed output and the gate
+diffs against it. Prose cites the derivation. Adding a new figure means
+extending `figures`, not typing a number into a document.
+
+*What this rule was written for.* "0 `w*exp(t)` sites in 2859 loops" shipped
+into four files and a commit title. The weight census is gated on
+`CI.expChain` and runs after the `HIT` is emitted, so its population was the
+5 exp-chain hits, never 2859. The figure was not stale — it named the wrong
+denominator, and it was used to argue against building a feature. The prior
+rule did not catch it, because the census *was* reproducible from committed
+tooling; it just needed a corpus nobody else has, and the number reached the
+docs by hand. Within a minute of existing, `figures` corrected a second
+miscount in the replacement text.
+
+**A figure must name its population.** "0 sites" is not a measurement without
+the denominator and the filter that produced it. State what was examined, what
+was excluded, and where the instrument is blind — that census cannot see any
+loop rejected upstream, which is where the shape most plausibly lives.
+
 **Collect records serially.** Running `opt` under `xargs -P4` interleaved
 records onto shared lines and undercounted. The census asserts that every
 emitted line carries a record tag.

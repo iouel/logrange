@@ -11,6 +11,44 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Published corpus figures are now derived from committed evidence, not
+asserted in prose.** New rule in CONTRIBUTING.md, "A figure is derived or it
+is wrong", and a fifth CI gate enforcing it.
+
+`matcher/run_study.sh figures` computes every headline count from the
+committed `matcher/data/raw-{darknet,gsl,libsvm}.txt` and diffs the result
+against `matcher/data/FIGURES.txt`. It needs no corpus checkout, no bitcode
+harvest and no plugin build, so it runs in CI — which is the point. The
+previous rule ("published numbers must be reproducible from committed
+tooling") was satisfied and did not help: the census was reproducible only on
+a machine holding the corpus, and the number reached the docs by hand.
+
+**Retracted: "0 `w*exp(t)` sites in 2859 corpus loops."**
+
+Old: 0 sites in 2859 loops, used to argue the mixture spine is absent from
+real code and that bounded-weight support is not worth building.
+New: 0 `w*exp(t)` multiplies among the **5** exp-carrying reductions the
+matcher accepted. The census is gated on `CI.expChain` and runs *after* the
+`HIT` is emitted, so 2859 was never its denominator.
+
+Of those 5, **2** have `nMul=0` and contain no multiply at all; the other 3
+carry theirs inside the `exp` argument. The census cannot see any loop
+rejected upstream — including the mirrored `out[j] += w*exp(t)` form that
+`cleanUses` rejects, which is where the shape most plausibly lives. n=5 does
+not settle whether the extension point is worth taking, and TODO.md no longer
+claims it does. Corrected in four files.
+
+Within a minute of existing, `figures` caught a second miscount in the
+replacement text (3 `nMul=0` rows claimed, 2 actual).
+
+**Corrected: the dead original chain needs `adce`, not `dce`.** Posture
+condition 6. `PROTOTYPE.md` and `LogRewritePass.cpp` both said the orphaned
+chain is left for "later DCE/ADCE". Plain `dce` removes nothing — the orphan
+is a loop-carried cycle, so every instruction in it has a use. Measured:
+26 `llvm.exp.f64` after the rewrite, 26 after `dce`, 22 after `adce`, one dead
+exp per rewritten f64 loop. `-passes='log-rewrite<force>,adce'` is now the
+documented supported pipeline and the drop is asserted in `run_pass_test.sh`.
+
 **Pass test suite: every rewrite must be graded HIGH by the matcher.**
 
 `run_pass_test.sh` section 3d builds the matcher plugin and runs it over

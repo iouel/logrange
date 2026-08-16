@@ -127,6 +127,18 @@ jobs:
           grep -q '^test_scan: PASS' "$RUNNER_TEMP/scan.out" \
             || { echo "FAIL: no test_scan: PASS line"; exit 1; }
 
+      # Gate 5. Every published corpus figure, derived from the COMMITTED
+      # matcher/data/raw-*.txt rather than asserted in prose. Needs no corpus
+      # checkout, no bitcode harvest and no plugin build, which is exactly why
+      # it can run here — the figures were previously reproducible only on a
+      # machine with the corpus, and reached the docs by hand. One of them was
+      # wrong (a mis-stated denominator) and survived review.
+      - name: Gate 5 — published figures derived from committed evidence
+        run: |
+          bash matcher/run_study.sh figures | tee "$RUNNER_TEMP/figures.out"
+          grep -q '^FIGURES OK' "$RUNNER_TEMP/figures.out" \
+            || { echo "FAIL: no FIGURES OK line"; exit 1; }
+
       # The raw matcher output is the evidence behind the two matcher gates;
       # keep it so a red run can be read without re-running anything locally.
       - name: Upload gate output
@@ -139,6 +151,7 @@ jobs:
             ${{ runner.temp }}/coverage.out
             ${{ runner.temp }}/pass.out
             ${{ runner.temp }}/scan.out
+            ${{ runner.temp }}/figures.out
             ~/logrange-study/raw-selftest.txt
             ~/logrange-study/raw-coverage.txt
             ~/logrange-pass/rewrite.log

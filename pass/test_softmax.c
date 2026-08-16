@@ -79,8 +79,10 @@ double plain_sum(const double *x, int n) {
  * sum|w_i| and has no ceiling, where the unweighted state is at most n.
  * Measured on the emitted state machine at n=2: w=(1e308,1e308),
  * t=(-700,-700) drives the state to inf while the linear loop gives 19719.4.
- * Measured absent from the study corpus: 0 sites in 2859 loops
- * (matcher/run_study.sh weights). */
+ * Corpus evidence for the spine's rarity is thin and was published as
+ * stronger than it is: 0 w*exp(t) multiplies among the 5 exp-carrying
+ * reductions the matcher accepted, not among 2859 loops. Derivation:
+ * matcher/run_study.sh figures. */
 double weighted_sum(const double *w, const double *x, int n) {
   double s = 0.0;
   for (int i = 0; i < n; ++i)

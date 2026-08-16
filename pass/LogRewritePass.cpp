@@ -636,9 +636,14 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // a constant is the easy case — is rewritable. It needs the sign
       // handling above, the error contract re-derived (ELIGIBILITY.md's bound
       // is pos_accum's, for unit weights), and its own accept and decline
-      // tests. Until those exist, every weight declines. Measured yield
-      // before building any of it: 0 w*exp(t) sites in 2859 corpus loops
-      // (matcher/run_study.sh weights).
+      // tests. Until those exist, every weight declines.
+      //
+      // The yield evidence for NOT building it is thin, and was published
+      // worse than thin: 0 w*exp(t) multiplies, but among the 5 exp-carrying
+      // reductions the matcher accepted, not among 2859 loops. The census is
+      // gated on expChain and runs after the HIT, so it cannot see loops
+      // rejected upstream — including the mirrored out[j] += w*exp(t) form.
+      // See ELIGIBILITY.md 3.3; derivation: matcher/run_study.sh figures.
       if (Weight) {
         errs() << "DECLINE-WEIGHT,";
         printLoc(errs(), Upd, F);
@@ -785,8 +790,17 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       XB.CreateStore(LogSum, G);
 
       // The original phi/fadd/exp chain is left in place, now feeding only
-      // itself; later DCE/ADCE may remove it. Deliberate: this pass adds
-      // and redirects, it does not delete (prototype simplicity).
+      // itself. Deliberate: this pass adds and redirects, it does not delete
+      // (prototype simplicity).
+      //
+      // Removing it requires ADCE specifically, not DCE. The orphan is a
+      // loop-carried cycle — the phi feeds the update and the update feeds the
+      // phi — so every instruction in it has a use and plain DCE cannot start.
+      // Measured on the test kernel: log-rewrite alone leaves 26 llvm.exp.f64
+      // calls, `-passes='log-rewrite<force>,dce'` still 26, and
+      // `,adce` 22, one dead exp per rewritten f64 loop. The supported
+      // pipeline is therefore log-rewrite followed by adce, asserted in
+      // run_pass_test.sh.
 
       // Verdict is part of the record: a rewrite that fired should say what
       // profitability signal let it through, not just that it happened.

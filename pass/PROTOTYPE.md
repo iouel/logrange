@@ -367,6 +367,8 @@ PASS,unknown_propagate_refused
 PASS,force_alone_does_not_propagate
 == 3d. matcher agreement, soundness direction only ==
 PASS,every_rewrite_is_matcher_high
+INFO,dead_chain,after_rewrite=26,after_dce=26,after_adce=22
+PASS,adce_removes_the_dead_original,26->22
 == 4. codegen, link, run ==
 INFO,benign,orig=1654.7821267630925,rw=1654.7821267630948,rel=1.37e-15,logsum=7.4114246336847733,logref=7.4114246336847733
 PASS,cover_softmax_denom_rw_benign_1e-12
@@ -603,10 +605,16 @@ unmeasured over chains; nothing here bounds a chain.
   MED is uncomputed and unreachable *in the verdict function*; that is not
   the same as no matched loop being MED — the matcher grades
   `s += a*b*c*d*e` MED where this pass prints LOW (ELIGIBILITY.md 7.1).
-- **The dead original is left in place.** The pass adds and redirects; it
-  does not delete. The orphaned `phi`/`fadd`/`exp` chain feeds only itself
-  and is left for later DCE/ADCE. Harmless: it computes the original
-  0.0/NaN alongside.
+- **The dead original is left in place, and `adce` is what removes it.** The
+  pass adds and redirects; it does not delete. The orphaned `phi`/`fadd`/`exp`
+  chain feeds only itself and computes the original 0.0/NaN alongside.
+  **`dce` will not remove it** — the orphan is a loop-carried *cycle*, so every
+  instruction in it has a use and plain DCE cannot start. Measured on the test
+  kernel: log-rewrite alone leaves 26 `llvm.exp.f64` calls, `,dce` still 26,
+  `,adce` 22 — one dead exp per rewritten f64 loop. The supported pipeline is
+  `-passes='log-rewrite<force>,adce'`, asserted in `run_pass_test.sh`. This
+  file said "later DCE/ADCE" until 2026-08-17, which was wrong about the pass
+  and unchecked by anything.
 - ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted
   code now carries `(n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in
   ELIGIBILITY.md and searched by `emitted_bound_search.c` on every gate run.
