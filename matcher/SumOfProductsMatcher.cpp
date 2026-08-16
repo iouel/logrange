@@ -6,25 +6,39 @@
 // Emits greppable lines on stderr, one per event:
 //   LOOP,<file>,<line>,<function>                       innermost FP loop examined
 //   HIT,<file>,<line>,<function>,<trip>,<depth>,<nmul>,<transcendental|plain>,<risk>,<reasons>
+//   WARN,not-simplified,<file>,<line>,<function>        pipeline is missing
+//                                                       loop-simplify; nothing
+//                                                       can match. Never gated.
 // risk is the profitability signal — the gate in front of any rewrite:
 // "would this reduction actually underflow?" HIGH | MED | LOW, with
 // semicolon-joined reason tokens (or "none"). Aggregation happens in the
 // run script, not here.
 //
-// Usage: opt -load-pass-plugin=./SopMatcher.so -passes=sop-matcher \
-//            -disable-output module.bc
+// Usage: opt -load-pass-plugin=./SopMatcher.so \
+//            -passes=loop-simplify,lcssa,sop-matcher -disable-output module.bc
+//
+// The two canonicalization passes are REQUIRED: they are unstated
+// preconditions of RecurrenceDescriptor::AddReductionVar, which this file
+// delegates recognition to. Omit them and every loop is skipped with a WARN.
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/DemandedBits.h"
+#include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include <string>
 
 using namespace llvm;
 
@@ -140,61 +154,224 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
   }
 }
 
-// Trace the additive spine from the backedge value down to the accumulator
-// phi: the update may be a tree of fadd/fsub/fneg whose leaves are the phi
-// and the reduction terms, and at -O1 clang folds "acc += a*b" into
-// llvm.fmuladd(a, b, acc) — the phi then sits in the addend slot. Collects
-// every term (non-spine operand) and counts spine fmuladds as multiplies.
-// fsub only continues through its left operand: fsub(term, acc) alternates
-// the accumulator's sign each iteration and is not a reduction.
-// Nodes are appended to Spine only on the successful path (deepest first).
-bool spineToPhi(Value *V, PHINode *Phi, const Loop &L,
-                SmallVectorImpl<Value *> &Terms,
-                SmallVectorImpl<Instruction *> &Spine, unsigned &SpineMuls,
-                unsigned Depth = 8) {
-  if (V == Phi) return true;
-  if (Depth == 0) return false;
-  auto *I = dyn_cast<Instruction>(V);
-  if (!I || !L.contains(I)) return false;
+// ---------------------------------------------------------------------------
+// Reduction recognition.
+//
+// "Is this loop a floating-point reduction" is a solved compiler problem, and
+// this file is deliberately NOT its second authority: RecurrenceDescriptor —
+// the analysis the loop vectorizer trusts — answers it. What stays here is
+// walkChain and the risk grading below it, because no compiler answers "would
+// this reduction underflow".
+//
+// This replaced a hand-written spine walk. The swap was measured against it
+// over the whole study corpus before the local copy was deleted: +32 hits,
+// -1, no change to any risk grade or to the five HIGH findings. See
+// matcher/DELTA.md, and matcher/data/raw-delta.txt for the paired records.
+// ---------------------------------------------------------------------------
+struct Recognition {
+  bool matched = false;
+  SmallVector<Value *, 8> Terms; // non-spine operands feeding the accumulator
+  unsigned SpineMuls = 0;        // fmuladd/fma count on the spine itself
+  const char *why = "";          // when !matched: the check that turned it away
+};
 
-  switch (I->getOpcode()) {
-  case Instruction::FAdd:
-    for (unsigned a = 0; a < 2; ++a)
-      if (spineToPhi(I->getOperand(a), Phi, L, Terms, Spine, SpineMuls,
-                     Depth - 1)) {
-        Terms.push_back(I->getOperand(1 - a));
-        Spine.push_back(I);
-        return true;
-      }
-    return false;
-  case Instruction::FSub:
-    if (spineToPhi(I->getOperand(0), Phi, L, Terms, Spine, SpineMuls,
-                   Depth - 1)) {
-      Terms.push_back(I->getOperand(1));
-      Spine.push_back(I);
-      return true;
-    }
-    return false;
-  case Instruction::FNeg:
-    return false; // -acc as the running value flips sign: not a reduction
-  case Instruction::Call:
-    if (auto *II = dyn_cast<IntrinsicInst>(I)) {
-      if (II->getIntrinsicID() == Intrinsic::fmuladd ||
-          II->getIntrinsicID() == Intrinsic::fma) {
-        if (spineToPhi(II->getArgOperand(2), Phi, L, Terms, Spine, SpineMuls,
-                       Depth - 1)) {
-          ++SpineMuls;
-          Terms.push_back(II->getArgOperand(0));
-          Terms.push_back(II->getArgOperand(1));
-          Spine.push_back(I);
-          return true;
-        }
-      }
-    }
-    return false;
-  default:
-    return false;
+// Recover the reduction cycle: in-loop instructions lying on a path from Phi
+// to the backedge value. Used only when getReductionOpChain declines to order
+// the chain (it answers a vectorizer question, not a recognition one, and
+// isReductionPHI has already said yes by the time we get here).
+//
+// This is bookkeeping, not recognition: LLVM has no API returning "the terms
+// of a reduction" because no LLVM client needs them. walkChain does.
+bool collectCycle(PHINode &Phi, const Loop &L, Value *Back,
+                  SmallVectorImpl<Instruction *> &Out) {
+  SmallPtrSet<Instruction *, 16> Fwd, Bwd;
+  SmallVector<Instruction *, 16> Stack;
+
+  // Forward from the phi through in-loop users.
+  for (User *U : Phi.users())
+    if (auto *UI = dyn_cast<Instruction>(U))
+      if (L.contains(UI) && Fwd.insert(UI).second) Stack.push_back(UI);
+  while (!Stack.empty()) {
+    Instruction *I = Stack.pop_back_val();
+    for (User *U : I->users())
+      if (auto *UI = dyn_cast<Instruction>(U))
+        if (L.contains(UI) && !isa<PHINode>(UI) && Fwd.insert(UI).second)
+          Stack.push_back(UI);
   }
+
+  // Backward from the backedge value through in-loop operands.
+  if (auto *BI = dyn_cast<Instruction>(Back))
+    if (L.contains(BI) && Bwd.insert(BI).second) Stack.push_back(BI);
+  while (!Stack.empty()) {
+    Instruction *I = Stack.pop_back_val();
+    for (Use &U : I->operands())
+      if (auto *OI = dyn_cast<Instruction>(U.get()))
+        if (L.contains(OI) && !isa<PHINode>(OI) && Bwd.insert(OI).second)
+          Stack.push_back(OI);
+  }
+
+  // The cycle is the intersection, in deterministic (program) order.
+  for (BasicBlock *BB : L.blocks())
+    for (Instruction &I : *BB)
+      if (Fwd.count(&I) && Bwd.count(&I)) Out.push_back(&I);
+  return !Out.empty();
+}
+
+Recognition recognizeLlvm(PHINode &Phi, Loop *L, Value *Back, DominatorTree &DT,
+                          AssumptionCache &AC, DemandedBits &DB,
+                          ScalarEvolution &SE) {
+  Recognition R;
+
+  // Unstated precondition, found by segfault: AddReductionVar obtains the
+  // start value with Phi->getIncomingValueForBlock(L->getLoopPreheader())
+  // and never null-checks the preheader. With assertions off that is an
+  // out-of-bounds read, not a diagnostic. Loop-simplify form is required;
+  // the legacy walk needed no such thing, since it entered from the latch.
+  // Recover these by running loop-simplify ahead of the pass.
+  if (!L->isLoopSimplifyForm()) {
+    R.why = "not-simplified";
+    return R;
+  }
+
+  RecurrenceDescriptor RD;
+  if (!RecurrenceDescriptor::isReductionPHI(&Phi, L, RD, &DB, &AC, &DT, &SE)) {
+    R.why = "not-reduction";
+    return R;
+  }
+
+  // Only additive FP reductions are in scope. FMul (total *= x) is a product,
+  // not a sum of products, and is rescuable by exponent tracking without
+  // logsumexp; FMin/FMax/AnyOf are not reductions this project rescues at all.
+  // METHODOLOGY.md, "what counts as a hit", criterion 2.
+  const RecurKind K = RD.getRecurrenceKind();
+  if (K != RecurKind::FAdd && K != RecurKind::FMulAdd) {
+    R.why = "kind";
+    return R;
+  }
+
+  // getReductionOpChain answers a vectorizer question — can these operations
+  // be treated as in-loop reduction steps — which is stricter than what the
+  // term walk needs. It declined 63 times on the study corpus where
+  // isReductionPHI had already said yes, so the fallback is load-bearing.
+  SmallVector<Instruction *, 4> Chain = RD.getReductionOpChain(&Phi, L);
+  if (Chain.empty() && !collectCycle(Phi, *L, Back, Chain)) {
+    R.why = "chain";
+    return R;
+  }
+
+  // Terms are the operands of cycle instructions that are not themselves on
+  // the cycle: exactly what feeds the accumulator each iteration. fmuladd on
+  // the spine contributes a multiply the term walk cannot see (its operands
+  // are terms, not an fmul instruction), so count it here. At -O1 clang folds
+  // `acc += a*b` into llvm.fmuladd(a, b, acc), so missing this would drop
+  // nMul to 0 on the most common shape in the corpus.
+  SmallPtrSet<Instruction *, 8> OnCycle(Chain.begin(), Chain.end());
+  SmallPtrSet<Value *, 16> Seen;
+  for (Instruction *I : Chain) {
+    if (RecurrenceDescriptor::isFMulAddIntrinsic(I) ||
+        (isa<IntrinsicInst>(I) &&
+         cast<IntrinsicInst>(I)->getIntrinsicID() == Intrinsic::fma))
+      ++R.SpineMuls;
+    for (Use &U : I->operands()) {
+      Value *V = U.get();
+      if (V == &Phi) continue;
+      if (auto *VI = dyn_cast<Instruction>(V))
+        if (OnCycle.count(VI)) continue;
+      if (!V->getType()->isFloatingPointTy()) continue; // metadata, fn operands
+      if (Seen.insert(V).second) R.Terms.push_back(V);
+    }
+  }
+  if (R.Terms.empty()) {
+    R.why = "no-terms";
+    return R;
+  }
+
+  R.matched = true;
+  return R;
+}
+
+// Everything downstream of recognition: the term walk, the sum-of-products
+// gate, and the profitability triage. This is the part no compiler provides,
+// and it is identical for both recognizers — which is what makes a DIFF record
+// meaningful. A divergence is always a recognition divergence.
+struct Verdict {
+  bool hit = false;
+  const char *why = "";
+  ChainInfo CI;
+  const char *Trip = "unknown";
+  const char *Risk = "LOW";
+  std::string Reasons;
+};
+
+Verdict evaluate(const Recognition &R, Loop *L, ScalarEvolution &SE) {
+  Verdict V;
+  if (!R.matched) {
+    V.why = R.why;
+    return V;
+  }
+
+  V.CI.nMul = R.SpineMuls;
+  SmallPtrSet<Value *, 32> Visited;
+  for (Value *T : R.Terms) walkChain(T, *L, V.CI, Visited);
+  if (!V.CI.ok) { // dirty chain: miss
+    V.why = "dirtyChain";
+    return V;
+  }
+  // nMul was standing in for "this term's magnitude can compound". An
+  // exp-family factor does that on its own: exp(t) spans the whole range from
+  // t alone, no multiply needed. Requiring a multiply excluded the softmax
+  // denominator — this project's marquee shape, and the one the rewrite pass
+  // implements. darknet's softmax matched only because it divides by a
+  // temperature (FDiv counts as a multiply); the textbook
+  // `sum += exp(x[i] - max)` was invisible. Plain sums with no exponent stay
+  // out of scope: they are rescuable without logsumexp, which is why
+  // plain_sum is still a labeled miss.
+  if (V.CI.nMul == 0 && !V.CI.expChain) {
+    V.why = "noMulNoExp";
+    return V;
+  }
+
+  if (SE.getSmallConstantTripCount(L) > 0) V.Trip = "constant";
+  else if (SE.hasLoopInvariantBackedgeTakenCount(L)) V.Trip = "runtime";
+
+  // Profitability triage (the gate in front of any rewrite): would this
+  // reduction actually underflow? HIGH iff an exp-family factor is in the
+  // chain (unbounded magnitude); MED for many multiplied factors, or
+  // log-domain inputs multiplied together; else LOW.
+  const bool deepChain = V.CI.nMul >= 4;
+  const bool unknownTrip = StringRef(V.Trip) == "unknown";
+  V.Risk = V.CI.expChain ? "HIGH"
+           : (deepChain || (V.CI.logChain && V.CI.nMul >= 2)) ? "MED"
+                                                              : "LOW";
+  SmallVector<const char *, 4> Reasons;
+  if (V.CI.expChain) Reasons.push_back("exp-chain");
+  // Separately tagged so the pre-2026-08-15 counts stay recoverable: every hit
+  // carrying exp-sum is one the nMul >= 1 rule used to drop.
+  if (V.CI.nMul == 0) Reasons.push_back("exp-sum");
+  if (V.CI.logChain) Reasons.push_back("log-chain");
+  if (deepChain) Reasons.push_back("deep-chain");
+  if (unknownTrip) Reasons.push_back("unknown-trip");
+  if (Reasons.empty()) {
+    V.Reasons = "none";
+  } else {
+    for (size_t i = 0; i < Reasons.size(); ++i) {
+      if (i) V.Reasons += ";";
+      V.Reasons += Reasons[i];
+    }
+  }
+
+  V.hit = true;
+  return V;
+}
+
+// The HIT payload, i.e. everything after the source location. Two verdicts are
+// the same verdict iff these strings match.
+std::string payload(const Verdict &V) {
+  if (!V.hit) return std::string("miss:") + V.why;
+  return (Twine(V.Trip) + "," + Twine(V.CI.depth) + "," + Twine(V.CI.nMul) +
+          "," + (V.CI.transcendental ? "transcendental" : "plain") + "," +
+          V.Risk + "," + V.Reasons)
+      .str();
 }
 
 void printLoc(raw_ostream &OS, const Instruction *I, const Function &F) {
@@ -216,7 +393,7 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
   // That table was first produced by a throwaway instrumented build living
   // on one machine, which made it unreproducible; the numbers are only
   // evidence if a reader can regenerate them. Drive it with
-  //   -passes='sop-matcher<explain>'
+  //   -passes='loop-simplify,lcssa,sop-matcher<explain>'
   // or via ./run_study.sh rejects <name>.
   bool Explain = false;
   // Weight census: for hits with the mixture spine w * exp(t), classify the
@@ -227,31 +404,23 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
   explicit SopMatcherPass(bool Explain = false, bool Weights = false)
       : Explain(Explain), Weights(Weights) {}
 
-  void reject(const char *Why, const Instruction *Upd, const Function &F,
-              const Loop *L, const Value *Spine) const {
+  void reject(const char *Why, const Instruction *Upd,
+              const Function &F) const {
     if (!Explain) return;
     errs() << "REJECT," << Why << ",";
     printLoc(errs(), Upd, F);
-    if (Spine) {
-      for (const User *U : Spine->users()) {
-        const auto *UI = dyn_cast<Instruction>(U);
-        if (!UI || !L->contains(UI) || isa<PHINode>(UI)) continue;
-        if (const auto *St = dyn_cast<StoreInst>(UI)) {
-          errs() << ",store-of-spine:"
-                 << (L->isLoopInvariant(St->getPointerOperand())
-                         ? "invariant-addr"
-                         : "varying-addr");
-        } else {
-          errs() << ",other-user";
-        }
-      }
-    }
     errs() << "\n";
   }
 
   PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
     auto &LI = AM.getResult<LoopAnalysis>(F);
     auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
+    // Required by RecurrenceDescriptor::isReductionPHI. DB/AC/DT drive the
+    // minimal-bit-width computation (irrelevant for FP, but the API takes
+    // them); SE is what lets it process stores to loop-invariant addresses.
+    auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
+    auto &AC = AM.getResult<AssumptionAnalysis>(F);
+    auto &DB = AM.getResult<DemandedBitsAnalysis>(F);
 
     for (Loop *L : LI.getLoopsInPreorder()) {
       if (!L->isInnermost()) continue;
@@ -284,6 +453,20 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
       BasicBlock *Latch = L->getLoopLatch();
       if (!Latch) continue; // irregular loop: cannot be a simple reduction
 
+      // Loop-simplify form is a precondition of the recognizer, and a caller
+      // that omits `loop-simplify,lcssa` from the pipeline would otherwise get
+      // a clean, empty, entirely wrong report. This record is NOT gated on
+      // Explain for that reason: a silent tool reads as a passing one.
+      // (Found on 2026-08-17 when pass/run_pass_test.sh, a third caller, kept
+      // the bare -passes=sop-matcher form and gate 3d failed with "rewritten
+      // but the matcher emits no HIT".)
+      if (!L->isLoopSimplifyForm()) {
+        errs() << "WARN,not-simplified,";
+        printLoc(errs(), Anchor, F);
+        errs() << "\n";
+        continue;
+      }
+
       // Candidate accumulators: FP phis in the header whose backedge value
       // is an in-loop fadd/fsub with the phi as one operand.
       for (PHINode &Phi : L->getHeader()->phis()) {
@@ -292,101 +475,17 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         auto *Upd = dyn_cast<Instruction>(Back);
         if (!Upd || !L->contains(Upd)) continue;
 
-        SmallVector<Value *, 8> Terms;
-        SmallVector<Instruction *, 8> Spine;
-        unsigned SpineMuls = 0;
-        if (!spineToPhi(Upd, &Phi, *L, Terms, Spine, SpineMuls)) {
-          reject("spine", Upd, F, L, nullptr);
+        const Verdict V = evaluate(recognizeLlvm(Phi, L, Back, DT, AC, DB, SE),
+                                   L, SE);
+        const ChainInfo &CI = V.CI;
+        if (!V.hit) {
+          reject(V.why, Upd, F);
           continue;
         }
-
-        // Every running value of the accumulator — the phi AND each spine
-        // node — must have exactly one in-loop user (its consumer on the
-        // spine; the root's consumer is the phi itself). Any other in-loop
-        // user is a mid-loop read of the running sum, which a log rewrite
-        // would change (e.g. prefix-sum stores).
-        auto soleInLoopUser = [&](const Value *V2) -> const User * {
-          const User *Found = nullptr;
-          for (const User *U : V2->users()) {
-            auto *UI = dyn_cast<Instruction>(U);
-            if (UI && L->contains(UI)) {
-              if (Found) return nullptr; // more than one
-              Found = U;
-            }
-          }
-          return Found;
-        };
-        bool cleanUses = soleInLoopUser(&Phi) != nullptr;
-        for (size_t s = 0; cleanUses && s < Spine.size(); ++s) {
-          const User *U = soleInLoopUser(Spine[s]);
-          // Deepest-first order: consumer of Spine[s] is Spine[s+1], and the
-          // root's consumer is the phi.
-          const User *Expected =
-              (s + 1 < Spine.size()) ? cast<User>(Spine[s + 1])
-                                     : cast<User>(&Phi);
-          cleanUses = (U == Expected);
-        }
-        if (!cleanUses) {
-          reject("cleanUses", Upd, F, L, Upd);
-          continue;
-        }
-
-        ChainInfo CI;
-        CI.nMul = SpineMuls;
-        SmallPtrSet<Value *, 32> Visited;
-        for (Value *T : Terms) walkChain(T, *L, CI, Visited);
-        if (!CI.ok) { // dirty chain: miss
-          reject("dirtyChain", Upd, F, L, nullptr);
-          continue;
-        }
-        // nMul was standing in for "this term's magnitude can compound".
-        // An exp-family factor does that on its own: exp(t) spans the whole
-        // range from t alone, no multiply needed. Requiring a multiply
-        // excluded the softmax denominator — this project's marquee shape,
-        // and the one the rewrite pass implements. darknet's softmax matched
-        // only because it divides by a temperature (FDiv counts as a
-        // multiply); the textbook `sum += exp(x[i] - max)` was invisible.
-        // Plain sums with no exponent stay out of scope: they are rescuable
-        // without logsumexp, which is why plain_sum is still a labeled miss.
-        if (CI.nMul == 0 && !CI.expChain) {
-          reject("noMulNoExp", Upd, F, L, nullptr);
-          continue;
-        }
-
-        const char *Trip = "unknown";
-        if (SE.getSmallConstantTripCount(L) > 0) Trip = "constant";
-        else if (SE.hasLoopInvariantBackedgeTakenCount(L)) Trip = "runtime";
-
-        // Profitability triage (the gate in front of any rewrite): would
-        // this reduction actually underflow? HIGH iff an exp-family factor
-        // is in the chain (unbounded magnitude); MED for many multiplied
-        // factors, or log-domain inputs multiplied together; else LOW.
-        bool deepChain = CI.nMul >= 4;
-        bool unknownTrip = StringRef(Trip) == "unknown";
-        const char *Risk = CI.expChain ? "HIGH"
-                           : (deepChain || (CI.logChain && CI.nMul >= 2))
-                               ? "MED"
-                               : "LOW";
-        SmallVector<const char *, 4> Reasons;
-        if (CI.expChain) Reasons.push_back("exp-chain");
-        // Separately tagged so the pre-2026-08-15 counts stay recoverable:
-        // every hit carrying exp-sum is one the nMul >= 1 rule used to drop.
-        if (CI.nMul == 0) Reasons.push_back("exp-sum");
-        if (CI.logChain) Reasons.push_back("log-chain");
-        if (deepChain) Reasons.push_back("deep-chain");
-        if (unknownTrip) Reasons.push_back("unknown-trip");
 
         errs() << "HIT,";
         printLoc(errs(), Upd, F);
-        errs() << "," << Trip << "," << CI.depth << "," << CI.nMul << ","
-               << (CI.transcendental ? "transcendental" : "plain") << ","
-               << Risk << ",";
-        if (Reasons.empty())
-          errs() << "none";
-        else
-          for (size_t i = 0; i < Reasons.size(); ++i)
-            errs() << (i ? ";" : "") << Reasons[i];
-        errs() << "\n";
+        errs() << "," << payload(V) << "\n";
 
         // Weight census. For the mixture spine w * exp(t), the rewrite pass
         // must fold the weight's magnitude into the running reference or the

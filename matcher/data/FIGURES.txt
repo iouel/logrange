@@ -4,13 +4,13 @@
 
 per codebase
 darknet       fp-loops=283   hits=19   transcendental=3   const-trip=2    high=3   med=0    low=16
-gsl           fp-loops=2501  hits=753  transcendental=4   const-trip=117  high=2   med=54   low=697
-libsvm        fp-loops=75    hits=11   transcendental=0   const-trip=0    high=0   med=2    low=9
+gsl           fp-loops=2501  hits=783  transcendental=5   const-trip=127  high=2   med=55   low=726
+libsvm        fp-loops=75    hits=12   transcendental=0   const-trip=0    high=0   med=2    low=10
 
 aggregate
   loops scanned                 2859
-  shape hits                    783   (27.4%)
-    transcendental              7
+  shape hits                    814   (28.5%)
+    transcendental              8
     exp-chain                   5
   HIGH findings                 5   on 4 distinct source lines
 

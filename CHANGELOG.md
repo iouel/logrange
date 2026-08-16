@@ -11,6 +11,45 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Reduction recognition moved to LLVM's `RecurrenceDescriptor`.** The matcher
+had reimplemented an analysis the loop vectorizer already performs. It no
+longer does; what stays hand-written is the term walk and the risk grading,
+which no compiler provides.
+
+**Retracted: corpus hit counts.**
+
+Old: 2859 loops, **783** hits (27.4%), 7 transcendental — GSL 753, libsvm 11.
+New: 2859 loops, **814** hits (28.5%), 8 transcendental — GSL 783, libsvm 12.
+
+The denominator, the **5 HIGH findings on 4 source lines**, and every risk
+grade are unchanged. Measured per-loop with both recognizers in one pass
+before the old one was deleted: +32 hits, −1. Zero loops were graded
+differently by the two. Full accounting in `matcher/DELTA.md`, paired records
+in `matcher/data/raw-delta.txt`.
+
+The 32 gains are conditionally-executed reductions (`if (c) acc += t;`, 19)
+and accumulators mirrored to a loop-invariant address (13). The single loss is
+`coulomb.c:403`, MED, whose loop has a data-dependent `break` and therefore no
+unique reduction exit value; LLVM declines it, which is the conservative
+direction.
+
+**A documented blind spot closed.** `out[j] += prev[i] * A[i*n+j]` — the
+forward algorithm as usually written, one of the three shapes the README names
+— is now matched. `coverage.c`'s expectation moved from `expect_miss` to
+`expect_hit`, so the closure cannot silently regress.
+
+**Two scan-pipeline passes added.** `logrange-scan.sh` and `run_study.sh` now
+run `loop-simplify,lcssa` ahead of the matcher. Both are unstated
+preconditions of `AddReductionVar`: without the first it reads through a null
+preheader (a segfault, not an assert, in a release build); without the second
+it declined 28 reductions on this corpus. Verified byte-identical for the
+previous recognizer before the swap.
+
+**`REJECT` cause vocabulary changed.** `spine` and `cleanUses` are gone with
+the code that produced them; causes are now `not-reduction`, `kind`,
+`dirtyChain`, `noMulNoExp`. `./run_study.sh rejects` reports the new census
+and fails if `not-simplified`, `chain`, or `no-terms` is ever non-zero.
+
 **Published corpus figures are now derived from committed evidence, not
 asserted in prose.** New rule in CONTRIBUTING.md, "A figure is derived or it
 is wrong", and a fifth CI gate enforcing it.
@@ -33,10 +72,11 @@ matcher accepted. The census is gated on `CI.expChain` and runs *after* the
 
 Of those 5, **2** have `nMul=0` and contain no multiply at all; the other 3
 carry theirs inside the `exp` argument. The census cannot see any loop
-rejected upstream — including the mirrored `out[j] += w*exp(t)` form that
-`cleanUses` rejects, which is where the shape most plausibly lives. n=5 does
-not settle whether the extension point is worth taking, and TODO.md no longer
-claims it does. Corrected in four files.
+rejected upstream, which at the time included the mirrored
+`out[j] += w*exp(t)` form — where the shape most plausibly lives. (That form
+is matched as of the recognizer change above, and the census still returns 0
+over 814 hits.) n=5 does not settle whether the extension point is worth
+taking, and TODO.md no longer claims it does. Corrected in four files.
 
 Within a minute of existing, `figures` caught a second miscount in the
 replacement text (3 `nMul=0` rows claimed, 2 actual).

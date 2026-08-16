@@ -252,8 +252,12 @@ $(cat "$FAILERR")"
 modules=0
 for bc in "$BCDIR"/*.bc; do
   [ -e "$bc" ] || continue
-  "$OPT" -load-pass-plugin="$PLUGIN" -passes=sop-matcher -disable-output "$bc" \
-    2>> "$RAW" || true
+  # loop-simplify and lcssa are unstated preconditions of the matcher's
+  # RecurrenceDescriptor recognizer, and canonicalization a real mid-pipeline
+  # pass would already have. See CANON_PASSES in run_study.sh; the two scripts
+  # must apply the same pipeline or a diagnostic run and a study run disagree.
+  "$OPT" -load-pass-plugin="$PLUGIN" -passes=loop-simplify,lcssa,sop-matcher \
+    -disable-output "$bc" 2>> "$RAW" || true
   modules=$((modules + 1))
 done
 [ -z "$RAW_OUT" ] || cp "$RAW" "$RAW_OUT"

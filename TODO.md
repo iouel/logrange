@@ -199,7 +199,7 @@ tooling tier, which ships as beta with its gaps stated.
       1.0's supported surface. Full statement and reasoning:
       `logrange_intent.md`, "Shipping Posture — decided 2026-08-16".
       *What drove it:* 5 HIGH rows in 2859 scanned loops (0.17%; 4 distinct
-      source lines, 0.6% of the 783 shape hits). A lint naming 5 sites is
+      source lines, 0.6% of the 814 shape hits). A lint naming 5 sites is
       proportionate; a rewrite firing on shape would touch hundreds of
       benign dot products and buy each a transcendental per term. Plus two
       facts about the pass specifically: its rescue is observable only
@@ -243,10 +243,12 @@ tooling tier, which ships as beta with its gaps stated.
       *outside this tracker's file ownership*. Proposed text is in the
       posture report, to be applied by whoever owns those files:
       * README.md names three motivating shapes; the diagnostic flags
-        **two**. The forward algorithm is unreported in the `out[j] +=`
-        form (mid-loop-read guard) and graded LOW in the register form
-        (cross-loop decay). README must stop implying coverage.
-      * DIAGNOSTIC.md must state measured selectivity, 5 HIGH in 783
+        **two**. The forward algorithm is now *matched* in both forms
+        (recognizer change, 2026-08-17) but grades LOW in both, because
+        the magnitude decay lives in the enclosing loop. README must stop
+        implying coverage: seeing a shape and flagging it are different
+        claims, and only the second is what a reader wants.
+      * DIAGNOSTIC.md must state measured selectivity, 5 HIGH in 814
         hits in 2859 loops, so a one-finding report can be read.
       *Retracted 2026-08-16.* This item also claimed RESULTS.md's triage prose
       still read "Three rows... the static signal marks two source sites". It
@@ -540,9 +542,23 @@ tooling tier, which ships as beta with its gaps stated.
       whether the extension point is worth taking; deciding that needs the
       census moved ahead of the rejection filters. Derivation:
       `matcher/run_study.sh figures`.
-- [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
-      loops are documented misses; decide whether v1 chases either or the
-      docs stay the answer.
+- [ ] **`pass/` still reimplements the reduction analysis the matcher just
+      stopped reimplementing.** Audited 2026-08-17, not changed.
+      `LogRewritePass.cpp` carries its own `soleInLoopUser` (a copy of the
+      guard the matcher deleted), its own accumulator identification by
+      scanning `Header->phis()` and reading `getIncomingValueForBlock` on the
+      preheader and latch (`:393-445`), and its own clean-uses check
+      (`:530-532`). `RecurrenceDescriptor` supplies all of it:
+      `isReductionPHI`, `getRecurrenceStartValue`, `getLoopExitInstr`.
+      Not done with the matcher because the pass is a labeled prototype
+      outside 1.0's supported surface and has its own 509-line gate and
+      error-bound contract; doing both at once would have doubled the
+      verification surface for a change whose whole point was measurability.
+      The pass would additionally have to keep its stricter conditions
+      (single FP phi, double only, constant-zero init, unique exit), which
+      are rewrite legality requirements, not recognition ones.
+- [ ] **Matcher blind spots.** Vectorized loops remain a documented miss;
+      decide whether v1 chases them or the docs stay the answer.
       *Correction 2026-08-15:* this item briefly claimed the forward
       algorithm lands in the memory-carried gap. It does not. An
       instrumented matcher shows `out[j] += ...` is promoted to a register
@@ -551,7 +567,19 @@ tooling tier, which ships as beta with its gaps stated.
       the update ends up with two in-loop users. Genuinely memory-carried
       reductions remain a separate, still-open gap; this shape is a
       guard-precision problem, tracked in the next item.
-- [x] **Mid-loop-read guard precision — decided 2026-08-15: not for v1.**
+      *Closed in part 2026-08-17:* the mirrored-cell half is gone. Moving
+      recognition to `RecurrenceDescriptor` admitted 13 such sites across
+      the corpus, `coverage.c`'s `forward_step_mem` among them; all grade
+      LOW. A reduction whose accumulator is never promoted to a register at
+      all is still a miss, and vectorized loops still are. matcher/DELTA.md.
+- [x] **Mid-loop-read guard precision — decided 2026-08-15: not for v1;
+      moot 2026-08-17, the guard no longer exists.** `RecurrenceDescriptor`
+      distinguishes an invariant-address mirror from an observed running
+      value as part of recognizing the reduction, so the refinement below
+      was never implemented and no longer needs to be. `midread` is still
+      correctly rejected and `selftest.c` still asserts it. The measured
+      yield below is preserved because it is what justified declining, and
+      13 of those 23 sites are now hits (matcher/DELTA.md).
       The guard rejects any update with a second in-loop user, catching both
       prefix sums (`midread`, correctly: the intermediates are observed) and
       accumulators merely mirrored to a fixed cell (`out[j] += ...`). A

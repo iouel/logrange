@@ -6,7 +6,10 @@
 #   cmake -S matcher -B matcher/build -DCMAKE_BUILD_TYPE=Release
 #   cmake --build matcher/build
 #   opt -load-pass-plugin=matcher/build/SopMatcher.so \
-#       -passes=sop-matcher -disable-output module.bc
+#       -passes=loop-simplify,lcssa,sop-matcher -disable-output module.bc
+#
+# The two canonicalization passes are required, not optional: see the header
+# of SumOfProductsMatcher.cpp. Without them every loop is skipped with a WARN.
 cmake_minimum_required(VERSION 3.20)
 project(SopMatcher CXX)
 

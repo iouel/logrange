@@ -79,17 +79,18 @@ dropped; `test_scan.sh` case 11 fails when the matcher emits a token
 ## Scope limits
 
 - **Selective by design.** Across the study corpus (GSL 2.8, darknet,
-  libsvm), 2859 innermost FP loops produced 783 shape hits (27.4%) and
+  libsvm), 2859 innermost FP loops produced 814 shape hits (28.5%) and
   **5 HIGH findings on 4 source lines** (0.17% of loops). One HIGH finding in
   a large codebase is the expected outcome, not a sign the scan failed. The
   bulk of the shape hits are benign-range dot products, summarized as a LOW
   count.
-- **Two of the three shapes the README names as motivating this project are
-  covered.** Mixture likelihood and the softmax denominator triage HIGH. The
-  forward algorithm does not, in either form it is usually written: see the
-  two bullets below and RESULTS.md, "Coverage against the shapes this project
-  names". `coverage.c` plus `./run_study.sh coverage` assert that table in
-  both directions, so the gap cannot silently close or widen.
+- **All three shapes the README names as motivating this project are seen,
+  but only two triage HIGH.** Mixture likelihood and the softmax denominator
+  do. The forward algorithm is matched in both forms it is usually written
+  (since 2026-08-17) but grades LOW in both, for the reason in "Risk is judged
+  one loop at a time" below. See RESULTS.md, "Coverage against the shapes this
+  project names"; `coverage.c` plus `./run_study.sh coverage` assert that
+  table in both directions, so it cannot silently drift.
 - **This is a source-shape lint, not a range proof.** It reports that a
   reduction has the sum-of-products shape plus static risk signals
   (exp/log in the chain, deep factor chains, unbounded trip counts). It
@@ -97,23 +98,17 @@ dropped; `test_scan.sh` case 11 fails when the matcher emits a token
   a LOW site can overflow on adversarial inputs. FPChecker-style runtime
   instrumentation occupies the dynamic-detection niche; this tool is the
   cheap static complement.
-- **Memory-carried reductions are not covered.** An accumulator that stays in
-  memory never reaches the matcher (METHODOLOGY.md, known blind spots) and so
-  never reaches this report.
-- **Nor are reductions mirrored to a fixed cell**, for a different reason.
-  `out[j] += ...` *does* get promoted to a register accumulator, but LLVM
-  keeps a store writing it back each iteration, and the mid-loop-read guard
-  rejects any update with a second in-loop user. The forward algorithm, one
-  of the three shapes the README names as motivating this project, is usually
-  written that way and goes unreported (RESULTS.md, "Coverage against the
-  shapes this project names").
-
-  Admitting that case was considered and declined for v1 on measured yield:
-  23 of 460 such rejects across the study corpus (5.0%), every one a
-  linear-algebra or mean reduction with no `exp` in its chain, hence LOW and
-  summarized as a count rather than reported. Revisit only alongside
-  alias/dependence analysis and cross-loop risk modelling; the latter is what
-  would make these sites worth printing (TODO.md).
+- **Reductions mirrored to a fixed cell are now covered** (since 2026-08-17).
+  `out[j] += ...` gets promoted to a register accumulator with a store writing
+  it back each iteration. A hand-written mid-loop-read guard used to reject
+  any update with a second in-loop user, which cost this shape. Recognition
+  now uses LLVM's `RecurrenceDescriptor`, which treats a store to a
+  loop-invariant address as part of the reduction and still rejects a
+  genuinely observed running value such as a prefix sum. 13 sites across the
+  corpus became hits; all grade LOW (DELTA.md).
+- **A genuinely memory-carried accumulator is still not covered** — one that
+  is never promoted to a register at all, e.g. because its address escapes.
+  It does not reach the matcher.
 - **Risk is judged one loop at a time.** A reduction whose magnitude decays
   across an *enclosing* loop (the forward algorithm again, probabilities
   shrinking over time steps) has unremarkable inner iterations and grades

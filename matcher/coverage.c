@@ -35,8 +35,9 @@ void forward_step_reg(const double *prev, const double *A, const double *B,
 }
 
 /* 4. Forward algorithm as it is usually written: the accumulator IS the
- *    array cell. Memory-carried — matcher/METHODOLOGY.md lists this as a
- *    known blind spot. */
+ *    array cell. Memory-carried — a documented blind spot until 2026-08-17,
+ *    when recognition moved to LLVM's RecurrenceDescriptor, which handles
+ *    stores to loop-invariant addresses. Now a hit; see matcher/DELTA.md. */
 void forward_step_mem(const double *prev, const double *A, double *out,
                       size_t n) {
   for (size_t j = 0; j < n; ++j) {

@@ -392,7 +392,15 @@ cmake -S "$PASSDIR/../matcher" -B "$WORK/matcher-build" \
 cmake --build "$WORK/matcher-build" -j >> "$WORK/matcher-cmake.log"
 [ -f "$WORK/matcher-build/SopMatcher.so" ] \
   || { echo "FAIL: matcher plugin did not build"; tail -40 "$WORK/matcher-cmake.log"; exit 1; }
-$OPT -load-pass-plugin="$WORK/matcher-build/SopMatcher.so" -passes=sop-matcher \
+# loop-simplify and lcssa are preconditions of the matcher's recognizer
+# (RecurrenceDescriptor::AddReductionVar reads through the preheader and
+# inspects out-of-loop users). They are canonicalization, not a semantic
+# change, and preserve the debug locations this test joins on. Omitting them
+# makes the matcher silently report nothing — which is how this line was found
+# on 2026-08-17, when gate 3d failed with "rewritten but the matcher emits no
+# HIT". Keep in step with CANON_PASSES in matcher/run_study.sh.
+$OPT -load-pass-plugin="$WORK/matcher-build/SopMatcher.so" \
+     -passes=loop-simplify,lcssa,sop-matcher \
      -disable-output "$WORK/kernel_rw.ll" 2> "$WORK/matcher_hits.log"
 # Both tools print the location of the backedge update instruction, so
 # (file,line,function) is an exact join key. Verified before this was written:

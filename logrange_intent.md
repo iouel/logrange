@@ -60,6 +60,24 @@ Requirements:
 
 This header is independently useful with zero compiler machinery, and it is the fallback deliverable if everything downstream stalls.
 
+## Deliverable 2 — The Pass (conditional)
+
+*Restored 2026-08-17. This section was deleted in `074749f` under the summary "removed redundant content"; nine files cite it and three quoted sentences that then existed nowhere in the tree. It is reinstated verbatim, plus the prior-art rule below, per CONTRIBUTING.md's "Retract, do not reword".*
+
+An LLVM pass that recognizes sum-of-products reductions at IR level and rewrites them to log-domain accumulation, converting once at the edges of the loop nest rather than per operation.
+
+Preconditions, stated plainly:
+
+- **Legality requires reassociation permission.** FP reductions cannot be reordered without fast-math flags or a pragma; opt-in is not a courtesy here, it is what makes the transform legal. This is explicit and enforced.
+- **Semantics preservation is exact.** The rewrite must match linear behavior on NaN propagation and exceptional inputs, and must decline to fire on any loop it cannot prove has the required structure.
+- **Hit rate is measured before the rewrite is built.** Milestone: write the matcher only, run it over real numeric codebases, count. If real-world sum-of-products loops are too gnarled to recognize, the pass is not built.
+
+Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform is acceptable compiler behavior; Herbie rewrites expressions, not loops; FPChecker already occupies the *detection* and *diagnostics* space.
+
+**The prior-art boundary is a build rule, not just a citation.** Borrow the compiler analysis that is already solved and validated; spend this project's complexity only on what is genuinely different. The one thing here that no compiler does is decide whether a reduction will *lose its answer to floating-point range* — that is the whole project, and it is worth doing carefully. Deciding whether a loop *is* a reduction is not: LLVM's `RecurrenceDescriptor` answers it, the loop vectorizer depends on it being right, and this repository has no business being its second authority.
+
+That rule was violated for two months while the boundary paragraph above was missing from the tree. The matcher grew a hand-written spine walk, a mid-loop-read guard, and a chain-ordering scheme, all reimplementing `AddReductionVar`. Replacing them cost one MED finding and gained 31, closed a documented blind spot, and changed no risk grade — measured in `matcher/DELTA.md`. The lesson is cheap to state and was expensive to learn: **when this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
+
 ## Stretch Goal — End-to-End Log-Form Propagation
 
 *Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
@@ -244,6 +262,19 @@ Steps 1–3 complete (v0.1 refactor of the seed header):
    Six named conditions for the pass to lose the prototype label, and
    the coverage statements the diagnostic owes its reader, are in
    "Shipping Posture" above; the tracker entry is in TODO.md.
+
+10. **Recognition delegated to LLVM** 2026-08-17. The matcher's
+   hand-written spine walk, mid-loop-read guard and chain ordering were
+   replaced by `RecurrenceDescriptor` — the analysis the loop vectorizer
+   uses. Measured against the old path over the whole corpus before
+   deleting it (matcher/DELTA.md): 783 → 814 hits, one MED finding lost
+   to a multi-exit loop, 32 gained across conditionally-executed
+   reductions and invariant-address accumulators, **no risk grade changed
+   and the 5 HIGH findings did not move**. Closed the memory-carried
+   blind spot, which retires the "refine the mid-loop-read guard"
+   question that had been open since 2026-08-15. Also restored the
+   Deliverable 2 section deleted in `074749f`, whose prior-art paragraph
+   is the rule this step should have been following.
 
 Remaining: nothing blocking. Open tooling gaps are tracked in TODO.md
 under "Tooling — ships as beta, gaps stated". Propagating the log form to
