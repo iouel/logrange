@@ -408,7 +408,7 @@ tooling tier, which ships as beta with its gaps stated.
       `L = -log(n)`. `net = n` exactly, no summation error at all, `cond = 1`,
       `k = 0`, `D = 0`, `|log|S|| = 0`, so the old budget is `4u`. At
       n = 166463 the error is **7.97u**, ratio **1.99**. New form
-      `cond*(3k+4+D)*u + (|log|S|| + |log|net||)*u` holds at worst 0.50.
+      `cond*(3k+4+D)*u + (|log|S|| + |log|net||)*u` holds at worst 0.83.
       `pos_accum` is not refuted (0.80): `|log|net|| <= log n` and its `n*u`
       term dominates. `rp_accum` is exposed because Neumaier compensation
       removed that `n*u`.
@@ -418,10 +418,11 @@ tooling tier, which ships as beta with its gaps stated.
       had two floors, ~1u from double `exp()` per term and u/2 from `truth`
       being a double at comparison — the second structural and undocumented.
       Resolution went from ~1u to ~1e-14 u. Two assumptions became
-      measurements: `std::exp` worst 0.99u, `expl` worst 5.8e-4 u.
+      a measurement: `std::exp` worst 1.00u against `dd_exp`, reported by
+      `bound_search` on every run.
       *Stated honestly:* family E's 1.99 would have been visible against the
       old reference. The family is what found it; the reference is what made
-      the marginal 1.16 plateau case readable and the 0.50 trustworthy.
+      the marginal 1.16 plateau case readable and the 0.83 trustworthy.
       *Original entry, kept because the prediction was wrong in an
       instructive way:*
       *The documentation defect is certain.* `log_math.h` states "Each

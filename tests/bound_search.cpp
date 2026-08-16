@@ -20,7 +20,7 @@
 // Reference, and what it can resolve. Until 2026-08-16 this file summed
 // exp(L_i) computed in plain double and then collapsed the dd accumulator
 // with value(), which put TWO floors under every measurement: ~1u from
-// double exp() per term (measured since: worst 0.99u), and up to u/2 from
+// double exp() per term (measured since: worst 1.00u), and up to u/2 from
 // "truth" being a double at the moment of comparison. The second is
 // structural and no libm improvement removes it. Ratios below ~1.3 were
 // unreadable, which is what this comment used to say.
@@ -400,6 +400,16 @@ static std::vector<double> family_equal_normalized(std::size_t n) {
   return std::vector<double>(n, -std::log(static_cast<double>(n)));
 }
 
+// Family G — n equal positive terms at an arbitrary peak. The two reduction
+// terms move independently here: |log|net|| = log n from the term count, and
+// |log|S|| = |peak + log n| from the magnitude. Family E pins |log|S|| to 0
+// and family A keeps it near 10-20, so neither exercises the SUM of the two.
+// If |log|net||*u is mis-sized rather than merely missing, this is where it
+// shows.
+static std::vector<double> family_equal_at_peak(std::size_t n, double peak) {
+  return std::vector<double>(n, peak);
+}
+
 static std::vector<log_value> to_positive_terms(const std::vector<double>& logs) {
   std::vector<log_value> terms;
   terms.reserve(logs.size());
@@ -430,6 +440,25 @@ int main() {
       std::printf("FAIL: dd_exp reference does not satisfy its identities\n");
       return 1;
     }
+    // What libm's exp actually costs, measured here rather than asserted in
+    // a comment. This is the floor the old plain-double reference put under
+    // every measurement in this file, and the reason it was replaced. It was
+    // published from a scratch file until 2026-08-16, i.e. not reproducible.
+    double worst_libm = 0.0;
+    std::mt19937_64 lrng(0xE47ULL);
+    std::uniform_real_distribution<double> lx(-700.0, 700.0);
+    for (int i = 0; i <= 20000; ++i) {
+      const double x = (i == 0) ? 1.0 : lx(lrng);
+      const int b = dd_exp_bias(x);
+      const double got = std::ldexp(std::exp(x), -b);
+      const double rel = dd_rel_err(got, dd_exp_scaled(x, b));
+      if (rel > worst_libm) worst_libm = rel;
+    }
+    std::printf("libm std::exp vs dd_exp, 20001 points in [-700,700]: "
+                "worst %.2f u\n", worst_libm / U);
+    // Within an ulp. If this ever reads much larger, libm and the reference
+    // disagree and one of them is broken.
+    NC_CHECK(worst_libm < 4.0 * U);
   }
 
   std::printf("adversarial search against rp_accum's error contract\n");
@@ -518,6 +547,24 @@ int main() {
     consider(label, e_worst);
   }
 
+  // --- Family G: both reduction terms live at once -------------------------
+  {
+    verdict g_worst;
+    char g_at[96] = "(none)";
+    for (std::size_t n : {std::size_t(16), std::size_t(4096),
+                          std::size_t(262144)}) {
+      for (double peak : {-690.0, -300.0, 0.0, 300.0, 690.0}) {
+        const verdict v =
+            evaluate(to_positive_terms(family_equal_at_peak(n, peak)));
+        if (v.ratio_fixed2 > g_worst.ratio_fixed2) {
+          g_worst = v;
+          std::snprintf(g_at, sizeof g_at, "G equal n=%zu peak=%.0f", n, peak);
+        }
+      }
+    }
+    consider(g_at, g_worst);
+  }
+
   // --- Family D: blind random sweep, scored against BOTH contracts --------
   std::mt19937_64 rng(0xB0DEADULL);
   verdict d_worst_stated, d_worst_fixed;
@@ -538,8 +585,10 @@ int main() {
   std::printf("\nrp_accum worst vs stated contract:    %.2f on %s\n",
               worst.ratio, worst_label);
   std::printf("  observed %.3e vs stated %.3e\n", worst.observed, worst.bound);
-  std::printf("rp_accum worst vs corrected contract: %.2f\n",
+  std::printf("rp_accum worst vs 2026-08-15 form (REFUTED): %.2f\n",
               worst_fixed.ratio_fixed);
+  std::printf("rp_accum worst vs CURRENT form (+|log|net||*u): %.2f\n",
+              worst_fixed2.ratio_fixed2);
 
   // --- pos_accum ----------------------------------------------------------
   std::printf("\npos_accum\n");
@@ -615,8 +664,10 @@ int main() {
               pworst.ratio, pworst_label);
   std::printf("  observed %.3e vs stated %.3e\n", pworst.observed,
               pworst.bound);
-  std::printf("pos_accum worst vs corrected contract: %.2f\n",
+  std::printf("pos_accum worst vs prior form: %.2f\n",
               pworst_fixed.ratio_fixed);
+  std::printf("pos_accum worst vs CURRENT form (+|log|net||*u): %.2f\n",
+              pworst_fixed2.ratio_fixed2);
 
   // --- representation floor -----------------------------------------------
   // Both accumulator bounds were broken by the same |log|S||*u term, which is

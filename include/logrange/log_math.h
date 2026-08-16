@@ -403,7 +403,7 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //   and u/2, and a 1.99x violation of a 4u budget was inside them. The
 //   reference is now double-double throughout (tests/dd_exp.h, ~1e-14 u) and
 //   the missing |log|net||*u is stated above. Worst observed/bound across the
-//   search is 0.50 against the corrected form.
+//   search is 0.83 against the corrected form.
 //   The earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
 //   which found 151 of 400 random inputs violating THAT superseded form
 //   (worst 15.8x) plus a constructed counterexample at 5.8x with cond == 1,

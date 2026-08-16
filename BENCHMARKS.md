@@ -228,7 +228,7 @@ of fixed scenarios: they can only fail to refute a universal claim.
 `bound_search` attacks the same claim directly and does refute it — twice now.
 Under the current bound, observed sits **6.3×–5291× under** on these
 scenarios (re-measured 2026-08-16 against the double-double `exp` reference)
-and **0.50×** at the worst point the search could construct. The 0.85 figure
+and **0.83×** at the worst point the search could construct. The 0.85 figure
 published before 2026-08-16 was the worst against the form that has since
 been refuted at 1.99×.
 
