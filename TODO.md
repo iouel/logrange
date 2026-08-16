@@ -338,6 +338,30 @@ tooling tier, which ships as beta with its gaps stated.
       n=16385, four orders below it.
       *The reduction term is required here by measurement.* Every run also
       scores the form without it: exceeded on 321 of 7285 trials, worst 39x.
+- [ ] **`add_scaled` injects `|log c|·u` that no contract term names.** Both
+      accumulators implement `add_scaled(v, c)` as
+      `add_log(v.log_abs + std::log(c))`. `std::log(c)` is computed, so it
+      carries an absolute error of `|log c|·u`, which lands directly in that
+      term's log-magnitude and therefore as a relative error of the same size
+      on the term. At `c = 1e-300` that is 690u on the term. Nothing in either
+      contract covers it: `cond·(3k+4+D)·u` is the accumulator's own
+      arithmetic, and `(|log|S|| + |log|net||)·u` is the final reduction.
+      *Two defensible readings, and choosing between them is the work.*
+      Either the contract covers what the accumulator does with the terms it
+      is **given**, in which case one sentence at `add_scaled` stating that
+      terms enter carrying `|log c|·u` closes it; or `add_scaled` is part of
+      the accumulator's surface, in which case the contract needs a term and
+      `bound_search` needs a family driving `c` to extremes.
+      *Not speculative.* This is the same structure that refuted the contract
+      on 2026-08-16: an addend that is itself computed, whose magnitude is
+      unbounded relative to the result, charged nowhere.
+      *Scope, established rather than assumed.* That defect needs both
+      properties at once, and the rest of the header does not have them.
+      `logsumexp2` computes an addend but it is bounded by `log 2` by
+      construction, so the `(d+3)·u` covers it. `log_mul` and `log_div` take
+      both addends from the caller, so neither is computed. The round trip
+      already charges `|log|x||·u`, the input's magnitude. Stated at
+      `logsumexp2` in the header so the enumeration is not re-derived.
 - [x] **Settled 2026-08-16, and it found a fourth refuted contract — but not
       the one this item predicted.** The rescale argument rounding is real and
       is now documented, but it is *covered*: mass damping and, at large J,
