@@ -11,6 +11,32 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**`logrange_intent.md` states intent again: 282 lines to 148.** Removed a
+94-line "First Action — status" work log that indexed records living in
+`BENCHMARKS.md`, `matcher/RESULTS.md`, `pass/PROTOTYPE.md`, `matcher/DELTA.md`,
+this file and `TODO.md`. One of its hand-copied figures — "781 hits across
+2859 innermost FP loops (27%)" — was two revisions stale (781 → 783 → 814)
+while CI gated the same number elsewhere, which is the argument against
+keeping a second copy. The only fact lost is commit `afee8d0`, which `git log`
+holds better.
+
+"Shipping Posture" keeps the decision and its reasoning, in present tense; its
+six pass conditions and their closure status move to `TODO.md`, where every
+other tracker lives. The Stretch Goal's struck-through criterion and status
+stamps are gone; the refutation and its sweep are recorded below under 0.3.0.
+
+New rule in `CONTRIBUTING.md`, "Where a sentence goes", and a seventh CI gate
+enforcing it: no dates, commit SHAs, or measured figures in the intent doc.
+The gate deliberately does not reject all numbers — domain constants and spec
+quantities are what intent is made of.
+
+**Restored `logrange_intent.md`'s "Deliverable 2 — The Pass".** Deleted in
+`074749f` under the summary "removed redundant content". Nine files cite it,
+and three quoted sentences that then existed nowhere in the tree. Reinstated
+verbatim, plus the prior-art boundary it carried — LLVM's loop-idiom pass,
+Herbie, FPChecker — which is the rule the recognizer change below follows and
+which was missing from the tree for the whole period the duplication grew.
+
 **Reduction recognition moved to LLVM's `RecurrenceDescriptor`.** The matcher
 had reimplemented an analysis the loop vectorizer already performs. It no
 longer does; what stays hand-written is the term walk and the risk grading,

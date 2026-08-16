@@ -161,7 +161,7 @@ for fc in off fast; do
 done
 echo "PASS,weighted_spine_matched_under_all_contract_settings"
 
-# The profitability gate (intent step 9) must be able to DECLINE, not just
+# The profitability gate (intent Shipping Posture) must be able to DECLINE, not just
 # permit. For this shape the verdict is HIGH by construction, so raising the
 # threshold above HIGH is the only way to exercise the refusal path — do it,
 # rather than ship a gate whose decline branch has never run.

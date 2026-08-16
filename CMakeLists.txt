@@ -126,7 +126,7 @@ add_executable(bound_search tests/bound_search.cpp)
 target_link_libraries(bound_search PRIVATE logrange logrange_build_flags)
 add_test(NAME bound_search COMMAND bound_search)
 
-# Benchmark harness (intent Deliverable 1 / First Action step 4). Not a test:
+# Benchmark harness (intent Deliverable 1). Not a test:
 # timing runs are manual and only meaningful in the Release config (/O2).
 # Inherits the same flags deliberately — the harness measures the library as
 # shipped, not a fast-math variant of it.

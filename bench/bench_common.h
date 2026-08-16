@@ -1,5 +1,5 @@
-// bench_common.h — LogRange benchmark harness core (intent v0.3, Deliverable 1,
-// First Action step 4).
+// bench_common.h — LogRange benchmark harness core (intent v0.3,
+// Deliverable 1).
 //
 // The harness must be trustworthy before its numbers are. Concretely:
 //   - The measuring thread is pinned to one core and raised to high priority

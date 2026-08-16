@@ -1,6 +1,6 @@
 # LogRange — Benchmark & Accuracy Results
 
-*Runs of 2026-08-15. Answers intent v0.3 First Action step 4 and success
+*Runs of 2026-08-15. Answers intent v0.3 Deliverable 1 and success
 criteria 1–3, and records the cancellation-accuracy investigation behind
 v0.2's compensated `rp_accum`. Raw per-cell data: `bench_results.csv`,
 regenerated with `bench_logrange`, Release build. It is not committed; the

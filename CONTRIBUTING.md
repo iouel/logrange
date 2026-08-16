@@ -91,6 +91,36 @@ pass; `pass/PROTOTYPE.md` is its design narrative and measured record, and
 loses to ELIGIBILITY.md on conflict. `matcher/METHODOLOGY.md` fixes the study
 rules, and `matcher/RESULTS.md` reports against them.
 
+## Where a sentence goes
+
+**Intent states what must be true, not what happened.** `logrange_intent.md`
+is present tense: the aim, the deliverables, the criteria, the posture, and
+the reasoning behind them. It carries no dates, no commit SHAs, and no
+measured numbers.
+
+The rest routes elsewhere. `CHANGELOG.md` carries what changed, with old and
+new values. `TODO.md` carries what is open, and what closed it. The
+measurement docs — `matcher/RESULTS.md`, `matcher/DELTA.md`, `BENCHMARKS.md` —
+carry figures, derived from committed evidence.
+
+**The test: a date, a commit SHA, or a measured figure means the sentence
+belongs somewhere else.** Gated in `llvm-tooling.yml`.
+
+Not every number is a figure. The intent doc legitimately carries domain
+constants — `|log| ~ 700`, terms near −800, ~745 log-units below the reference
+— and spec quantities like a 1000-term mixture. Those state what must be true.
+A *measured result* is what does not belong, and in practice it reads as a
+number next to study vocabulary: hits, loops, sites, rows, percentages.
+
+The gate is a floor, not a ceiling. It cannot see a bare count or a duration
+("gained 31", "for two months"), and both were caught by reading. Apply the
+rule; the grep only stops the obvious regressions.
+
+This rule exists because the intent doc grew a 94-line work log indexing
+records that live in six other files, and one of its hand-copied figures was
+two revisions stale while CI gated the same number elsewhere. A numbered
+status list invites appending; nothing in the file said not to.
+
 ## Build
 
 Library: `cmake -S . -B build`, `cmake --build build --config Release`,
