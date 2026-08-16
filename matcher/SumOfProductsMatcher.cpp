@@ -219,7 +219,13 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
   //   -passes='sop-matcher<explain>'
   // or via ./run_study.sh rejects <name>.
   bool Explain = false;
-  explicit SopMatcherPass(bool Explain = false) : Explain(Explain) {}
+  // Weight census: for hits with the mixture spine w * exp(t), classify the
+  // multiplicand that is NOT the exp. The rewrite pass can only fold a
+  // weight into the reference when its magnitude is provably safe, so this
+  // answers whether implementing that is worth doing at all.
+  bool Weights = false;
+  explicit SopMatcherPass(bool Explain = false, bool Weights = false)
+      : Explain(Explain), Weights(Weights) {}
 
   void reject(const char *Why, const Instruction *Upd, const Function &F,
               const Loop *L, const Value *Spine) const {
@@ -381,6 +387,60 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
           for (size_t i = 0; i < Reasons.size(); ++i)
             errs() << (i ? ";" : "") << Reasons[i];
         errs() << "\n";
+
+        // Weight census. For the mixture spine w * exp(t), the rewrite pass
+        // must fold the weight's magnitude into the running reference or the
+        // scaled sum can overflow where the linear original does not. It can
+        // only do that when the weight is provably safe, so this records what
+        // the weights in real code actually ARE. One record per multiply on
+        // whose operands exactly one side reaches an exp.
+        if (Weights && CI.expChain) {
+          auto reachesExp = [&](Value *V) {
+            ChainInfo Sub;
+            SmallPtrSet<Value *, 32> Seen;
+            walkChain(V, *L, Sub, Seen);
+            return Sub.expChain;
+          };
+          auto classify = [](Value *W) -> const char * {
+            if (auto *C = dyn_cast<ConstantFP>(W))
+              return C->getValueAPF().isNegative() ? "const-negative"
+                                                   : "const-nonneg";
+            if (auto *CB2 = dyn_cast<CallBase>(W))
+              if (Function *CF = CB2->getCalledFunction()) {
+                StringRef N = CF->getName();
+                if (N.starts_with("llvm.fabs")) return "fabs";
+                if (N.starts_with("llvm.sqrt")) return "sqrt";
+                if (N.starts_with("llvm.exp")) return "exp";
+                return "call";
+              }
+            if (auto *BO = dyn_cast<BinaryOperator>(W))
+              if (BO->getOpcode() == Instruction::FMul &&
+                  BO->getOperand(0) == BO->getOperand(1))
+                return "square";
+            if (isa<LoadInst>(W)) return "load";
+            if (isa<PHINode>(W)) return "phi";
+            if (isa<UIToFPInst>(W)) return "uitofp";
+            if (isa<Argument>(W)) return "argument";
+            return "other";
+          };
+          auto emit = [&](Value *A, Value *B) {
+            const bool ea = reachesExp(A), eb = reachesExp(B);
+            if (ea == eb) return; // both or neither: not a w * exp(t) pair
+            errs() << "WEIGHT," << classify(ea ? B : A) << ",";
+            printLoc(errs(), Upd, F);
+            errs() << "\n";
+          };
+          for (BasicBlock *BB : L->blocks())
+            for (Instruction &I2 : *BB) {
+              if (auto *BO = dyn_cast<BinaryOperator>(&I2)) {
+                if (BO->getOpcode() == Instruction::FMul)
+                  emit(BO->getOperand(0), BO->getOperand(1));
+              } else if (auto *II2 = dyn_cast<IntrinsicInst>(&I2)) {
+                if (II2->getIntrinsicID() == Intrinsic::fmuladd)
+                  emit(II2->getArgOperand(0), II2->getArgOperand(1));
+              }
+            }
+        }
       }
     }
     return PreservedAnalyses::all();
@@ -401,6 +461,11 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                   // Parameters go inside <> and are semicolon-separated: the
                   // new-PM pipeline parser splits on commas at the top level,
                   // so a comma form never reaches this callback intact.
+                  if (Name == "sop-matcher<weights>") {
+                    FPM.addPass(SopMatcherPass(/*Explain=*/false,
+                                               /*Weights=*/true));
+                    return true;
+                  }
                   if (Name == "sop-matcher<explain>") {
                     FPM.addPass(SopMatcherPass(/*Explain=*/true));
                     return true;
