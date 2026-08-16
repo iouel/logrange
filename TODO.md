@@ -237,11 +237,18 @@ tooling tier, which ships as beta with its gaps stated.
         (cross-loop decay). README must stop implying coverage.
       * DIAGNOSTIC.md must state measured selectivity, 5 HIGH in 783
         hits in 2859 loops, so a one-finding report can be read.
-      Found while writing the posture, same owners: RESULTS.md's triage
-      prose still reads "Three rows... the static signal marks two source
-      sites". That predates the `nMul` correction. The table above it now
-      lists **5 rows across 4 distinct source lines** (`blas.c:315` twice,
-      `go.c:562`, `gaussian.c:205`, `zeta.c:757`).
+      *Retracted 2026-08-16.* This item also claimed RESULTS.md's triage prose
+      still read "Three rows... the static signal marks two source sites". It
+      does not, and has not since the style sweep in a1ec2d4; the bullet was
+      the stale thing, not the file. RESULTS.md states 5 HIGH rows across 4
+      distinct source lines in all four places it gives them, and every count
+      in it re-verified against `data/raw-*.txt`: 2859 loops, 783 hits, 7
+      transcendental rows across 5 source lines, 5 HIGH across 4
+      (`blas.c:315` twice, `go.c:562`, `gaussian.c:205`, `zeta.c:757`).
+      *One real staleness found doing that, fixed:* the header paragraph
+      credited the re-scanned totals to the pre-correction gate, 4 hits / 6 FP
+      loops / 1 transcendental. The re-scan ran under 5 / 7 / 2. Both are now
+      stated with which scan each governed.
 - [x] **Pass eligibility contract** (intent Deliverable 2, precondition 2).
       Done 2026-08-16. The old gate (`"unsafe-fp-math"="true"` or `<force>`)
       conflated reassociation permission with permission to change errno,
