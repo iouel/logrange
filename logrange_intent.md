@@ -62,8 +62,6 @@ This header is independently useful with zero compiler machinery, and it is the 
 
 ## Deliverable 2 — The Pass (conditional)
 
-*Restored 2026-08-17. This section was deleted in `074749f` under the summary "removed redundant content"; nine files cite it and three quoted sentences that then existed nowhere in the tree. It is reinstated verbatim, plus the prior-art rule below, per CONTRIBUTING.md's "Retract, do not reword".*
-
 An LLVM pass that recognizes sum-of-products reductions at IR level and rewrites them to log-domain accumulation, converting once at the edges of the loop nest rather than per operation.
 
 Preconditions, stated plainly:
@@ -76,7 +74,7 @@ Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform 
 
 **The prior-art boundary is a build rule, not just a citation.** Borrow the compiler analysis that is already solved and validated; spend this project's complexity only on what is genuinely different. The one thing here that no compiler does is decide whether a reduction will *lose its answer to floating-point range* — that is the whole project, and it is worth doing carefully. Deciding whether a loop *is* a reduction is not: LLVM's `RecurrenceDescriptor` answers it, the loop vectorizer depends on it being right, and this repository has no business being its second authority.
 
-That rule was violated for two months while the boundary paragraph above was missing from the tree. The matcher grew a hand-written spine walk, a mid-loop-read guard, and a chain-ordering scheme, all reimplementing `AddReductionVar`. Replacing them cost one MED finding and gained 31, closed a documented blind spot, and changed no risk grade — measured in `matcher/DELTA.md`. The lesson is cheap to state and was expensive to learn: **when this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
+The rule has already been broken once, while the boundary paragraph above was missing from the tree: the matcher grew a hand-written spine walk, a mid-loop-read guard, and a chain-ordering scheme, all reimplementing `AddReductionVar`. Replacing them changed no risk grade and closed a documented blind spot, at the cost of one finding in a loop shape LLVM declines on purpose. `matcher/DELTA.md` has the accounting. **When this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
 
 ## Stretch Goal — End-to-End Log-Form Propagation
 
@@ -109,15 +107,9 @@ Adjacent `exp(log(x))` pairs fold on contact. The log region grows to its natura
 
 **First milestone.** One real softmax computation, denominator loop and normalize divide in the same function, carries the log representation from the denominator, through the divide, to the final observable result. Verified end-to-end: benign inputs agree to ~1 ulp, the underflowing case returns a correct finite log-probability where the original returns 0.0.
 
-*Status 2026-08-16: passing for `softmax_full`, one shape, intra-function.* At inputs near −800 the linear form computes `0.0/0.0` and every output is NaN; the propagated form returns probabilities summing to 1.0000000000000262, with no side global involved. Benign inputs agree with the linear path to 1e-12. The propagation runs behind its own named grant (`propagate=div`), and `force` alone does not trigger it. Two clauses of the original design are not met and are recorded rather than quietly dropped: criterion (2)'s accuracy ranking is refuted below, and the vocabulary is one rule (`fdiv`), not the three the design names: `fmul → fadd` and `fadd → logsumexp` are unimplemented, so the log region cannot yet grow past a single divide.
+**Success criteria.** (1) The milestone above passes. (2) Propagation stays within 15x the linear re-conversion at a single conversion, returns a correct finite result where the linear path returns NaN, and carries a measured accuracy budget on a multi-step chain before any accuracy claim is made for it. (3) The legality grant is stated per rewrite and honored: no propagation fires without it.
 
-**Success criteria.** (1) The milestone above passes. (2) ~~The propagated result is *more* accurate than the linear re-conversion, not merely equal.~~ **Refuted 2026-08-16 as written.** 64 of 64 swept trials put the propagated form behind the linear re-conversion, by 1.33x to 13.9x. Sweep: spreads 0.5/1/3/8, lengths 100 and 1000, eight seeds each. Reference error 1.7e-18, three orders below the effect.
-
-**The criterion measured the wrong case.** It compares one conversion against one re-conversion, which is where propagation has least to offer. Propagation loses there by construction: `t - L` carries `u·|t - L|`, the re-conversion carries one rounding.
-
-**The case for propagation is chains.** Following computation across operations that would otherwise materialize and re-convert at each step is the claim. That case is unmeasured because the vocabulary is one rule; `fmul` and `fadd` are unimplemented, so no chain exists.
-
-**Amended criterion.** Propagation stays within 15x the linear re-conversion at a single conversion, returns a correct finite result where the linear path returns NaN, and carries a measured accuracy budget on a multi-step chain before any accuracy claim is made for it. (3) The legality grant is stated per rewrite and honored: no propagation fires without it.
+**Why criterion 2 is shaped that way.** An earlier form required the propagated result to be *more* accurate than the linear re-conversion. That is false at a single conversion, and false by construction rather than by accident: `t - L` carries `u·|t - L|` where the re-conversion carries one rounding, so propagation loses precisely where it has least to offer. The case for propagation is **chains** — following computation across operations that would otherwise materialize and re-convert at each step — and that case cannot be measured while the vocabulary is one rule. CHANGELOG.md carries the refutation and its sweep.
 
 **Stopping rule.** Propagation stops where no safe or profitable log-domain representation exists. A single end-to-end transformation on real code establishes the technique; a documented wall, the point where the lattice meets a use it cannot rewrite and the materialization is provably lossy, is also a deliverable. If the frontier is immediately outside the first loop on every real codebase, the answer is "diagnostic-first was correct" and that is published.
 
@@ -127,50 +119,27 @@ Adjacent `exp(log(x))` pairs fold on contact. The log region grows to its natura
 
 If the pass proves impractical, the same analysis supports a lint: *"this reduction will leave representable range for inputs like X — consider log-domain accumulation, here is the header."* Less glorious than a rewrite, and more honest if the rewrite does not pay.
 
-## Shipping Posture — decided 2026-08-16
+## Shipping Posture
 
-*The second half of step 9. The first half — driving the pass from the matcher's HIGH-risk triage — landed 2026-08-15 in commit `afee8d0`. This section decides what ships and under what label. Tracked in TODO.md, "Tooling — ships as beta, gaps stated".*
+*What ships and under what label. The conditions, their status, and the dated record of what closed them are in TODO.md, "Tooling — ships as beta, gaps stated", and CHANGELOG.md.*
 
-**Decision.** 1.0 ships four artifacts under three labels. `include/logrange/log_math.h` is **the product**: version 1.0, stable API, stated error contract, packaged. `matcher/diagnose.sh` is the **diagnostic, beta**: usable, gaps enumerated in its own doc, exit codes stable enough to gate CI. `matcher/` is the diagnostic's engine and the study instrument, shipped as a **research tool** at the same maturity as the diagnostic and not separately supported. `pass/` is a **labeled prototype**: opt-in, not installed, not in the package, and outside 1.0's support surface. The diagnostic is the front door.
+**Decision.** 1.0 ships four artifacts under three labels. `include/logrange/log_math.h` is **the product**: stable API, stated error contract, packaged. `matcher/diagnose.sh` is the **diagnostic, beta**: usable, gaps enumerated in its own doc, exit codes stable enough to gate CI. `matcher/` is the diagnostic's engine and the study instrument, shipped as a **research tool** at the same maturity as the diagnostic and not separately supported. `pass/` is a **labeled prototype**: opt-in, not installed, not in the package, and outside 1.0's support surface. The diagnostic is the front door.
 
-**The counts that decide it.** 2859 innermost FP loops were scanned across GSL 2.8, darknet and libsvm. 783 carry the sum-of-products shape (27.4%). 5 carry a static range signal at HIGH — 0.17% of loops scanned, 0.6% of shape hits — and those 5 rows are 4 distinct source lines, darknet's `blas.c:315` counted twice because it is matched in two functions. (RESULTS.md's prose still says "two source sites"; that sentence predates the `nMul` correction that took HIGH from 3 rows to 5, and is stale.) The pass rewrites one shape and has been verified only on its own kernel: no site from the study has been rewritten end to end, and two of the four — the Gaussian kernel's `deep-chain` and anything with a multiply in the term — are outside what it matches. A rewrite firing on shape would touch hundreds of benign-range dot products and buy each one a transcendental per term against no range problem; a lint that names 5 sites and points at the header is proportionate to what was measured. RESULTS.md reached this conclusion from the same data and called it likely. This section makes it the decision and states what it costs.
+**What decides it.** Only a small fraction of the loops carrying the sum-of-products shape carry a static range signal, and the rescue-worthy set is a handful of source lines. A lint that names those and points at the header is proportionate to that; a rewrite firing on shape alone is not, because it would touch every benign-range dot product and buy each one a transcendental per term against no range problem. The measured figures behind this are in matcher/RESULTS.md, derived from committed evidence rather than restated here.
 
-**Why the diagnostic is the front door, beyond the counts.** Three reasons from the artifacts as they stand. First, the pass's rescue is not observable in the value the program computes: the linear replacement `exp(m + log(s))` re-underflows at exactly the inputs that motivate the rewrite, so the win exits only through the `__logrange_logsum` side global, which is last-rewrite-wins and requires the consuming link to define it. Second, Deliverable 2's second precondition, semantics preservation is exact, was unmet when this posture was written, and closing it took two fixes rather than the one anticipated: a `-inf` term produced NaN where the linear original produces 0, and separately the opt-in gate conflated permission to reassociate with permission to change `errno`, exception flags, rounding mode and denormal handling. Both are now closed (see the end of this section); the posture is stated to hold either way and does. Third, the profitability gate wired in on 2026-08-15 cannot decline any input the pass can match, because the single matched shape requires an `exp` call and therefore verdicts HIGH by construction; the gate is a tested mechanism with no reachable work to do. Against all three, the failure modes are asymmetric: a wrong HIGH costs a human ten minutes reading a loop, and a wrong rewrite costs a silently wrong answer under a flag the user set for unrelated reasons.
+**Why the diagnostic is the front door.** The pass's rescue is not observable in the value the program computes for most shapes: the linear replacement `exp(m + log(s))` re-underflows at exactly the inputs that motivate the rewrite, so the win exits through a side global that is last-rewrite-wins and requires the consuming link to define it. Propagation into a consumer closes that for one shape and no others. Beyond reach, the failure modes are asymmetric: a wrong HIGH costs a human ten minutes reading a loop, and a wrong rewrite costs a silently wrong answer under a flag the user set for unrelated reasons.
 
-**Why the header is not the front door, given that it is the product.** The header requires the caller to already know which loop is in trouble. That knowledge is the thing the study shows is rare and unevenly held: 5 sites in 2859 loops, and the three codebases scanned are written by people who understand floating point. The diagnostic's entire output is a pointer at the header, so the shipping path is diagnostic finds the site, header fixes it, pass is an opt-in power tool for the narrow shape it has been verified on. The header remains the fallback deliverable and is independently useful with zero compiler machinery; front door is a claim about discovery, not about value.
+**Why the header is not the front door, given that it is the product.** The header requires the caller to already know which loop is in trouble. That knowledge is what the study shows is rare and unevenly held, in codebases written by people who understand floating point. The diagnostic's entire output is a pointer at the header, so the shipping path is diagnostic finds the site, header fixes it, pass is an opt-in power tool for the narrow shape it has been verified on. The header remains the fallback deliverable and is independently useful with zero compiler machinery; front door is a claim about discovery, not about value.
 
-**Conditions for the pass to ship as anything other than a labeled prototype.** Six, all post-1.0, all testable:
-
-1. ~~`-inf` inputs produce the linear loop's result.~~ **Closed 2026-08-16, and wider than stated.** `-inf`, `+inf`, NaN mixed with infinities, and zero-trip all produce the linear loop's result, asserted by named cases against constants *and* against a corrected independent reference, the previous reference returned NaN for all-`-inf` and for `+inf`, so the first infinity tests were not reference-validated at all. NaN propagation is verified alongside, including NaN in the first position, since a guard that neutralizes `inf - inf` must not also neutralize NaN. Closing the precondition additionally required an `errno` contract nobody had costed: the rewrite deletes N source `exp` evaluations and emits 2N different ones plus a `log`, so the pass now matches only `llvm.exp.*` and declines `strictfp`, constrained-FP and non-IEEE denormal environments outright (`pass/ELIGIBILITY.md`). "Exact" is claimed for special values and observable FP environment, not for finite bit patterns, finite rounding changes are what the reassociation grant buys.
-2. ~~The rescue is observable without the side global.~~ **Closed 2026-08-16 for one shape.** `propagate=div` rewrites the softmax normalize divide to `exp(t - L)`, so `softmax_full` returns correct probabilities through its own `out[]` array with no global read. The condition's second branch is untouched: `__logrange_logsum` is still last-rewrite-wins and still the only route for every shape propagation does not cover, which is all of them but this one.
-3. Shape coverage extends past the single `fadd(phi, exp(t))` form to at least the `fmuladd` spine and `w[i]*exp(t)`, the mixture-likelihood shape the intent names, because until a matchable shape can verdict below HIGH, the profitability gate in front of the rewrite is decoration, and "profitability analysis required in front of any rewrite" is not actually being enforced by anything.
-
-   **Status 2026-08-17: the literal text is met and the property is not. The condition as written is a proxy, and the proxy was satisfiable without the thing it stood for.** Both spines are matched: `fmuladd(W, X, phi)` and `fadd(phi, fmul(W, X))`, under every `-ffp-contract` setting. A matchable shape does verdict below HIGH — `dot_sum` verdicts LOW and is refused at the default threshold. So both clauses of the condition read as satisfied.
-
-   The gate still enforces nothing. Eligibility requires an accepted `exp` call in the term and a HIGH verdict means exactly the same thing, so `rewritable ⊆ HIGH` by construction; and every LOW loop is weighted, so the weight clause refuses it at any threshold. Measured: the set of rewrites at `min-risk=low` is identical to the set at the default, and `run_pass_test.sh` now asserts that equality. **No rewrite is prevented by profitability analysis, and none can be while the two predicates coincide.**
-
-   Restated so the condition names its own success: *the gate becomes load-bearing when the rewritable set exceeds the HIGH set* — when the pass can soundly rewrite a shape that verdicts LOW or MED. Bounded-weight support is the natural candidate (`s += 0.5*x[i]` verdicts LOW and would be rewritable). Adding further matched-but-declined shapes cannot close it, however many are added. The inverted assertion in `run_pass_test.sh` turns red on the day this changes, which is the intended signal.
-4. ~~The emitted streaming state carries a stated error bound at the standard of the header's contracts.~~ **Closed 2026-08-16.** `rel err <= (n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in `pass/ELIGIBILITY.md`, searched by `pass/emitted_bound_search.c` against the object the pass actually rewrote on every `run_pass_test.sh` run. Held across 7285 trials, worst observed/bound 0.99, binding at a one-depth cluster where the running sum's roundings align and the error is the classical `(n-1)u` of uncompensated summation. The derivation is `pos_accum`'s plus `1u` for the final `exp`, which sounds like inheritance and is not free: the branchless guarded form only matches `pos_accum` term for term because `exp(0)` is exactly `1.0` and `s*1.0` is exact, two facts the runtime never leans on and the search now asserts. Three scope conditions are stated rather than buried: the result must be a normal double, which caps the reduction term near `710u` where the runtime's `log_value` form has no ceiling; the bound is first-order under the header's assumptions; and it needs `n` under ~2.1e8, derived from where recursive summation's second-order term eats the constant. The same run scores the form without the reduction term and reports it exceeded on 321 of 7285 trials at up to 39x, so that term is carried here by measurement rather than by analogy with the runtime.
-5. ~~The pass runs in CI on every push.~~ **Closed 2026-08-16.** `.github/workflows/llvm-tooling.yml` builds both plugins against LLVM 21 and gates the matcher selftest, the coverage claims, and `run_pass_test.sh` on push and pull request. It was demonstrated red before being trusted green: a deliberately broken selftest expectation failed run `31888208322`.
-6. The dead original chain is removed, or the pass documents that a DCE run after it is part of the supported pipeline.
-
-Conditions 1 and 2 are correctness and interface blockers. Conditions 3 through 6 are label blockers: they are what separates a prototype from a tool someone else can run. None of the six blocks 1.0, because 1.0 does not ship the pass as a product.
-
-Four of six are closed (1, 2, 4, 5). Two remain: shape coverage and the dead original chain. Condition 3's literal text was met on 2026-08-17 and its property was not; see its own entry. The posture is unchanged: it was decided on 5 HIGH findings in 2859 loops, and closing conditions does not move that number.
-
-**What the diagnostic must state about its own coverage for this posture to be honest.** Its "Scope limits" section already carries the mechanical ones. It states that it is a source-shape lint and not a range proof, that memory-carried reductions and reductions mirrored to a fixed cell are uncovered, that per-loop risk cannot see magnitude decay across an enclosing loop, and that vectorized and unrolled forms are missed. What is not yet stated anywhere the reader will meet it: **the diagnostic covers two of the three shapes the README names as motivating this project.** Mixture likelihood and softmax denominator are flagged HIGH; the forward algorithm is not flagged in either of its forms — the `out[j] +=` form is rejected at the mid-loop-read guard, and the register-accumulator form is seen and graded LOW because the underflow lives in the outer loop. The README currently names all three without qualification. Either the README stops implying coverage or the risk rule gains a cross-loop signal; this decision takes the first branch for 1.0, because the second is the open item that the guard-refinement measurement already declined to fund. The diagnostic must also state its measured selectivity — 5 HIGH in 783 hits in 2859 loops — so a user reading a report of one finding knows whether that is normal.
+**The pass ships as a labeled prototype until its conditions are met.** They separate a prototype from a tool someone else can run, and none of them blocks 1.0, because 1.0 does not ship the pass as a product. The conditions and their status are tracked in TODO.md.
 
 **Contradictions, stated plainly.**
 
-- The README names three motivating shapes. The diagnostic flags two. The forward algorithm is invisible in the form it is usually written and graded LOW in the form the matcher can see.
-- The pass's risk gate is described as a gate and cannot decline any input it can match. Both branches are tested; only one is reachable.
-- RESULTS.md's decision block says the shape survives real codebases and the pass proceeds, and the same block says shape-abundance is not profitability and the actionable set is 5 sites. Both are true of the same data. This posture resolves them by letting the pass proceed as a prototype rather than as a product.
-- Deliverable 2 was written with three preconditions. All three are now met for the single matched shape: legality (opt-in, three enforced layers, with `force` narrowed to waive reassociation *proof* only), hit rate (measured before the rewrite was built, decision rule fixed in advance), and semantics preservation (special values exact; `errno`, exception flags, rounding mode and denormal behaviour unobservable to any eligible program). The pass existed for a day and a half while the second precondition was unmet, which is correct for a prototype and disqualifying for a release artifact. Worth recording rather than smoothing over: that precondition was believed to hinge only on `-inf`, and the `errno` defect surfaced afterwards: the artifact claimed conformance it did not have, twice, and both times the gap was found by checking the claim rather than by the tests failing.
-- The LLVM tooling had no CI when this decision was taken, and the front door is the artifact with the least automated coverage while the library behind it has three toolchains green. Shipping the diagnostic as beta on that footing is a stated gap, not an oversight. It is condition 5's sibling and was being closed concurrently.
-
-**What changed when the defects were fixed, 2026-08-16.** Condition 1 closed, and with it Deliverable 2's last outstanding precondition, so the pass is now blocked on product concerns (export interface, shape coverage, stated bound, CI, dead code) rather than on any precondition this document set. That is a real change in status and is recorded as one. It does not change the posture. The front door was decided by 5 sites in 2859 loops and by the rescue being unobservable outside the side global; neither moves when the NaN goes away. The pass stays a labeled prototype at 1.0 with condition 1 struck.
-
-One cost the fix introduced, stated because it narrows reach: the pass now matches only `llvm.exp.*`, so a translation unit compiled without `-fno-math-errno` is declined outright. The pass therefore covers a strictly narrower set of real code than the matcher reports hits in. The way out is the documented extension point: accept a direct `exp` call when IR attributes prove it cannot write `errno`, which is unimplemented and needs its own accept and decline tests.
+- The README names three motivating shapes. The diagnostic flags two. The forward algorithm is matched in both the forms it is usually written and grades LOW in both, because its underflow accumulates across an enclosing loop and risk is judged one loop at a time.
+- The pass's risk gate is described as a gate and cannot decline any input it can match: eligibility requires an accepted `exp` call, and a HIGH verdict means the same thing, so the rewritable set is a subset of the HIGH set by construction. Both branches are tested; only one is reachable. The gate becomes load-bearing when the pass can soundly rewrite a shape that verdicts LOW or MED.
+- matcher/RESULTS.md's decision block says the shape survives real codebases and the pass proceeds, and the same block says shape-abundance is not profitability. Both are true of the same data. This posture resolves them by letting the pass proceed as a prototype rather than as a product.
+- The pass matches only `llvm.exp.*`, so a translation unit compiled without `-fno-math-errno` is declined outright. It therefore covers a strictly narrower set of real code than the matcher reports hits in. The way out is the documented extension point: accept a direct `exp` call when IR attributes prove it cannot write `errno`.
+- The diagnostic is the front door and is the artifact with the least automated coverage relative to the library behind it. Shipping it as beta on that footing is a stated gap, not an oversight.
 
 ## Success Criteria
 
@@ -186,97 +155,3 @@ One cost the fix introduced, stated because it narrows reach: the pass now match
 - **Error analysis is the hard part.** The bound under cancellation is real numerical-analysis work, not plumbing. It is also the entire difference between this and every ad hoc version, so it cannot be skipped.
 - **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. *(Step 6 derived the worst-case bound, stated it as a header contract, and machine-checked it against a double-double reference. The derivation remains author-reviewed only; independent review and an attempt to falsify the bound by adversarial search are the next work item. TODO.md, "Bound review pass".)*
 
-## First Action — status
-
-Steps 1–3 complete (v0.1 refactor of the seed header):
-
-1.  `logsumexp2` edge semantics fixed — NaN propagates, +inf propagates,
-   -inf acts as log-zero identity. `log_add` matched, including
-   inf + (-inf) → NaN per IEEE. Tests written against the contract table.
-2.  The `pos == neg` reset documented as an explicit error-bound decision
-   at the reset site: discards residual up to |largest term| · eps per reset
-   event, in exchange for re-arming the reference exponent. Kept.
-3.  Predecessor baggage stripped: pinch helpers, approximation toggles,
-   polynomial paths, instrumentation counters. Namespace is now `logrange`.
-   `rp_accum` poisoning is sticky and queryable; `add_scaled` poisons on
-   invalid scale instead of silently ignoring.
-
-4.  Benchmark harness built and run (see BENCHMARKS.md). Noise floor
-   measured at ~1%; success criteria 1–3 all met — the underflowing mixture
-   returns the exact answer where linear returns 0.0, the runtime beats
-   hand-rolled logsumexp by 1.9–4.1× rather than merely matching it, and
-   exponent-tracking wins pure products as predicted. A `pos_accum`
-   positive-only fast path was added to the header (Deliverable 1's missing
-   requirement), and an accuracy suite (test_accuracy) validates against a
-   double-double reference.
-
-5.  (empirical half) The 170× cancellation-accuracy gap explained and
-   closed. The `log_add` fold's advantage was an ordering artifact (adjacent
-   pairs annihilating at matched magnitude); shuffled, it lost to even the
-   uncompensated accumulator. v0.2 `rp_accum` ships Neumaier-compensated
-   pos/neg sums: up to 5000× more accurate under cancellation, robust to
-   input ordering, ~2–3 ns/term — still 1.5–2.5× faster than hand-rolled
-   logsumexp. `pos_accum` stays uncompensated (no cancellation to amplify).
-   Full investigation: BENCHMARKS.md.
-
-6.  Formal worst-case bound derived and stated as a header contract:
-   rp_accum rel err ≤ cond·(3k+4)·u (k = rescale events, u = 2⁻⁵³);
-   pos_accum ≤ (n+3k+3)·u. Machine-checked against measured data in
-   test_accuracy — observed sits 5–1000× under the bound on every
-   scenario. Deliverable 1 is functionally complete: the header now has
-   the stated-error-bound property every hand-rolled version lacks.
-
-7.  Matcher hit-rate study complete (matcher/RESULTS.md): 781 hits
-   across 2859 innermost FP loops in GSL, darknet, and libsvm (27%),
-   including the softmax-denominator and Dirichlet-likelihood shapes by
-   name. Recall audit clean; decision rule cleared decisively. Verdict:
-   the pass prototype proceeds, with profitability analysis (range/
-   underflow risk) required in front of any rewrite — the abundant hits
-   are mostly benign-range dot products; the rescue-worthy transcendental
-   subset is small but includes exactly the shapes this project targets.
-
-8.  Pass prototype (pass/): the softmax-denominator shape rewritten at
-   IR level to streaming logsumexp, behind explicit opt-in (fast-math
-   attribute or force parameter), verified end to end — benign inputs
-   agree to 1.4e-15, the underflowing case exports a correct finite
-   log-magnitude where the original returns 0.0, NaN propagates, and
-   negative controls are untouched. Known limits in pass/PROTOTYPE.md:
-   single shape, log form exported via a side global (propagating it to
-   downstream users is the Stretch Goal), no profitability gating wired
-   in yet.
-
-9.  Both halves decided. **Triage wired** 2026-08-15 (`afee8d0`): the
-   pass computes the matcher's risk verdict for its matched loop and
-   declines below `min-risk` (default HIGH). The task was blocked on a
-   matcher bug — an `nMul >= 1` rule that excluded plain sums of `exp`,
-   i.e. the softmax denominator, this project's marquee shape and the
-   only shape the pass rewrites. Fixed and the study re-run: 783 hits
-   against 781, HIGH 5 sites against 3. **Shipping posture decided**
-   2026-08-16: diagnostic-first. The header ships as the product at 1.0,
-   `diagnose.sh` as the front door labeled beta with its coverage gaps
-   enumerated, the matcher as its engine, and `pass/` as a labeled
-   prototype outside the supported surface. Driven by 5 HIGH sites in
-   2859 scanned loops (0.17%), by the pass's rescue being observable
-   only through the `__logrange_logsum` side global, and by Deliverable
-   2's semantics-preservation precondition being unmet (`-inf` → NaN).
-   Six named conditions for the pass to lose the prototype label, and
-   the coverage statements the diagnostic owes its reader, are in
-   "Shipping Posture" above; the tracker entry is in TODO.md.
-
-10. **Recognition delegated to LLVM** 2026-08-17. The matcher's
-   hand-written spine walk, mid-loop-read guard and chain ordering were
-   replaced by `RecurrenceDescriptor` — the analysis the loop vectorizer
-   uses. Measured against the old path over the whole corpus before
-   deleting it (matcher/DELTA.md): 783 → 814 hits, one MED finding lost
-   to a multi-exit loop, 32 gained across conditionally-executed
-   reductions and invariant-address accumulators, **no risk grade changed
-   and the 5 HIGH findings did not move**. Closed the memory-carried
-   blind spot, which retires the "refine the mid-loop-read guard"
-   question that had been open since 2026-08-15. Also restored the
-   Deliverable 2 section deleted in `074749f`, whose prior-art paragraph
-   is the rule this step should have been following.
-
-Remaining: nothing blocking. Open tooling gaps are tracked in TODO.md
-under "Tooling — ships as beta, gaps stated". Propagating the log form to
-downstream users instead of the side global is the Stretch Goal above,
-deliberately outside step 9.

@@ -1,7 +1,7 @@
 // log_math.h — LogRange runtime, v0.3.0
 // Signed log-domain values and accumulation.
 //
-// Inherited from NativeConv; refactored per LogRange intent v0.3, First Action:
+// Inherited from NativeConv; refactored per LogRange intent v0.3, Deliverable 1:
 //   step 1: logsumexp2 edge semantics fixed (NaN propagates, +inf propagates,
 //           -inf acts as log-zero identity). Previously NaN was swallowed and
 //           +inf silently absorbed.

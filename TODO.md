@@ -173,7 +173,7 @@ tooling tier, which ships as beta with its gaps stated.
 
 ## Tooling — ships as beta, gaps stated
 
-- [x] **Wire triage → pass** (intent step 9). Done 2026-08-15, after the task
+- [x] **Wire triage → pass** (intent Shipping Posture). Done 2026-08-15, after the task
       turned out to be blocked on a matcher bug. The pass now computes the
       matcher's risk verdict for its matched loop, declines below `min-risk`
       (default HIGH), and logs the verdict on every rewrite. Both branches
@@ -190,14 +190,14 @@ tooling tier, which ships as beta with its gaps stated.
       required an `exp` call, its verdict was always HIGH and the gate could
       not decline a real input. The spine widening below made it load-bearing:
       `dot_sum` verdicts LOW and is refused at the default threshold.
-- [x] **Shipping posture** (intent step 9, second half). Decided
+- [x] **Shipping posture** (intent Shipping Posture). Decided
       2026-08-16: **diagnostic-first**. Four artifacts, three labels. The
       header is *the product* at 1.0. `matcher/diagnose.sh` is the **front
       door**, labeled beta with its coverage gaps enumerated. `matcher/` is
       the diagnostic's engine and study instrument at the same maturity.
       `pass/` is a **labeled prototype**, opt-in, not installed, outside
       1.0's supported surface. Full statement and reasoning:
-      `logrange_intent.md`, "Shipping Posture — decided 2026-08-16".
+      `logrange_intent.md`, "Shipping Posture".
       *What drove it:* 5 HIGH rows in 2859 scanned loops (0.17%; 4 distinct
       source lines, 0.6% of the 814 shape hits). A lint naming 5 sites is
       proportionate; a rewrite firing on shape would touch hundreds of
@@ -225,11 +225,16 @@ tooling tier, which ships as beta with its gaps stated.
       closed only where `propagate=div` applies; every other consumer still
       exits through the side global, and last-rewrite-wins remains its stated
       defect. Condition 3's spines are matched, but the gate prevents no
-      rewrite and cannot until the rewritable set exceeds the HIGH set — the
-      condition is restated in `logrange_intent.md` rather than ticked. None
-      of this moves the posture: neither number that drove the decision (5
-      HIGH rows in 2859 loops; the rescue unobservable without the side
-      global for every shape but one) changed.
+      rewrite and cannot until the rewritable set exceeds the HIGH set, so
+      the condition is restated rather than ticked: *it closes when the pass
+      can soundly rewrite a shape that verdicts LOW or MED.* Bounded-weight
+      support is the natural candidate (`s += 0.5*x[i]` verdicts LOW and
+      would be rewritable); adding further matched-but-declined shapes cannot
+      close it, however many are added. The inverted assertion in
+      `run_pass_test.sh` turns red on the day this changes. None of this
+      moves the posture: neither number that drove the decision (5 HIGH rows
+      in 2859 loops; the rescue unobservable without the side global for
+      every shape but one) changed.
       *If the `-inf` fix lands:* condition 1 closes and all three of
       Deliverable 2's stated preconditions are met, so the pass becomes
       blocked on product concerns rather than on preconditions. The
@@ -485,9 +490,10 @@ tooling tier, which ships as beta with its gaps stated.
       verdict means the same thing, so `rewritable ⊆ HIGH` by construction;
       every LOW loop is weighted and the weight clause refuses it at any
       threshold. Measured: the rewrite set at `min-risk=low` is identical to
-      the default, now asserted. Condition 3 restated in `logrange_intent.md`
-      to name its own success: the gate closes when the rewritable set
-      exceeds the HIGH set, which needs bounded-weight support, not more
+      the default, now asserted. Condition 3 restated under "Tooling — ships
+      as beta" above to name its own success: the gate closes when the
+      rewritable set exceeds the HIGH set, which needs bounded-weight
+      support, not more
       matched-and-declined shapes. Left open on that basis.
       *What the audit also found, all fixed 2026-08-17:* the suite was a
       closed-world whitelist — "these 4 names are rewritten" and "these names

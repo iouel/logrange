@@ -1,5 +1,5 @@
 // bench_main.cpp — LogRange benchmark: contenders and workloads
-// (intent v0.3, Deliverable 1 / First Action step 4).
+// (intent v0.3, Deliverable 1).
 //
 // SUM benchmark — all contenders consume the same pre-generated log-domain
 // terms {log_abs, sign}:

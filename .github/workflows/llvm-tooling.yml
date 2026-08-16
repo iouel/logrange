@@ -154,6 +154,35 @@ jobs:
           grep -q '^DELTA OK' "$RUNNER_TEMP/delta.out" \
             || { echo "FAIL: no DELTA OK line"; exit 1; }
 
+      # Gate 7. CONTRIBUTING.md, "Where a sentence goes": the intent doc
+      # states what must be true, not what happened. It had accreted a 94-line
+      # work log indexing records that live in six other files, and one of its
+      # hand-copied figures sat two revisions stale while CI gated the same
+      # number elsewhere. A rule with no gate is what already failed here, so
+      # this is the gate. Dates, SHAs and counts belong in CHANGELOG.md,
+      # TODO.md, or the measurement docs.
+      - name: Gate 7 — intent doc carries no status content
+        run: |
+          f=logrange_intent.md
+          fail=0
+          check() {  # <name> <ere>
+            if grep -nEi "$2" "$f"; then
+              echo "FAIL: $f contains $1 — see CONTRIBUTING.md, 'Where a sentence goes'"
+              fail=1
+            fi
+          }
+          check "a date"       '(^|[^0-9])(19|20)[0-9]{2}-[0-9]{2}-[0-9]{2}([^0-9]|$)'
+          check "a commit SHA" '(^|[^0-9a-z])[0-9a-f]{7,40}([^0-9a-z]|$)'
+          # NOT "any number". The intent doc legitimately carries domain
+          # constants (|log| ~ 700, terms near -800, ~745 log-units below the
+          # reference) and spec quantities (a 1000-term mixture). Those are
+          # what must be true. What must not appear is a MEASURED RESULT, and
+          # the tell is a number next to study vocabulary — this pattern
+          # matches every figure line in the version of this file that carried
+          # a two-revisions-stale hit count, and nothing in the current one.
+          check "a measured figure" '[0-9][0-9.,]*[[:space:]]*(%|hits?|loops?|sites?|modules?|rows?)\b|\b(hits?|loops?|sites?|rows?)[[:space:]]+[0-9]'
+          exit $fail
+
       # The raw matcher output is the evidence behind the two matcher gates;
       # keep it so a red run can be read without re-running anything locally.
       - name: Upload gate output

@@ -560,7 +560,7 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!UpdDom)
         continue; // keep the prototype to the one verified configuration
 
-      // ---- Profitability gate (intent step 9) --------------------------
+      // ---- Profitability gate (intent Shipping Posture) ----------------
       // Shape is not profitability. The matcher study found the abundant
       // hits are benign-range dot products where a log rewrite only costs
       // speed, and that the rescue-worthy subset is small; the risk verdict
