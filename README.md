@@ -5,7 +5,7 @@ Correct sums when terms underflow or overflow in linear floating point.
 
 **Status**
 
-v0.2, pre-1.0. The header is complete and benchmarked; the compiler tooling is
+v0.3, pre-1.0. The header is complete and benchmarked; the compiler tooling is
 a working prototype. Gaps are tracked in [TODO.md](TODO.md).
 
 ## What it is
@@ -63,7 +63,7 @@ cmake --install build --config Release
 Then, from a consuming project:
 
 ```cmake
-find_package(LogRange 0.2 CONFIG REQUIRED)
+find_package(LogRange 0.3 CONFIG REQUIRED)
 target_link_libraries(your_target PRIVATE LogRange::logrange)
 ```
 
