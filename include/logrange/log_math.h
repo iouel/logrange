@@ -1,4 +1,4 @@
-// log_math.h — LogRange runtime, v0.2.0
+// log_math.h — LogRange runtime, v0.3.0
 // Signed log-domain values and accumulation.
 //
 // Inherited from NativeConv; refactored per LogRange intent v0.3, First Action:
@@ -63,14 +63,14 @@
 // This header is the single source of truth: CMakeLists.txt parses these
 // three macros rather than carrying its own copy of the number.
 //   LOGRANGE_VERSION is ordered and comparable: MAJOR*10000 + MINOR*100 + PATCH.
-//   #if LOGRANGE_VERSION >= 200   // 0.2.0 or newer
+//   #if LOGRANGE_VERSION >= 300   // 0.3.0 or newer
 #define LOGRANGE_VERSION_MAJOR 0
-#define LOGRANGE_VERSION_MINOR 2
+#define LOGRANGE_VERSION_MINOR 3
 #define LOGRANGE_VERSION_PATCH 0
 #define LOGRANGE_VERSION \
   (LOGRANGE_VERSION_MAJOR * 10000 + LOGRANGE_VERSION_MINOR * 100 + \
    LOGRANGE_VERSION_PATCH)
-#define LOGRANGE_VERSION_STRING "0.2.0"
+#define LOGRANGE_VERSION_STRING "0.3.0"
 
 #include <cmath>
 #include <algorithm>

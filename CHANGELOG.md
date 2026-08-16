@@ -11,6 +11,16 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+Nothing yet.
+
+## 0.3.0 — 2026-08-16
+
+**A minor bump, because the error contract moved.** Three times, in fact, all
+within this release: `rp_accum`'s twice and `pos_accum`'s once. Compatibility
+is `SameMinorVersion` precisely for this — a consumer pinned to 0.2 is pinned
+to a contract that has since been refuted, and should not silently resolve to
+this header. Callers who checked `LOGRANGE_VERSION >= 200` want `>= 300`.
+
 **Changed: the error contract moved again. `rp_accum`'s corrected form was
 itself refuted, at 1.99x.**
 
