@@ -47,6 +47,9 @@ the product chain contains transcendental calls.
    while the disables keep reductions in scalar recognizable form, the same
    position a mid-pipeline pass would occupy; vectorized/unrolled forms are
    recorded as a known blind spot rather than chased in v0).
+   `logrange-scan.sh` applies the same flags to a `compile_commands.json`,
+   so a diagnostic run and a study run see the same IR. The study keeps the
+   `cc-bc.sh` route because the corpus is autotools and make.
 2. Run the matcher as an `opt` plugin over every module; aggregate counts.
 3. Report per codebase: total innermost FP loops examined, hits, hits with
    transcendental chains, hits with constant trip counts, and misses that a

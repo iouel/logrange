@@ -1,9 +1,10 @@
-# The three correctness gates for the LLVM tooling, which until now only ever
-# ran when a human typed them into WSL:
+# The four correctness gates for the LLVM tooling, which until recently only
+# ever ran when a human typed them into WSL:
 #
 #   matcher/run_study.sh selftest   labeled ground truth for the matcher
 #   matcher/run_study.sh coverage   the coverage claims in matcher/RESULTS.md
 #   pass/run_pass_test.sh           the rewrite prototype, end to end
+#   matcher/test_scan.sh            the diagnostic front door, end to end
 #
 # Deliberately a SEPARATE workflow from tests.yml. This job installs a
 # toolchain from a third-party apt mirror; the header-only library's signal
@@ -116,6 +117,16 @@ jobs:
           grep -q '^run_pass_test: PASS$' "$RUNNER_TEMP/pass.out" \
             || { echo "FAIL: no run_pass_test: PASS line"; exit 1; }
 
+      # Gate 4. The front door: build directory in, report out. Twelve cases,
+      # including the ones that keep a partial scan from reading as a clean
+      # one. Runs from the repo root because case 12 configures this
+      # repository with cmake and scans it, the worked example in SETUP.md.
+      - name: Gate 4 — diagnostic front door (logrange-scan.sh)
+        run: |
+          bash matcher/test_scan.sh | tee "$RUNNER_TEMP/scan.out"
+          grep -q '^test_scan: PASS' "$RUNNER_TEMP/scan.out" \
+            || { echo "FAIL: no test_scan: PASS line"; exit 1; }
+
       # The raw matcher output is the evidence behind the two matcher gates;
       # keep it so a red run can be read without re-running anything locally.
       - name: Upload gate output
@@ -127,6 +138,7 @@ jobs:
             ${{ runner.temp }}/selftest.out
             ${{ runner.temp }}/coverage.out
             ${{ runner.temp }}/pass.out
+            ${{ runner.temp }}/scan.out
             ~/logrange-study/raw-selftest.txt
             ~/logrange-study/raw-coverage.txt
             ~/logrange-pass/rewrite.log

@@ -11,7 +11,7 @@
 #   LOOP,<file>,<line>,<function>
 #   HIT,<file>,<line>,<function>,<trip>,<depth>,<nmul>,<transcendental|plain>,<risk>,<reasons>
 # where trip is constant|runtime|unknown, risk is HIGH|MED|LOW, and reasons
-# is a semicolon-joined token list (exp-chain, log-chain, deep-chain,
+# is a semicolon-joined token list (exp-chain, exp-sum, log-chain, deep-chain,
 # unknown-trip) or "none". Anything else on a line is ignored, so raw files
 # can carry other output. Old 8-column HIT lines (no risk/reasons) are
 # skipped with a warning rather than misread.
@@ -47,6 +47,8 @@ awk -v ALL="$ALL" '
 function sentence(tok) {
   if (tok == "exp-chain")
     return "a term is computed through exp(), so its magnitude is unbounded and the sum can underflow/overflow silently"
+  if (tok == "exp-sum")
+    return "the summands are exp() results with no multiply anywhere, the textbook logsumexp shape: a term can underflow to zero before it ever reaches the sum"
   if (tok == "log-chain")
     return "a term is computed through log(), which is unbounded near zero and can inject extreme magnitudes into the sum"
   if (tok == "deep-chain")

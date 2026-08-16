@@ -2,9 +2,17 @@
 # all three risk levels, multi-token and single-token reasons, "none",
 # every trip kind, transcendental and plain chains, a LOW-only source file,
 # LOOP lines with no matching HIT, and non-record lines (this comment).
+#
+# test_scan.sh case 11 runs this and asserts that every reason token the
+# matcher can emit appears here and renders as a sentence rather than as
+# diagnose.sh's "flagged: <token>" passthrough. Until 2026-08-16 this file
+# had no runner and was missing exp-sum, which the matcher had emitted since
+# 2026-08-15.
 LOOP,src/blas.c,101,gemm_nn
 LOOP,src/blas.c,315,softmax_cpu
 HIT,src/blas.c,315,softmax_cpu,runtime,2,1,transcendental,HIGH,exp-chain
+LOOP,src/softmax.c,42,softmax_denom
+HIT,src/softmax.c,42,softmax_denom,runtime,3,0,transcendental,HIGH,exp-chain;exp-sum
 LOOP,src/blas.c,412,dot_cpu
 HIT,src/blas.c,412,dot_cpu,runtime,1,1,plain,LOW,none
 LOOP,randist/dirichlet.c,147,gsl_ran_dirichlet_pdf

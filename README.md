@@ -88,6 +88,22 @@ move between minor versions, and it has.
 Header-only, so vendoring the single header by hand also works. The flag above
 is then your responsibility.
 
+## Find the sums that need it
+
+Point the diagnostic at a build directory and it names the reductions whose
+terms may leave representable range:
+
+```bash
+cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+matcher/logrange-scan.sh build
+```
+
+Exit 1 on a HIGH finding, so it can gate CI. It configures nothing and builds
+nothing of yours: it recompiles each unit in the compile database to bitcode
+itself. Linux or WSL and LLVM 21 only ([SETUP.md](SETUP.md); `--check` reports
+what is missing). Scope and known blind spots:
+[DIAGNOSTIC.md](matcher/DIAGNOSTIC.md).
+
 ## Build & test
 
 ```
@@ -110,10 +126,10 @@ Benchmarks (Release only):
 | `tests/` | unit, contract, accuracy suites | run in CI |
 | `bench/` | benchmark harness | see BENCHMARKS.md |
 | `matcher/` | LLVM plugin + hit-rate study | beta, gaps stated — [RESULTS.md](matcher/RESULTS.md) |
-| `matcher/diagnose.sh` | range lint | beta, the front door — [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
+| `matcher/logrange-scan.sh` | range lint, build dir in | beta, the front door — [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
 | `pass/` | LLVM pass prototype, opt-in | prototype, not installed — [PROTOTYPE.md](pass/PROTOTYPE.md) |
 
-Matcher and pass: Linux/WSL, LLVM 21.
+Matcher and pass: Linux/WSL, LLVM 21 — [SETUP.md](SETUP.md).
 Library and tests: C++17 compiler only.
 
 ## Documents
@@ -121,6 +137,7 @@ Library and tests: C++17 compiler only.
 - [CONTRIBUTING.md](CONTRIBUTING.md) — evidence and writing conventions, read first
 - [logrange_intent.md](logrange_intent.md) — aims, cost model, deliverables
 - [BENCHMARKS.md](BENCHMARKS.md) — results
+- [SETUP.md](SETUP.md) — WSL and LLVM 21, for the tooling only
 - [matcher/METHODOLOGY.md](matcher/METHODOLOGY.md) — study rules
 - [TODO.md](TODO.md) — road to 1.0
 - [BASELINE.md](BASELINE.md) — historical numbers

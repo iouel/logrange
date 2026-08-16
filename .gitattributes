@@ -3,6 +3,7 @@
 *.c text eol=lf
 *.cpp text eol=lf
 *.sh text eol=lf
+*.py text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
 .gitignore text eol=lf

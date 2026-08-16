@@ -59,6 +59,36 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Added: `matcher/logrange-scan.sh`, one command from a build to a report.
+Tooling only.**
+
+The diagnostic was a three-step: build the target under `cc-bc.sh`, run
+`run_study.sh <name>`, run `diagnose.sh` on the raw file. It now takes a build
+directory or a `compile_commands.json`, and neither builds the target nor
+requires that clang can build it: each unit in the database is recompiled to
+bitcode at the study's flags, with a second attempt using preprocessor and
+language flags only for units clang rejects outright. `--check` preflights the
+toolchain. `SETUP.md` packages the WSL and LLVM 21 requirement for all three
+tools. `matcher/test_scan.sh` is CI gate 4.
+
+- **An incomplete scan exits 2, not 0.** A unit that fails to compile would
+  otherwise produce a short report that reads as a clean bill of health. The
+  tally above every report states units compiled, failed, skipped, deduped
+  and recovered. `--allow-compile-failures` accepts a partial scan
+  deliberately.
+- **One source listed by two cmake targets is scanned once.** Counting its
+  loops twice inflates every number in the report.
+
+**Fixed: `diagnose.sh` printed `flagged: exp-sum`.** The matcher has emitted
+the `exp-sum` reason token since 2026-08-15, the fix that admitted plain sums
+of `exp`; the renderer had no sentence for it and fell through to its
+unknown-token passthrough. Found by pointing the new front door at this
+repository, whose `bench/bench_main.cpp:302` is exactly that shape.
+`testdata/fixture-raw.txt` claimed to exercise every report branch and had no
+runner. It does now: `test_scan.sh` case 11 extracts the token list from
+`SumOfProductsMatcher.cpp` and fails when the fixture or the renderer misses
+one.
+
 **Added: `propagate=div`, the stretch goal's first milestone. Tooling only.**
 
 The pass can carry the log form out of the accumulation loop and into the
