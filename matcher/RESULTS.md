@@ -19,9 +19,11 @@ that excluded the marquee shape". Pre-correction totals were 781 hits /
 5 transcendental / 3 HIGH; the two recovered hits carry `exp-sum` in their
 reasons, so either set is recoverable from `data/`.*
 
-The matcher passed its labeled ground-truth gate (selftest.c: 4 hits / 6 FP
-loops / 1 transcendental, exact) before any of these numbers were collected,
-and the scan is deterministic across repeat runs.
+The matcher passed its labeled ground-truth gate before any of these numbers
+were collected, and the scan is deterministic across repeat runs. The gate was
+`selftest.c` at 4 hits / 6 FP loops / 1 transcendental for the original scan,
+and 5 / 7 / 2 for the re-scan above, which is the same corpus plus the
+`softmax_denom` case the `nMul` correction admitted.
 
 ## Transcendental-chain hits
 
