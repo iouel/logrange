@@ -297,10 +297,15 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //          vanishing window: a term ~745 below the reference scales to 0.0
 //          and leaves the sum. Bounded by ~ln(n) for ordinary data.
 //   S    = the exact sum; log|S| is the result's own log-magnitude.
+//   net  = S / exp(m_log), the scaled sum the reduction takes the log of.
+//          |log|net|| <= log n for positive sums, and <= log(n*cond) in
+//          general. This is the OTHER addend of m_log + log|net|, and it does
+//          not vanish when that addition cancels.
 // Assuming std::exp within 1 ulp (true of MSVC/glibc/libm current), and
 // n < ~1e7 so O(n*u^2) terms are negligible:
 //
-//   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4 + D) * u  +  |log|S|| * u
+//   WORST-CASE RELATIVE ERROR  <=  cond * (3k + 4 + D) * u
+//                                  +  (|log|S|| + |log|net||) * u
 //     + terms > ~745 log-units below the running m_log vanish entirely.
 //
 // This is a FIRST-ORDER bound. It holds under the assumptions stated above —
@@ -334,11 +339,23 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 // <= 2u (exp) + u (multiply); Neumaier compensation makes summation itself
 // contribute <= u regardless of length. That is the (3k + 4) part, on a mass
 // of sum|x_i|, amplified by cond at the final subtraction.
-// The final reduction adds a term that never touches cond: out.log_abs =
-// m_log + log|net| rounds to within u*|log|S|| in log space, and absolute
-// error in log space IS relative error in linear space. For a sum near 1
-// this is invisible; at log|S| ~ 700, the regime this library exists for,
-// it is ~700u on its own and dominates everything else.
+// The final reduction adds a term that never touches cond. out.log_abs =
+// m_log + log|net|, and absolute error in log space IS relative error in
+// linear space, so BOTH addends' roundings land on the result:
+//   - log|net| is computed to a relative u, hence an absolute u*|log|net||;
+//   - the addition itself rounds to u*|log|S||.
+// For a sum near 1 the second is invisible; at log|S| ~ 700, the regime this
+// library exists for, it is ~700u on its own and dominates everything else.
+//
+// *The first was missing until 2026-08-16 and is why the previous form was
+// refuted.* Charging only u*|log|S|| budgets the rounding of the addition's
+// RESULT while ignoring the magnitude of its INPUTS, which is the same defect
+// as charging 2u for a term's exp() while ignoring its argument. The two
+// addends cancel exactly when the sum is near 1, and there |log|S|| goes to
+// zero while |log|net|| does not. bound_search's family E is the witness: n
+// equal positive terms at L = -log(n) give cond = 1, k = 0, D = 0 and
+// |log|S|| = 0, so the old form budgets 4u, while |log|net|| = log n. At
+// n = 166463 the measured error is 7.97u against that 4u, a ratio of 1.99.
 //
 // These two are a division of labor, not rival explanations of the same
 // error. Cancellation in forming net = (pos - neg) + (pos_c - neg_c) is
@@ -364,7 +381,15 @@ inline log_value log_add(const log_value& a, const log_value& b) {
 //     u = 1.1e-16 — nine orders down, and it does not reach u until n ~ 1e16
 //     terms, which is not an addressable count. The caveat is real but far
 //     looser than "n < ~1e7" suggests.
-// Status: the earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
+// Status: REFUTED TWICE, corrected twice. The 2026-08-15 form
+//   cond*(3k+4+D)*u + |log|S||*u was refuted 2026-08-16 at 1.99x by family E
+//   above, once bound_search's reference was rebuilt to resolve it: the old
+//   reference summed double exp() and collapsed to a double, floors of ~1u
+//   and u/2, and a 1.99x violation of a 4u budget was inside them. The
+//   reference is now double-double throughout (tests/dd_exp.h, ~1e-14 u) and
+//   the missing |log|net||*u is stated above. Worst observed/bound across the
+//   search is 0.50 against the corrected form.
+//   The earlier cond*(3k+4)*u form was REFUTED by tests/bound_search.cpp,
 //   which found 151 of 400 random inputs violating THAT superseded form
 //   (worst 15.8x) plus a constructed counterexample at 5.8x with cond == 1,
 //   k == 0. The same sweep scores every input against both forms; the form
@@ -506,7 +531,8 @@ private:
 //
 // Error contract (formal; u, k, D and S as defined at rp_accum):
 //
-//   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3 + D) * u  +  |log|S|| * u
+//   WORST-CASE RELATIVE ERROR  <=  (n + 3k + 3 + D) * u
+//                                  +  (|log|S|| + |log|net||) * u
 //
 // First-order, under the same stated assumptions as rp_accum's (1-ulp exp,
 // the vanishing window, higher-order terms neglected).
@@ -518,12 +544,20 @@ private:
 // very long positive sums should use rp_accum (compensated) and pay the
 // ~1.5x per-term cost.
 //
-// The |log|S|| term is the same final-reduction rounding rp_accum carries:
-// out.log_abs = m_log + log(sum) rounds to within u*|log|S||, and absolute
-// error in log space is relative error in linear space. There is no cond
-// here for it to hide behind, and it does not grow with n — so at small n
-// and large magnitude it is the entire error. Four terms near e^690 budget
-// (n+3k+3)*u = 7u under the old form against ~500u of real error.
+// The reduction terms are the same ones rp_accum carries: out.log_abs =
+// m_log + log(sum), where log(sum) rounds at its own magnitude |log|net||
+// and the addition rounds at |log|S||. Absolute error in log space is
+// relative error in linear space. There is no cond here for either to hide
+// behind, and neither grows with n — so at small n and large magnitude they
+// are the entire error. Four terms near e^690 budget (n+3k+3)*u = 7u under
+// the old form against ~500u of real error.
+//
+// |log|net||*u is carried for correctness, not because it binds here:
+// |log|net|| <= log n for positive sums, and the n*u term already dominates
+// log n. It is what refuted rp_accum, which is Neumaier-compensated and so
+// has no n*u term to absorb it. Family E measures this rather than assuming
+// it: pos_accum reaches 0.80 of its bound where rp_accum reaches 1.99 of the
+// uncorrected one.
 //
 // D is carried for symmetry with rp_accum and is NOT the binding term here.
 // Making D large takes ~e^D terms at depth D, so D ~ ln(n) < n and the n*u

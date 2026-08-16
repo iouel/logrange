@@ -17,12 +17,24 @@
 // of terms sharing one depth shares one rounding error e, coherently: no
 // cancellation across the cluster. Family A below builds exactly that.
 //
-// Reference caveat, stated because it bounds what this file can prove: the
-// dd reference sums exp(L_i) computed in plain double, so it carries up to
-// ~1u of its own relative error. Ratios below ~1.3 are not evidence. The
-// counterexamples reported here are well clear of that floor.
+// Reference, and what it can resolve. Until 2026-08-16 this file summed
+// exp(L_i) computed in plain double and then collapsed the dd accumulator
+// with value(), which put TWO floors under every measurement: ~1u from
+// double exp() per term (measured since: worst 0.99u), and up to u/2 from
+// "truth" being a double at the moment of comparison. The second is
+// structural and no libm improvement removes it. Ratios below ~1.3 were
+// unreadable, which is what this comment used to say.
+//
+// Both are gone. dd_exp.h computes exp in double-double with its own
+// argument reduction and series, assuming nothing about libm, and the
+// reference stays wide through the subtraction. Terms are scaled by the
+// peak's binary exponent so the dominant ones carry the full 106 bits.
+// dd_exp_selftest() runs identity checks that need no external constant and
+// this file refuses to report if they do not pass. Measured resolution:
+// ~1e-30 relative, about 1e-14 u.
 #include "test_common.h"
 #include "dd_sum.h"
+#include "dd_exp.h"
 #include <logrange/log_math.h>
 #include <algorithm>
 #include <cmath>
@@ -42,18 +54,40 @@ struct verdict {
   std::size_t k = 0;
   double cond = 0.0;
   double depth = 0.0;    // mass-weighted mean insertion depth, D_eff
-  double outmag = 0.0;   // |log|S||, the final reduction's lever arm
+  double outmag = 0.0;   // |log|S||, the reduction's stated lever arm
+  // |log|net||, the OTHER addend of m_log + log|net|. When the two nearly
+  // cancel, |log|S|| goes to zero while this one does not, and it is this
+  // one that sets log(net)'s absolute rounding error.
+  double lognet = 0.0;
+  double fixed2 = 0.0;   // corrected again: + |log|net||*u
+  double ratio_fixed2 = 0.0;
   double observed = 0.0;
+  // The same error, measured on what the accumulator REPRESENTS rather than
+  // on to_linear()'s output. to_linear() is one more exp(), ~1u, and the
+  // contract is written about out.log_abs. Keeping both columns is the only
+  // way to tell a refuted contract from a measurement charging it for a
+  // rounding it never promised.
+  double observed_repr = 0.0;
   double bound = 0.0;    // v0.2 stated contract
   double fixed = 0.0;    // corrected contract
   double ratio = 0.0;
   double ratio_fixed = 0.0;
+  double ratio_repr = 0.0;
 };
+
+// The peak log-magnitude, which sets the reference's scaling bias.
+static double peak_of(const std::vector<log_value>& terms) {
+  double peak = NINF;
+  for (const log_value& v : terms)
+    if (!v.is_zero() && v.log_abs > peak) peak = v.log_abs;
+  return peak;
+}
 
 // Run the terms through rp_accum and score them against the stated contract.
 static verdict evaluate(const std::vector<log_value>& terms) {
   rp_accum acc;
-  dd_sum ref, mass, weighted_depth;
+  const int bias = dd_exp_bias(peak_of(terms));
+  dd ref{}, mass{}, weighted_depth{};
   double m = NINF;
   std::size_t k = 0;
   bool first = true;
@@ -66,23 +100,36 @@ static verdict evaluate(const std::vector<log_value>& terms) {
     }
     first = false;
     acc.add(v);
-    const double lin = v.to_linear();
-    ref.add(lin);
-    mass.add(std::fabs(lin));
+    // |term|, in the scaled domain: exp(log_abs) * 2^-bias.
+    const dd lin = dd_exp_scaled(v.log_abs, bias);
+    ref  = dd_add(ref, v.sign < 0.0 ? dd_neg(lin) : lin);
+    mass = dd_add(mass, lin);
     // Depth at insertion: how far below the running reference this term sat
     // when its exp() argument was formed. That difference is what rounds.
-    weighted_depth.add(std::fabs(lin) * (m - v.log_abs));
+    weighted_depth = dd_add(weighted_depth, dd_mul_d(lin, m - v.log_abs));
   }
 
   verdict r;
   r.n        = terms.size();
   r.k        = k;
-  const double truth = ref.value();
-  r.cond     = mass.value() / std::fabs(truth);
-  r.depth    = weighted_depth.value() / mass.value();
-  r.outmag   = std::fabs(ref.log_abs());
-  const double got = acc.to_log_value().to_linear();
-  r.observed = std::fabs(got - truth) / std::fabs(truth);
+  r.cond     = dd_to_double(mass) / std::fabs(dd_to_double(ref));
+  r.depth    = dd_to_double(weighted_depth) / dd_to_double(mass);
+  // log|S| = log|ref| + bias*ln2, the bias being an exact power of two.
+  const double logS_signed = dd_log_abs(ref) + bias * dd_ln2().hi;
+  r.outmag   = std::fabs(logS_signed);
+  // net = S / exp(m_log): the scaled sum the reduction takes the log of.
+  r.lognet   = std::fabs(logS_signed - m);
+  const log_value out = acc.to_log_value();
+  const double got = out.to_linear();
+  // Exact: got is normal and so is got*2^-bias, by construction of bias.
+  r.observed = dd_rel_err(std::ldexp(got, -bias), ref);
+  // What the accumulator represents, exponentiated exactly instead of by
+  // to_linear(): isolates the accumulator from the final conversion.
+  {
+    const dd repr = dd_exp_scaled(out.log_abs, bias);
+    const dd d = dd_sub(out.sign < 0.0 ? dd_neg(repr) : repr, ref);
+    r.observed_repr = std::fabs(dd_to_double(d) / dd_to_double(ref));
+  }
   r.bound    = r.cond * (3.0 * static_cast<double>(k) + 4.0) * U;
   // Corrected contract: the argument-rounding term rides with the mass and is
   // amplified by cond like every other coefficient perturbation; the final
@@ -90,8 +137,11 @@ static verdict evaluate(const std::vector<log_value>& terms) {
   // linear result directly rather than through cond.
   r.fixed    = r.cond * (3.0 * static_cast<double>(k) + 4.0 + r.depth) * U +
                r.outmag * U;
-  r.ratio       = r.observed / r.bound;
-  r.ratio_fixed = r.observed / r.fixed;
+  r.fixed2       = r.fixed + r.lognet * U;
+  r.ratio        = r.observed / r.bound;
+  r.ratio_fixed  = r.observed / r.fixed;
+  r.ratio_fixed2 = r.observed / r.fixed2;
+  r.ratio_repr   = r.observed_repr / r.fixed;
   return r;
 }
 
@@ -215,7 +265,11 @@ static std::vector<log_value> family_random(std::mt19937_64& rng) {
 // ---------------------------------------------------------------------------
 static verdict evaluate_pos(const std::vector<double>& logs) {
   pos_accum acc;
-  dd_sum ref, mass, weighted_depth;
+  double peak = NINF;
+  for (double L : logs)
+    if (L != NINF && L > peak) peak = L;
+  const int bias = dd_exp_bias(peak);
+  dd ref{}, mass{}, weighted_depth{};
   double m = NINF;
   std::size_t k = 0, n = 0;
   bool first = true;
@@ -229,26 +283,36 @@ static verdict evaluate_pos(const std::vector<double>& logs) {
     first = false;
     ++n;
     acc.add_log(L);
-    const double lin = std::exp(L);
-    ref.add(lin);
-    mass.add(lin);
-    weighted_depth.add(lin * (m - L));
+    const dd lin = dd_exp_scaled(L, bias);
+    ref  = dd_add(ref, lin);
+    mass = dd_add(mass, lin);
+    weighted_depth = dd_add(weighted_depth, dd_mul_d(lin, m - L));
   }
 
   verdict r;
   r.n      = n;
   r.k      = k;
   r.cond   = 1.0; // positive-only: sum|x_i| == |sum x_i| by construction
-  r.depth  = weighted_depth.value() / mass.value();
-  r.outmag = std::fabs(ref.log_abs());
-  const double truth = ref.value();
-  const double got   = acc.to_log_value().to_linear();
-  r.observed = std::fabs(got - truth) / std::fabs(truth);
+  r.depth  = dd_to_double(weighted_depth) / dd_to_double(mass);
+  const double logS_signed = dd_log_abs(ref) + bias * dd_ln2().hi;
+  r.outmag = std::fabs(logS_signed);
+  r.lognet = std::fabs(logS_signed - m);
+  const log_value out = acc.to_log_value();
+  const double got = out.to_linear();
+  r.observed = dd_rel_err(std::ldexp(got, -bias), ref);
+  {
+    const dd repr = dd_exp_scaled(out.log_abs, bias);
+    r.observed_repr =
+        std::fabs(dd_to_double(dd_sub(repr, ref)) / dd_to_double(ref));
+  }
   r.bound    = (static_cast<double>(n) + 3.0 * static_cast<double>(k) + 3.0) * U;
   r.fixed    = (static_cast<double>(n) + 3.0 * static_cast<double>(k) + 3.0 +
                 r.depth) * U + r.outmag * U;
-  r.ratio       = r.observed / r.bound;
-  r.ratio_fixed = r.observed / r.fixed;
+  r.fixed2       = r.fixed + r.lognet * U;
+  r.ratio        = r.observed / r.bound;
+  r.ratio_fixed  = r.observed / r.fixed;
+  r.ratio_fixed2 = r.observed / r.fixed2;
+  r.ratio_repr   = r.observed_repr / r.fixed;
   return r;
 }
 
@@ -288,13 +352,86 @@ static std::vector<double> pos_family_random(std::mt19937_64& rng) {
   return logs;
 }
 
+// P4 — ascending, k == n-1. pos_accum's 3k*u term had never been searched at
+// the input that maximizes k: P1 and P2 hold the reference fixed after the
+// first term, and P3's random ordering leaves k at its incidental O(ln n).
+static std::vector<double> pos_family_ascending(std::size_t n, double jump,
+                                                double base) {
+  std::vector<double> logs;
+  logs.reserve(n);
+  for (std::size_t i = 0; i < n; ++i)
+    logs.push_back(base + jump * static_cast<double>(i));
+  return logs;
+}
+
+// P5 / C2 — plateau then step, normalized so the total is ~1.0.
+//
+// This is the family that exposes what a rescale really costs. The rescale
+// forms exp(m_log - log_abs), whose ARGUMENT is off by up to u*J for a jump
+// of J log-units; the derivation charges 2u+u for the whole factor. The
+// error that survives is the old sum's mass share after the jump,
+// s/(s + e^J), so the contribution is J*s/(s+e^J)*u, maximized where
+// s = e^J(J-1) — which takes ~e^J terms to build. Hence: a plateau of N
+// terms to grow s, then one step of J.
+//
+// The normalization matters. With the plateau at 0 the total is ~e^J and
+// |log|S||*u pays for the jump on its own, hiding the mechanism. Shifting so
+// the total is 1.0 removes that cover and leaves the flat (3k+4)*u budget.
+static std::vector<double> family_plateau_step(std::size_t N, double J) {
+  const double shift = -std::log(static_cast<double>(N) + std::exp(J));
+  std::vector<double> logs(N, shift);
+  logs.push_back(shift + J);
+  return logs;
+}
+
+// Family E — n equal terms at L = -log(n). The cleanest maximizer of the
+// mechanism the plateau family exposed, and the one that isolates it:
+//
+//   net = n exactly (each scaled term is exp(0) = 1, and integer adds below
+//   2^53 are exact), so there is NO summation error at all;
+//   m_log = -log(n), and log(net) = +log(n), so the final reduction is a
+//   near-total cancellation and |log|S|| = 0;
+//   k = 0, D = 0, cond = 1, so the entire stated budget is 4u.
+//
+// Everything that remains is the rounding of log(net) and m_log, each of
+// absolute size |log n|*u. The stated contract charges for neither, because
+// it charges |log|S||*u and |log|S|| is zero here by construction.
+static std::vector<double> family_equal_normalized(std::size_t n) {
+  return std::vector<double>(n, -std::log(static_cast<double>(n)));
+}
+
+static std::vector<log_value> to_positive_terms(const std::vector<double>& logs) {
+  std::vector<log_value> terms;
+  terms.reserve(logs.size());
+  for (double L : logs) {
+    log_value v;
+    v.sign = 1.0;
+    v.log_abs = L;
+    terms.push_back(v);
+  }
+  return terms;
+}
+
 static void report(const char* label, const verdict& v) {
-  std::printf("  %-40s %8zu %5zu %8.1e %6.1f %6.1f %9.2e %7.2f %7.2f\n", label,
-              v.n, v.k, v.cond, v.depth, v.outmag, v.observed, v.ratio,
-              v.ratio_fixed);
+  std::printf("  %-38s %8zu %5zu %6.1f %6.1f %7.1f %9.2e %6.2f %6.2f %6.2f\n",
+              label, v.n, v.k, v.depth, v.outmag, v.lognet, v.observed,
+              v.ratio_fixed, v.ratio_repr, v.ratio_fixed2);
 }
 
 int main() {
+  // The reference judges every claim below, so it is checked first, by
+  // identities needing no external constant (dd_exp.h). A search reporting
+  // against a broken reference is worse than no search.
+  {
+    const double dev = dd_exp_selftest();
+    std::printf("reference selftest: worst identity deviation %.3e (%.2e u)\n",
+                dev, dev / U);
+    if (!(dev < 1e-25)) {
+      std::printf("FAIL: dd_exp reference does not satisfy its identities\n");
+      return 1;
+    }
+  }
+
   std::printf("adversarial search against rp_accum's error contract\n");
   std::printf("  stated:    cond*(3k+4)*u\n");
   std::printf("  corrected: cond*(3k+4+D)*u + |log|S||*u   "
@@ -302,7 +439,7 @@ int main() {
   std::printf("  %-40s %8s %5s %8s %6s %6s %9s %7s %7s\n", "family", "n", "k",
               "cond", "D", "|logS|", "observed", "stated", "fixed");
 
-  verdict worst, worst_fixed;
+  verdict worst, worst_fixed, worst_fixed2;
   const char* worst_label = "(none)";
   static char worst_buf[96];
 
@@ -314,6 +451,7 @@ int main() {
       worst_label = worst_buf;
     }
     if (v.ratio_fixed > worst_fixed.ratio_fixed) worst_fixed = v;
+    if (v.ratio_fixed2 > worst_fixed2.ratio_fixed2) worst_fixed2 = v;
   };
 
   // --- Family A: coherent argument rounding in a single-depth cluster ------
@@ -348,6 +486,38 @@ int main() {
     consider(label, evaluate(terms));
   }
 
+  // --- Family C2: plateau then step, normalized -----------------------------
+  // rp_accum is the accumulator with something to lose here. It is Neumaier
+  // compensated, so it carries no n*u term to absorb a rescale's argument
+  // rounding: at k=1, cond=1 and |log|S|| ~ 0 its entire budget is a flat 7u.
+  for (std::size_t N : {std::size_t(1000), std::size_t(100000)}) {
+    for (double J : {2.0, 6.0, 10.0, 14.0}) {
+      char label[96];
+      std::snprintf(label, sizeof label, "C2 plateau N=%zu J=%.0f", N, J);
+      consider(label, evaluate(to_positive_terms(family_plateau_step(N, J))));
+    }
+  }
+
+  // --- Family E: the reduction's cancellation, isolated --------------------
+  // Swept, not sampled. The error here is the rounding of log(net) and of the
+  // final add, and whether a given n rounds badly is luck; a handful of round
+  // n values finds a fraction of the worst case. 400 sizes, geometric.
+  {
+    verdict e_worst;
+    std::size_t e_at = 0;
+    for (int i = 0; i < 400; ++i) {
+      const double t = static_cast<double>(i) / 399.0;
+      const std::size_t n =
+          static_cast<std::size_t>(std::llround(std::pow(200000.0, t))) + 1;
+      const verdict v = evaluate(to_positive_terms(family_equal_normalized(n)));
+      if (v.ratio_fixed > e_worst.ratio_fixed) { e_worst = v; e_at = n; }
+    }
+    char label[96];
+    std::snprintf(label, sizeof label, "E equal-normalized (worst of 400, n=%zu)",
+                  e_at);
+    consider(label, e_worst);
+  }
+
   // --- Family D: blind random sweep, scored against BOTH contracts --------
   std::mt19937_64 rng(0xB0DEADULL);
   verdict d_worst_stated, d_worst_fixed;
@@ -378,7 +548,7 @@ int main() {
   std::printf("  %-40s %8s %5s %8s %6s %6s %9s %7s %7s\n", "family", "n", "k",
               "cond", "D", "|logS|", "observed", "stated", "fixed");
 
-  verdict pworst, pworst_fixed;
+  verdict pworst, pworst_fixed, pworst_fixed2;
   const char* pworst_label = "(none)";
   static char pworst_buf[96];
   auto pconsider = [&](const char* label, const verdict& v) {
@@ -389,6 +559,7 @@ int main() {
       pworst_label = pworst_buf;
     }
     if (v.ratio_fixed > pworst_fixed.ratio_fixed) pworst_fixed = v;
+    if (v.ratio_fixed2 > pworst_fixed2.ratio_fixed2) pworst_fixed2 = v;
   };
 
   const double peaks[] = {690.0, 300.0, 50.0, 1.0};
@@ -402,6 +573,27 @@ int main() {
       char label[96];
       std::snprintf(label, sizeof label, "P2 depth=%.1f N=%zu", d, N);
       pconsider(label, evaluate_pos(pos_family_depth_cluster(d, N)));
+    }
+  }
+
+  // P4 — ascending, the k-maximizing input this file never had. The jump is
+  // capped so the whole ascent fits inside exp()'s range.
+  for (std::size_t n : {std::size_t(64), std::size_t(4096)}) {
+    for (int j = 1; j <= 12; ++j) {
+      const double jmax = 1370.0 / static_cast<double>(n - 1);
+      const double jump = jmax * static_cast<double>(j) / 12.0;
+      char label[96];
+      std::snprintf(label, sizeof label, "P4 ascending n=%zu jump=%.3f", n, jump);
+      pconsider(label, evaluate_pos(pos_family_ascending(n, jump, -685.0)));
+    }
+  }
+
+  // P5 — plateau then step, normalized so |log|S|| cannot pay for the jump.
+  for (std::size_t N : {std::size_t(1000), std::size_t(100000)}) {
+    for (double J : {2.0, 6.0, 10.0, 14.0}) {
+      char label[96];
+      std::snprintf(label, sizeof label, "P5 plateau N=%zu J=%.0f", N, J);
+      pconsider(label, evaluate_pos(family_plateau_step(N, J)));
     }
   }
 
@@ -491,10 +683,20 @@ int main() {
               rt_worst, rt_worst / U, rt_worst);
   std::printf("\n  worst log_mul rounding at log|product| = %.0f; "
               "worst round trip at log|x| = %.0f\n", mul_at, rt_at);
-  // Each contract claims observed <= bound for every input. Anything above 1
-  // (clear of the ~1.3 reference floor documented at the top) is a refutation.
-  NC_CHECK(worst_fixed.ratio_fixed <= 1.0);
-  NC_CHECK(pworst_fixed.ratio_fixed <= 1.0);
+  // Each contract claims observed <= bound for every input. The reference
+  // resolves to ~1e-14 u, so anything above 1 is a refutation outright.
+  //
+  // ratio_fixed is the 2026-08-15 form, cond*(3k+4+D)*u + |log|S||*u. It is
+  // REFUTED, at 1.99x, by family E: n equal positive terms at L = -log(n),
+  // where cond = 1, k = 0, D = 0 and |log|S|| = 0, so the whole budget is 4u.
+  // The reduction m_log + log(net) is a near-total cancellation there, and
+  // log(net) rounds at ITS OWN magnitude, |log|net|| = log n = 12.0, which
+  // |log|S|| does not see. Asserting the refuted form here would be asserting
+  // something known false, so the assertion is on the corrected form.
+  NC_CHECK(worst_fixed2.ratio_fixed2 <= 1.0);
+  NC_CHECK(pworst_fixed2.ratio_fixed2 <= 1.0);
+  // ...and the refutation is pinned, so nobody restores the old form quietly.
+  NC_CHECK(worst_fixed.ratio_fixed > 1.0);
   // The corrected pairwise claim: error <= u * |result in log space|.
   NC_CHECK(mul_bound_holds);
   NC_CHECK(lse_bound_holds);

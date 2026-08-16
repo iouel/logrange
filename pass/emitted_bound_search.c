@@ -30,7 +30,15 @@
  * CANDIDATE BOUND, inherited from pos_accum's (n + 3k + 3 + D)*u + |log|S||*u
  * with one term added for the final exp() that pos_accum does not perform:
  *
- *     rel err  <=  (n + 3k + 4 + D)*u  +  |log|S||*u
+ *     rel err  <=  (n + 3k + 4 + D)*u  +  (|log|S|| + |log|net||)*u
+ *
+ * net = S/exp(m) is the scaled sum the reduction takes the log of. That
+ * second reduction term was added 2026-08-16, after it refuted rp_accum's
+ * contract at 1.99x: m + log(net) has TWO addends and each rounds at its own
+ * magnitude, while |log|S|| charges only the addition's result. It does not
+ * bind here, because |log|net|| <= log n and the n*u term dominates log n,
+ * and it is carried so the statement is correct rather than unfalsified.
+ * Family E7 measures it rather than assuming it.
  *
  * SCOPE. The emitted code returns a linear double, so the result must be a
  * normal double: |log|S|| < 709.78 caps the reduction term near 710u, a
@@ -42,7 +50,10 @@
  * the reference carries ~2^-64 relative, about 0.001u. Ratios below ~0.01
  * are not evidence. Ratios reported here are far above that.
  *
- * RESULT, 2026-08-16. Held across 6985 trials, worst observed/bound 0.99.
+ * RESULT, 2026-08-16. Held across 7285 trials, worst observed/bound 0.99.
+ * Family E7 is the one that refuted the runtime's rp_accum contract at 1.99x
+ * on the same day; here it reaches 0.99 at worst like everything else, which
+ * confirms rather than assumes that the n*u term absorbs it.
  * The binding case is E2/E6: a large cluster one depth below a dominant
  * term, where every add of the running sum rounds the same direction and the
  * observed error is essentially the classical (n-1)u of uncompensated
@@ -86,6 +97,7 @@ struct verdict {
   double depth, outmag;
   double obs_lin;    /* relative error of the emitted linear result */
   double obs_log;    /* absolute error of the exported log form, = relative */
+  double lognet;     /* |log|net||, the reduction's other addend */
   double bound_nored;/* (n + 3k + 4 + D)*u, the plausible-but-wrong form */
   double bound_full; /* the candidate, with the reduction term */
   double ratio_nored, ratio_full, ratio_log;
@@ -122,6 +134,8 @@ static struct verdict evaluate(const double *x, int n) {
   }
 
   const long double truth = ref_sum(x, n);
+  double peak = -INFINITY;
+  for (int i = 0; i < n; ++i) if (x[i] > peak) peak = x[i];
   v.n      = n;
   v.k      = k;
   v.depth  = (double)(wdepth / wsum);
@@ -144,12 +158,17 @@ static struct verdict evaluate(const double *x, int n) {
   const double got = softmax_denom_rw(x, n);
   const double lg  = __logrange_logsum;
 
+  /* |log|net||: net = S/exp(peak) is what the reduction takes the log of.
+   * Added 2026-08-16 after this term refuted rp_accum's contract at 1.99x.
+   * It does not bind here (|log|net|| <= log n, and the n*u term dominates),
+   * and is carried so the statement is correct rather than unfalsified. */
+  v.lognet = (double)fabsl(logl(truth) - (long double)peak);
   v.obs_lin = (double)(fabsl((long double)got - truth) / truth);
   /* Absolute error in log space is relative error in linear space. */
   v.obs_log = (double)fabsl((long double)lg - logl(truth));
 
   v.bound_nored = ((double)n + 3.0 * (double)k + 4.0 + v.depth) * U;
-  v.bound_full  = v.bound_nored + v.outmag * U;
+  v.bound_full  = v.bound_nored + (v.outmag + v.lognet) * U;
   v.ratio_nored = v.obs_lin / v.bound_nored;
   v.ratio_full  = v.obs_lin / v.bound_full;
   v.ratio_log   = v.obs_log / v.bound_full;
@@ -218,6 +237,16 @@ static int fam_random(void) {
         buf[i] = buf[i - 1];
         buf[i - 1] = t;
       }
+  return n;
+}
+
+/* E7 - n equal terms at L = -log(n): net = n exactly, |log|S|| = 0, k = 0,
+ * D = 0. This is the family that refuted rp_accum's contract, run here to
+ * confirm the n*u term covers it for the emitted code rather than assuming
+ * so. */
+static int fam_equal_normalized(int n) {
+  const double L = -log((double)n);
+  for (int i = 0; i < n; ++i) buf[i] = L;
   return n;
 }
 
@@ -352,6 +381,15 @@ int main(void) {
     printf("  N=%-6d 501 depths within +-0.5, worst full ratio now %.3f\n", N,
            worst_full);
   }
+
+  printf("-- E7 reduction cancellation (the family that broke rp_accum) --\n");
+  for (int i = 0; i < 300; ++i) {
+    const int n = (int)(pow(20000.0, (double)i / 299.0)) + 1;
+    char lab[128];
+    snprintf(lab, sizeof lab, "equal-normalized n=%d", n);
+    run(lab, fam_equal_normalized(n), 0);
+  }
+  printf("  300 sizes, worst full ratio now %.2f\n", worst_full);
 
   printf("\ntrials=%d skipped(out of double range)=%d violations=%d\n", trials,
          skipped, violations);
