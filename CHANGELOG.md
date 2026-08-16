@@ -59,6 +59,44 @@ Bounds that moved in `test_accuracy` (observed values did not change):
 n=10⁶ positive sum 7.4e-15 → 1.0e-14; heavy cancellation 1.6e-5 → 1.6e-5;
 shuffled 5.7e-6 → 6.4e-6.
 
+**Added: an error contract for the code the rewrite pass emits. Tooling
+only.**
+
+The runtime shipped three machine-checked bounds; the emitted streaming state
+had one measurement, 1.37e-15 on one benign case, and no bound. Now:
+
+    rel err  <=  (n + 3k + 4 + D)*u  +  |log|S||*u
+
+Normative in `pass/ELIGIBILITY.md`. `pass/emitted_bound_search.c` searches it
+against the object the pass actually rewrote, not against a replica, and
+`run_pass_test.sh` fails on any violation. Held across 6985 trials, worst
+observed/bound 0.99. Gate negative-tested by halving the bound: 1261
+violations, worst 1.98.
+
+- **The derivation is `pos_accum`'s plus `1u` for the final `exp`, and the
+  inheritance is conditional.** The emitted form is branchless and multiplies
+  every iteration where `pos_accum` multiplies only on a rescale. It matches
+  term for term only because `exp(0)` is exactly `1.0` and `s*1.0` is exact.
+  A merely-1-ulp `exp(0)` would cost `n*u` the runtime never pays. Both are
+  asserted at startup.
+- **The binding case is not the one predicted.** `3k*u` charges nothing for
+  the size of a reference jump, the omission that refuted `rp_accum`, but
+  ascending families reach only 0.23: after a jump of `J` the old sum's share
+  of the total is `s/(s + e^J)`, so the error that survives is a fraction of
+  a `u`. The tight case is a one-depth cluster where the running sum's
+  roundings align, giving the classical `(n-1)u` of uncompensated summation.
+  The ratio plateaus at 0.990 across N = 2048 through 16384.
+- **Two scope conditions the runtime's contract does not carry.** The emitted
+  code returns a linear double, so `|log|S||` cannot exceed 709.78 and the
+  reduction term is capped near `710u`. And the first-order form requires `n`
+  under ~2.1e8, derived from where recursive summation's second-order term
+  eats the constant.
+- **The reduction term is measured, not inherited.** Each run also scores the
+  form without it: exceeded on 321 of 6985 trials at up to 39x.
+
+Shipping-posture condition 4 closes. Four of six are now closed; shape
+coverage and the dead original chain remain.
+
 **Added: `matcher/logrange-scan.sh`, one command from a build to a report.
 Tooling only.**
 

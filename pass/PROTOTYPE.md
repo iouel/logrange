@@ -201,9 +201,11 @@ Two categories, and the distinction is the safety argument:
 
 - **Finite rounding differences: permitted and intentional.** The
   accumulation algorithm changes, so finite results are not bitwise
-  identical. Measured 1.37e-15 relative on the benign case (bound 1e-12).
-  This is what the reassociation grant pays for, and the only thing it pays
-  for.
+  identical. Measured 1.37e-15 relative on the benign case (test tolerance
+  1e-12), and bounded since 2026-08-16 by
+  `(n + 3k + 4 + D)*u + |log|S||*u` (ELIGIBILITY.md, "Error contract for the
+  emitted code"). This is what the reassociation grant pays for, and the only
+  thing it pays for.
 - **Special-value differences: forbidden.** NaN, `+inf`, `-inf`, signed
   zero and zero-trip behaviour are preserved exactly. These are not
   tolerances; a difference here is a bug. The `oeq`-guarded exponent
@@ -433,6 +435,55 @@ results). Fixed by redirecting users strictly after the split. The script
 now structurally asserts the replacement value is consumed, and the benign
 case shows 1.37e-15.
 
+## The emitted code's error bound
+
+Stated normatively in ELIGIBILITY.md. This is how it was arrived at and what
+the search found.
+
+**Derivation is inheritance, and that had to be checked rather than assumed.**
+Term for term the emitted state machine performs `pos_accum`'s arithmetic.
+The guarded form looks like it does strictly more work: `s*exp(dm)` runs on
+every iteration where `pos_accum` multiplies only on a rescale. It costs
+nothing, because `t <= m` makes `dm` exactly `0`, `exp(0)` is exactly `1.0`,
+and `s*1.0` is exact. So the accumulate step rounds once, as the runtime's
+does. That makes two IEEE exactness facts load-bearing for the emitted code
+that the runtime never leans on, and `emitted_bound_search.c` asserts both at
+startup instead of trusting them. Under a merely-1-ulp `exp(0)` the branchless
+form would pay `n*u` that `pos_accum` does not.
+
+What the emitted code adds is the final `exp(m + log(s))`, one rounding:
+`(n + 3k + 3 + D)*u` becomes `(n + 3k + 4 + D)*u`, reduction term unchanged.
+
+**What the search found.** 6985 trials, worst observed/bound 0.99.
+
+- The binding family is a large cluster one depth below a dominant term. Every
+  add of the running sum rounds the same direction, so the observed error is
+  essentially the classical `(n-1)u` of uncompensated summation against a
+  bound charging `n*u`. The ratio approaches 1 from below and *stops climbing*
+  past N=2048: refinement at 4096, 8192 and 16384 terms all report 0.990. That
+  plateau is the mechanism confirming itself, not the search running out of
+  ideas.
+- The expected refutation path did not materialize. `3k*u` charges nothing for
+  the *size* of a reference jump, and each rescale forms `exp(m - t)` whose
+  argument rounds to `u*J` for a jump of `J` log-units — the same omission
+  that refuted `rp_accum`. Ascending families reach only 0.23. The reason is
+  mass: after a jump of `J` the old sum's share of the total is `s/(s + e^J)`,
+  so the surviving error is `J*s/(s + e^J)*u`, maximized near `J ~ ln n` and
+  worth a fraction of a `u` against a `3u` per-rescale budget.
+- **The reduction term is required here by measurement, not by analogy.**
+  Every run also scores the form without it. It is exceeded on 321 of the 6985
+  trials, worst 39x.
+
+**One limit is derived rather than searched.** Recursive summation's classical
+`(n-1)u/(1-(n-1)u)` exceeds the `(n+4)u` charged here once `(n-1)(n+4)u > 5`,
+i.e. `n > ~2.1e8`. The search reaches n=16385, four orders below that. This is
+a first-order bound and that is the `n` at which "first-order" begins to bite.
+
+**What this does not close.** The bound covers the one shape the pass rewrites.
+`propagate=div` moves the log form into a consumer and carries its own error,
+measured at 1.33x-13.9x behind linear re-conversion at one conversion and
+unmeasured over chains; nothing here bounds a chain.
+
 ## Limitations
 
 - **Single shape.** Plain `fadd` + `llvm.exp` only: no `fmuladd`, no
@@ -473,16 +524,17 @@ case shows 1.37e-15.
   does not delete. The orphaned `phi`/`fadd`/`exp` chain feeds only itself
   and is left for later DCE/ADCE. Harmless: it computes the original
   0.0/NaN alongside.
-- **Accuracy is measured, not bounded.** The runtime header ships formal
-  error bounds (intent step 6); the emitted streaming state has the same
-  structure as `pos_accum`+rescale but no stated bound of its own yet.
-  Observed: 1.4e-15 relative on the benign case.
+- ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted
+  code now carries `(n + 3k + 4 + D)*u + |log|S||*u`, stated normatively in
+  ELIGIBILITY.md and searched by `emitted_bound_search.c` on every gate run.
+  See below.
 
 ## Files
 
 | file | role |
 |---|---|
 | `ELIGIBILITY.md` | **normative** contract: requirements and guarantees |
+| `emitted_bound_search.c` | adversarial search against the emitted code's error bound |
 | `LogRewritePass.cpp` | the plugin (`log-rewrite`, param `<force>`) |
 | `CMakeLists.txt` | standalone plugin build, same pattern as `matcher/` |
 | `test_softmax.c` | one-file kernel + harness, compiled three ways |
