@@ -71,8 +71,9 @@ rules, and `matcher/RESULTS.md` reports against them.
 Library: `cmake -S . -B build`, `cmake --build build --config Release`,
 `ctest --test-dir build -C Release`. Five suites.
 
-Matcher and pass: WSL, LLVM 21. `matcher/run_study.sh selftest | coverage |
-rejects`, and `bash pass/run_pass_test.sh`. Both are gated in CI by
+Matcher and pass: WSL, LLVM 21, install in `SETUP.md`. `matcher/run_study.sh
+selftest | coverage | rejects`, `bash matcher/test_scan.sh`, and `bash
+pass/run_pass_test.sh`. All four are gated in CI by
 `.github/workflows/llvm-tooling.yml`. WSL `/tmp` does not persist between
 separate `wsl.exe` invocations; keep state under `~/logrange-pass` or
 `~/logrange-study` and do multi-step work in one invocation.

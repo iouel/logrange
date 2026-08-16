@@ -276,10 +276,31 @@ tooling tier, which ships as beta with its gaps stated.
       constants kept as belt and braces. Added NaN-mixed-with-infinities
       (which pins the ordering: NaN beats `+inf`, matching the linear loop)
       and a zero-trip case asserting the export global is *not* written.
-- [ ] **Diagnostic ergonomics.** One-command entry point (point it at a
-      compile_commands.json or a build dir) instead of the manual
-      cc-bc.sh/run_study.sh two-step; package the three tools' WSL/LLVM-21
-      requirement clearly.
+- [x] **Diagnostic ergonomics.** Done 2026-08-16. `matcher/logrange-scan.sh`
+      takes a build directory or a `compile_commands.json` and prints the
+      report: preflight, plugin build, per-unit bitcode at the study's flags,
+      matcher, `diagnose.sh`. The target is never built and need not be
+      buildable by clang. `matcher/test_scan.sh` is gate 4 in CI, 12 cases,
+      and was negative-tested by three mutations (drop the compile-failure
+      counter, drop entry dedup, grade LOW as HIGH), each caught by the
+      intended assertion. WSL/LLVM-21 packaging is `SETUP.md`, with
+      `logrange-scan.sh --check` as the machine-readable half.
+      *Three failure modes the gate exists for, all found by building it:*
+      a unit that fails to compile would have produced a short report that
+      reads as a clean one (now exit 2, `--allow-compile-failures` to
+      override); one source listed by two cmake targets would have been
+      counted twice; and a unit clang rejects over a gcc-only flag it did
+      not need would have been dropped silently (now retried with
+      preprocessor and language flags only, and the retry is counted).
+      *Found by pointing it at this repository:* the report printed
+      `flagged: exp-sum`, `diagnose.sh`'s passthrough for a reason token it
+      has no sentence for. The matcher started emitting `exp-sum` on
+      2026-08-15 and the renderer was never taught it.
+      `testdata/fixture-raw.txt` said it exercised "every report branch" and
+      had no runner, which is the third fixture in this repo found checking
+      nothing. Sentence added; case 11 now extracts the token list from
+      `SumOfProductsMatcher.cpp` and fails when the fixture or the renderer
+      misses one.
 - [ ] **Pass shape coverage.** fmuladd spines and fsub accumulators match in
       the *matcher* but the *pass* only rewrites plain `fadd(phi, exp(t))`.
       Extend or document per shape.
