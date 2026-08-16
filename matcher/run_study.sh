@@ -113,6 +113,52 @@ rejects)
   printf '  none on the update (phi/other spine) %s\n' "$(grep -vcE 'store-of-spine|other-user' "$cu" || true)"
   [ "$bad" = "0" ] || { echo "FAIL: interleaved output detected"; exit 1; }
   ;;
+weights)
+  # Weight census, backing the scope decision for the pass's shape coverage.
+  # The mixture spine w * exp(t) can only be rewritten when the weight's
+  # magnitude is provably safe: the emitted state accumulates
+  # sum(w_i * exp(t_i - m)), which reaches sum|w_i| and can overflow where the
+  # linear original does not. Before implementing that, count how often the
+  # spine occurs at all.
+  build_plugin
+  shift || true
+  targets="${*:-darknet gsl libsvm}"
+  all="$WORK/raw-weights-all.txt"
+  : > "$all"
+  for name in $targets; do
+    bcdir="$WORK/bc-$name"
+    [ -d "$bcdir" ] || { echo "no harvested bitcode at $bcdir; skipping" >&2; continue; }
+    scan "$bcdir" "$WORK/raw-weights-$name.txt" 'sop-matcher<weights>'
+    cat "$WORK/raw-weights-$name.txt" >> "$all"
+  done
+  echo
+  echo "== weight census: $targets =="
+  printf 'hits                                   %s
+' "$(grep -c '^HIT,' "$all" || true)"
+  printf '  of those, transcendental             %s
+' "$(grep -c '^HIT,.*,transcendental,' "$all" || true)"
+  printf 'w * exp(t) multiplies found            %s
+' "$(grep -c '^WEIGHT,' "$all" || true)"
+  echo "kinds:"
+  # `|| true`: under `set -euo pipefail` a grep with no matches kills the
+  # script, which is exactly the case this census expects to hit.
+  { grep '^WEIGHT,' "$all" || true; } | cut -d, -f2 | sort | uniq -c     | sort -rn | sed 's/^/  /'
+  # A census that silently reports 0 forever looks exactly like a census that
+  # found nothing. coverage.c's `mixture` IS the w * exp(t) spine, so scanning
+  # it proves the probe fires before the corpus zero above is believed.
+  mkdir -p "$WORK/bc-coverage"
+  "$CLANG" -O1 -g -fno-vectorize -fno-slp-vectorize -fno-unroll-loops     -emit-llvm -c "$HERE/coverage.c" -o "$WORK/bc-coverage/coverage.bc"
+  scan "$WORK/bc-coverage" "$WORK/raw-weights-coverage.txt" 'sop-matcher<weights>'
+  ctrl=$(grep -c '^WEIGHT,' "$WORK/raw-weights-coverage.txt" || true)
+  echo
+  echo "positive control (coverage.c mixture): $ctrl WEIGHT record(s)"
+  if [ "$ctrl" -lt 1 ]; then
+    echo "FAIL: the census found nothing in a file that contains the shape."
+    echo "The corpus zero above is not evidence; the probe is broken."
+    exit 1
+  fi
+  echo "WEIGHTS OK (probe fires; corpus count above is a measurement)"
+  ;;
 coverage)
   # Standing check for the coverage claims in RESULTS.md ("Coverage against
   # the shapes this project names"). selftest.c guards the matcher's labeled
