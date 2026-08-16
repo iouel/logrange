@@ -11,7 +11,30 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
-Nothing yet.
+**Documented: `add_scaled`'s scaling cost, which no contract term named.**
+
+Both accumulators implement `add_scaled(v, c)` as
+`add_log(v.log_abs + std::log(c))`. `std::log(c)` is computed, so the term
+enters carrying `ulp(|log c|)/2 <= |log c|*u` absolute in log space, a
+relative error of the same size on that term. Measured by sweep: 8u, 64u,
+256u, 512u at `|log c|` = 10, 100, 400, 690, exactly `ulp(|log c|)/2` each
+time. At the top of the range that is 128x the 4u a single term is budgeted.
+
+**Stated at `add_scaled`, not folded into the accumulator bound.** A caller
+writing `add_log(v.log_abs + std::log(c))` by hand pays the same, so this is
+the cost of entering log space at that scale rather than of accumulating.
+The contract continues to cover what the accumulator does with the terms it
+is given. The claim `(|log c| + 4)*u` for a single scaled term is searched
+and asserted by `bound_search` family F, worst 0.74.
+
+The representation floor at `log_value` does not cover this. That floor is
+`|log|x||*u` for the value being represented; here the scaled term's own
+magnitude can be ~0 while the injected error is 512u, because it is set by an
+INPUT's magnitude. Third instance of the class that produced `D` and then
+`|log|net||`, and the last site in the header with that shape.
+
+Caller guidance, measured: when `c*|x|` is representable, forming it and
+using `add()` costs 1.9u independent of scale, against 512u here.
 
 ## 0.3.0 — 2026-08-16
 

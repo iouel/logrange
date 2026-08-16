@@ -683,6 +683,57 @@ int main() {
               rt_worst, rt_worst / U, rt_worst);
   std::printf("\n  worst log_mul rounding at log|product| = %.0f; "
               "worst round trip at log|x| = %.0f\n", mul_at, rt_at);
+
+  // --- Family F: add_scaled's log(c) --------------------------------------
+  //
+  // add_scaled(v, c) forms v.log_abs + log(c), so the term enters carrying
+  // log(c)'s rounding: up to ulp(|log c|)/2 <= |log c|*u absolute in log
+  // space, which is a relative error of the same size on the term. The
+  // accumulator's own contract does not cover it and is not meant to; the
+  // claim under test is the one stated at rp_accum::add_scaled:
+  //
+  //     relative error of a single scaled term  <=  (|log c| + 4) * u
+  //
+  // c MUST NOT be built as exp(-m). exp and log are self-consistent round
+  // trips, so log(exp(-m)) lands within u of the double -m, and at
+  // |log c| ~ 690 that is 1e-3 of an ulp: the rounding this family exists to
+  // measure is hidden entirely and the sweep reports ~1u. Two versions of
+  // this measurement did exactly that before the mantissa was made arbitrary.
+  {
+    std::printf("\nadd_scaled scaling cost (claim: <= (|log c| + 4)*u)\n");
+    std::printf("  %-10s %12s %12s %10s\n", "|log c|", "worst", "bound",
+                "ratio");
+    std::mt19937_64 frng(0x5CA1EDULL);
+    std::uniform_real_distribution<double> mant(0.0, 1.0);
+    double f_worst_ratio = 0.0;
+    for (double mag : {10.0, 100.0, 400.0, 690.0}) {
+      double f_worst = 0.0, f_bound = 1.0;
+      const int E = static_cast<int>(std::nearbyint(-mag / std::log(2.0)));
+      for (int i = 0; i < 20000; ++i) {
+        const double c = std::ldexp(1.0 + mant(frng), E);
+        const double L = -std::log(c);
+        if (!(L > 0.0) || L > 709.0) continue;
+        const dd exact = dd_mul_d(dd_exp_scaled(L, 0), c);
+        if (!(dd_to_double(exact) > 0.0)) continue;
+        log_value v; v.sign = 1.0; v.log_abs = L;
+        pos_accum a; a.add_scaled(v, c);
+        const double rel = std::fabs(
+            dd_to_double(dd_sub(dd_exp_scaled(a.to_log_value().log_abs, 0),
+                                exact)) / dd_to_double(exact));
+        const double bound = (std::fabs(std::log(c)) + 4.0) * U;
+        if (rel / bound > f_worst / f_bound) { f_worst = rel; f_bound = bound; }
+      }
+      std::printf("  %-10.0f %12.3e %12.3e %10.2f\n", mag, f_worst, f_bound,
+                  f_worst / f_bound);
+      if (f_worst / f_bound > f_worst_ratio) f_worst_ratio = f_worst / f_bound;
+    }
+    std::printf("  worst %.2f; the accumulator's own 4u budget is exceeded "
+                "by %.0fx at |log c| ~ 690\n", f_worst_ratio, 512.0 / 4.0);
+    NC_CHECK(f_worst_ratio <= 1.0);
+    // And the cost is real, so nobody deletes the note as theoretical.
+    NC_CHECK(f_worst_ratio > 0.1);
+  }
+
   // Each contract claims observed <= bound for every input. The reference
   // resolves to ~1e-14 u, so anything above 1 is a refutation outright.
   //
