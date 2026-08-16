@@ -338,6 +338,47 @@ tooling tier, which ships as beta with its gaps stated.
       n=16385, four orders below it.
       *The reduction term is required here by measurement.* Every run also
       scores the form without it: exceeded on 321 of 6985 trials, worst 39x.
+- [ ] **The rescale argument rounding is undocumented, and whether it is
+      covered is undetermined for `rp_accum`.** Found 2026-08-16 while
+      deriving the emitted code's bound, which needed the same reasoning.
+      *The documentation defect is certain.* `log_math.h` states "Each
+      rescale event multiplies the standing sums by a factor carrying <= 2u
+      (exp) + u (multiply)". The rescale's `exp` argument is `m_log -
+      log_abs`, of magnitude `J`, so `fl()` of it is off by up to `u*J` and
+      the factor carries `u*J + u`, not `2u`. This is the **identical
+      omission that refuted the per-term accounting** (charging `2u` for a
+      term's `exp` while ignoring its argument rounding, which became `D`),
+      still present in the sibling clause about rescales.
+      *Why `pos_accum` is safe, and why that argument does not transfer.*
+      The surviving share of a rescale's error is the old sum's mass share
+      after the jump, `s/(s + e^J)`, so the contribution is
+      `J*s/(s+e^J)*u`, maximized where `s = e^J(J-1)` at `(J-1)*u`. Building
+      `s` that large takes `~e^J` terms, so `J <~ ln n` and `pos_accum`'s
+      `n*u` term swamps it. Measured: a plateau-then-step family reaches
+      only **0.02** of `pos_accum`'s bound at n up to 1e6.
+      **`rp_accum` is Neumaier-compensated and therefore has no `n*u` term to
+      absorb it.** Its budget at `k=1, cond=1` is a flat `7u`.
+      *What is not established.* The same family, shifted so the total is
+      ~1.0 and the `|log|S||*u` term cannot pay for the jump, reaches
+      **1.14** of `rp_accum`'s bound at N=1e5, J=2: 8u observed against 7u.
+      That is inside `bound_search.cpp`'s own stated reference floor, ~1u,
+      because the dd reference sums `exp(L_i)` computed in plain double. It
+      is also not the hypothesized mechanism, which would give 2u at J=2.
+      **So this is neither a refutation nor a clean pass; the instrument
+      cannot resolve it.**
+      *The way to settle it, and it is cheap.* Give `bound_search.cpp` the
+      reference `pass/emitted_bound_search.c` already uses: `expl()` at a
+      64-bit mantissa, compensated. Positive-term relative errors average
+      rather than accumulate, putting the floor near `0.001u` instead of
+      `1u`. Then add the two families `pos_accum` has never been searched
+      with: ascending (`k = n-1`) and plateau-then-step. Today `pos_accum`
+      is searched by magnitude, depth-cluster and random only, and random
+      ordering leaves `k` at its incidental `O(ln n)`, so the `3k*u` term
+      has never been searched at the input that maximizes it.
+      *Consequence either way:* if the bounds hold at the finer floor, the
+      published worst-observed figures (0.85 and 0.79) move slightly and the
+      derivation text still needs the `u*J` correction. If one exceeds 1.0
+      clear of the floor, that is a fourth refuted contract.
 - [ ] **Pass shape coverage.** fmuladd spines and fsub accumulators match in
       the *matcher* but the *pass* only rewrites plain `fadd(phi, exp(t))`.
       Extend or document per shape.
