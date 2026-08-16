@@ -46,12 +46,16 @@ RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dsoftmax_full=softmax_full_orig
             -Dsoftmax_add=softmax_add_orig -Dsoftmax_sum_div=softmax_sum_div_orig \
             -Dplain_sum=plain_sum_orig -Ddot_sum=dot_sum_orig \
             -Dinvariant_exp_sum=invariant_exp_sum_orig \
-            -Dweighted_sum=weighted_sum_orig"
+            -Dweighted_sum=weighted_sum_orig \
+            -Dconst_weight_sum=const_weight_sum_orig \
+            -Dexpf_widened=expf_widened_orig"
 RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
            -Dsoftmax_add=softmax_add_rw -Dsoftmax_sum_div=softmax_sum_div_rw \
            -Dplain_sum=plain_sum_rw -Ddot_sum=dot_sum_rw \
            -Dinvariant_exp_sum=invariant_exp_sum_rw \
-           -Dweighted_sum=weighted_sum_rw"
+           -Dweighted_sum=weighted_sum_rw \
+           -Dconst_weight_sum=const_weight_sum_rw \
+           -Dexpf_widened=expf_widened_rw"
 $CLANG $KFLAGS -DKERNEL $RENAME_ORIG \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_orig.ll"
 $CLANG $KFLAGS -DKERNEL $RENAME_RW \
@@ -63,16 +67,28 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
        -S "$WORK/kernel_rw.ll" -o "$WORK/kernel_rw_opt.ll" \
        2> "$WORK/rewrite.log" || { cat "$WORK/rewrite.log"; exit 1; }
 cat "$WORK/rewrite.log"
-# Exactly FOUR rewrites: the standalone denominator plus the three new
-# consumer-shape kernels (one full softmax, two near misses). The
-# negative-control loops in the same module must still be declined.
-NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
-[ "$NREW" = "4" ] \
-  || { echo "FAIL: expected exactly 4 REWRITE lines, got $NREW"; exit 1; }
-for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw; do
+# LOWER BOUND on the rewritten set: these shapes must not stop being
+# rewritten. A regression that narrows the match would otherwise be invisible,
+# because a loop that is no longer rewritten trivially agrees with itself.
+for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw \
+          expf_widened_rw; do
   grep -q "^REWRITE,.*,$fn,HIGH,exp-chain;exp-sum$" "$WORK/rewrite.log" \
     || { echo "FAIL: rewrite missing for $fn"; exit 1; }
 done
+# UPPER BOUND, and this is the contract rather than a list: whatever the pass
+# rewrote must have a semantic assertion behind it. The set is derived from
+# the pass's own output, so a newly rewritten function cannot enter the build
+# without also entering the harness. Checked after section 4 runs the binary,
+# at the "semantic coverage" block below.
+#
+# This replaces a hardcoded "exactly 4 REWRITE lines". That count was
+# satisfiable while the pass miscompiled: relaxing the weight clause to admit
+# constant weights left the count at 4 and every other assertion green,
+# because no constant-weight kernel existed to be counted. The count pinned
+# the implementation; this pins the property.
+NREW="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
+[ "$NREW" -ge 5 ] \
+  || { echo "FAIL: expected at least 5 REWRITE lines, got $NREW"; exit 1; }
 # On the intended build flags nothing should be declined for a SAFETY reason.
 # A DECLINE-FPENV or DECLINE-ERRNO line here means -fno-math-errno or the FP
 # environment regressed.
@@ -84,8 +100,8 @@ done
 # trips it even if it carries one of the allowed tags.
 [ "$(grep -cE '^DECLINE-(FPENV|ERRNO),' "$WORK/rewrite.log" || true)" = "0" ] \
   || { echo "FAIL: unexpected safety decline on the reference build"; exit 1; }
-[ "$(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)" = "2" ] \
-  || { echo "FAIL: expected exactly 2 DECLINE lines on the reference build, got $(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)"; exit 1; }
+[ "$(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)" = "3" ] \
+  || { echo "FAIL: expected exactly 3 DECLINE lines on the reference build, got $(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)"; exit 1; }
 grep -q '^CONSUMER-DECLINE,.*,softmax_denom_rw,not-fdiv$' "$WORK/rewrite.log" \
   || { echo "FAIL: standalone denominator consumer shape was not logged"; exit 1; }
 grep -q '^CONSUMER-MATCH,.*,softmax_full_rw,fdiv-of-sum$' "$WORK/rewrite.log" \
@@ -115,6 +131,14 @@ grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-HIGH$' "$WORK/rewrite.log" \
 #     sum|w_i|, which overflows where the linear original does not.
 grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/rewrite.log" \
   || { echo "FAIL: weighted spine was not matched-and-declined on magnitude"; exit 1; }
+# (b2) A CONSTANT weight — provably positive, provably bounded — must decline
+#      too. The refusal is structural: nothing reads the weight after the
+#      clause, so a weight admitted here would be silently dropped and the
+#      result wrong by a factor of w at every magnitude. This case is the one
+#      that was missing when the suite went green against a pass that
+#      miscompiled `s += 0.5*exp(x)`.
+grep -q '^DECLINE-WEIGHT,.*,const_weight_sum_rw,unbounded-weight$' "$WORK/rewrite.log" \
+  || { echo "FAIL: constant weight was not declined"; exit 1; }
 # (c) The same two spines with the multiply NOT contracted. Whether clang
 #     emits llvm.fmuladd or fmul + fadd is -ffp-contract, a flag the pass does
 #     not control, so matching one form only would make coverage a property of
@@ -156,6 +180,46 @@ grep -q '^DECLINE-RISK,.*,softmax_sum_div_rw,HIGH,below-min-NONE$' "$WORK/gate.l
 [ "$(grep -c '^REWRITE,' "$WORK/gate.log" || true)" = "0" ] \
   || { echo "FAIL: gate declined but rewrote anyway"; exit 1; }
 echo "PASS,gate_declines_above_threshold"
+
+# --- the threshold relation, and what the gate does NOT do -----------------
+# Two thresholds the suite never exercised. Both parser branches were dead:
+# min-risk=low and min-risk=med could each have been mis-mapped to any tier
+# and nothing would have failed.
+for mr in low med; do
+  $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+         -passes="log-rewrite<force;min-risk=$mr>" \
+         -S "$WORK/kernel_rw.ll" -o /dev/null \
+         2> "$WORK/mr_$mr.log" || { cat "$WORK/mr_$mr.log"; exit 1; }
+done
+# dot_sum verdicts LOW. At min-risk=low it clears the gate and the weight
+# clause refuses it one line later; at min-risk=med the gate refuses it. The
+# two tags pin the threshold relation from both sides.
+grep -q '^DECLINE-WEIGHT,.*,dot_sum_rw,unbounded-weight$' "$WORK/mr_low.log" \
+  || { echo "FAIL: at min-risk=low, dot_sum should clear the gate and decline on weight"; exit 1; }
+grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-MED$' "$WORK/mr_med.log" \
+  || { echo "FAIL: at min-risk=med, dot_sum should be declined by the gate"; exit 1; }
+echo "PASS,threshold_relation_low_and_med"
+
+# THE GATE IS REACHABLE BUT NOT LOAD-BEARING, asserted rather than described.
+# Lowering the threshold below every verdict the pass can produce does not add
+# a single rewrite, because eligibility (an llvm.exp term) and a HIGH verdict
+# are the same predicate: every rewritable loop already verdicts HIGH, and
+# every LOW loop is weighted and refused by the weight clause regardless.
+#
+# This assertion is inverted on purpose. It encodes a LIMITATION, so it turns
+# red exactly when that limitation is fixed — when the rewritable set finally
+# exceeds the HIGH set and the gate starts refusing a real rewrite. That is
+# the event posture condition 3 is actually waiting for, and this is what will
+# announce it instead of it having to be noticed.
+if ! diff <(grep '^REWRITE,' "$WORK/rewrite.log") \
+          <(grep '^REWRITE,' "$WORK/mr_low.log") > "$WORK/gatediff.txt"; then
+  echo "FAIL: min-risk=low changed the rewrite set — the gate has become"
+  echo "      load-bearing. This is progress, not a bug: update posture"
+  echo "      condition 3 and this assertion together."
+  cat "$WORK/gatediff.txt"
+  exit 1
+fi
+echo "PASS,gate_is_reachable_but_not_load_bearing"
 
 # An unrecognised parameter must be refused, not silently ignored — a typo in
 # min-risk that quietly reverted to the default would disable the gate.
@@ -270,7 +334,9 @@ RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop
             -Dsoftmax_add=softmax_add_prop -Dsoftmax_sum_div=softmax_sum_div_prop \
             -Dplain_sum=plain_sum_prop -Ddot_sum=dot_sum_prop \
             -Dinvariant_exp_sum=invariant_exp_sum_prop \
-            -Dweighted_sum=weighted_sum_prop"
+            -Dweighted_sum=weighted_sum_prop \
+            -Dconst_weight_sum=const_weight_sum_prop \
+            -Dexpf_widened=expf_widened_prop"
 $CLANG $KFLAGS -DKERNEL $RENAME_PROP \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_prop.ll"
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
@@ -312,6 +378,35 @@ $CLANG "$WORK/main.o" "$WORK/kernel_orig.o" "$WORK/kernel_rw.o" "$WORK/kernel_pr
 
 grep -q '^OVERALL,PASS$' "$WORK/test.out" \
   || { echo "run_pass_test: FAIL"; exit 1; }
+
+# == semantic coverage: every rewrite must be backed by a numeric assertion ==
+#
+# The set of rewritten functions is derived from the pass's own output, not
+# listed here. For each one the harness must carry a PASSING check named
+# cover_<fn>_*. A rewrite that nothing validates numerically fails the gate.
+#
+# Why this exists: before 2026-08-17 the rewritten set and the semantically
+# validated set were two independently hand-maintained lists that happened to
+# coincide. Nothing tied them, so a function could enter the first without
+# entering the second. Demonstrated: relaxing the weight clause to admit
+# constant weights produced a pass that rewrote `s += 0.5*exp(x)` while
+# silently dropping the 0.5, and the entire suite stayed green.
+COVERED=0
+for fn in $(grep '^REWRITE,' "$WORK/rewrite.log" | cut -d, -f4 | sort -u); do
+  grep -q "^PASS,cover_${fn}_" "$WORK/test.out" \
+    || { echo "FAIL: $fn was rewritten but has no passing cover_${fn}_* check"
+         echo "      (every rewritten function needs a numeric differential"
+         echo "       in test_softmax.c; see the cover_<fn>_ convention)"; exit 1; }
+  COVERED=$((COVERED + 1))
+done
+[ "$COVERED" -ge 5 ] \
+  || { echo "FAIL: semantic coverage loop saw only $COVERED rewrites"; exit 1; }
+echo "PASS,every_rewrite_semantically_covered,$COVERED"
+
+# The weighted refusal's REASON, not just its fact: the witness inputs where
+# a weight-folding state overflows while the linear loop stays healthy.
+grep -q '^PASS,weight_witness_rw_matches_linear$' "$WORK/test.out" \
+  || { echo "FAIL: weighted overflow witness did not run or did not hold"; exit 1; }
 
 # == 5. the emitted code's error bound ==
 #

@@ -11,6 +11,52 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Pass test suite: the rewritten set is now derived from the pass's output
+and every member must carry a numeric assertion.**
+
+The suite was a closed-world whitelist — "these four names are rewritten" and
+"these names are bit-identical" were two independently hand-maintained lists
+with nothing tying them. A function could enter the first without entering the
+second.
+
+**Found by mutation, and it was a wrong-answer miscompile, not a near miss.**
+Relaxing the weight clause to `Weight && !isa<ConstantFP>(Weight)` — a
+plausible refinement, since a constant weight *is* provably bounded — produced
+a pass that rewrites `s += 0.5*exp(x[i])` **with the `0.5` silently dropped**,
+because nothing reads the weight after that clause. The full gate stayed
+green: `REWRITE` count 4, both expected declines, `OVERALL,PASS`, bound
+`HELD` at 0.99. No constant-weight kernel existed to be counted.
+
+Now: `run_pass_test.sh` reads the rewritten functions out of `rewrite.log` and
+requires a passing `cover_<fn>_*` check in the harness for each one, with a
+lower bound on the named shapes guarding the other direction. Corpus gained
+`const_weight_sum` (the case that was missing), `expf_widened` (the f32/fpext
+rewriting path, previously untested in any form), and the weighted overflow
+witness as an executable test rather than a comment. The mutation above now
+fails; so does dropping a `cover_` prefix.
+
+**Corrected: the pass's risk verdict is not the matcher's rule.** Measured
+divergences, all reachable: `s += a*b*c*d*e` is matcher-MED and prints LOW
+here; `s += c*pow(a,b)` is matcher-HIGH and prints LOW; `s += pow(a,b)` and
+`s += exp2(x)` are matcher-HIGH and silent here. Two causes — the matcher's
+exp-family is wider (`pow`, `exp2`, `expm1` by substring), and its `nMul` is
+counted over the whole term chain including inside the `exp` argument, where
+this pass counts spine multiplies. MED is unreachable in *this pass's verdict
+function* by construction; that is not the claim the docs made.
+
+**Corrected: `exp-chain;exp-sum` is a constant, not a computed taxonomy.**
+`exp-sum` means `nMul == 0` to the matcher and is wrong whenever the chain
+carries a multiply.
+
+**Restated: posture condition 3's literal text is met, its property is not.**
+The gate is reachable — `dot_sum` verdicts LOW and is refused at the default
+threshold — and it is not load-bearing. Eligibility requires an accepted `exp`
+term and a HIGH verdict means the same thing, so `rewritable ⊆ HIGH`; every
+LOW loop is weighted and the weight clause refuses it at any threshold. The
+rewrite set at `min-risk=low` is identical to the default, now asserted. The
+condition closes when the rewritable set exceeds the HIGH set, which needs
+bounded-weight support, not more matched-and-declined shapes.
+
 **Pass (prototype, outside 1.0's supported surface): shape coverage widened
 to the weighted spines, and the profitability gate now declines a real
 input.**
