@@ -367,6 +367,54 @@ echo "PASS,unknown_propagate_refused"
   || { echo "FAIL: force alone caused consumer propagation"; exit 1; }
 echo "PASS,force_alone_does_not_propagate"
 
+echo "== 3d. matcher agreement, soundness direction only =="
+# Every loop the pass REWRITES must be graded HIGH by the matcher.
+#
+# This is the ONE direction that is a safety property. "Profitability analysis
+# in front of any rewrite" (intent, posture condition 3) is only meaningful if
+# the rewrite cannot fire on something the triage would not have flagged.
+#
+# Full verdict EQUALITY is deliberately not asserted, because it is false and
+# documented as false: the matcher's exp-family is wider (pow, exp2, expm1 by
+# substring) and its nMul counts the whole term chain including inside the exp
+# argument, so `s += a*b*c*d*e` is matcher-MED where this pass prints LOW.
+# The divergence table is ELIGIBILITY.md 7.1. Asserting equality here would
+# either fail on day one or force the pass to grow a chain walk it does not
+# otherwise need.
+#
+# The matcher runs over kernel_rw.ll — the SAME IR the pass consumed, not a
+# fresh compile of the same source. A second compile could differ (flags,
+# clang version, contraction) and then a disagreement would be evidence about
+# the build rather than about the two analyses.
+rm -f "$WORK/matcher-build/SopMatcher.so"
+cmake -S "$PASSDIR/../matcher" -B "$WORK/matcher-build" \
+      -DCMAKE_BUILD_TYPE=Release > "$WORK/matcher-cmake.log"
+cmake --build "$WORK/matcher-build" -j >> "$WORK/matcher-cmake.log"
+[ -f "$WORK/matcher-build/SopMatcher.so" ] \
+  || { echo "FAIL: matcher plugin did not build"; tail -40 "$WORK/matcher-cmake.log"; exit 1; }
+$OPT -load-pass-plugin="$WORK/matcher-build/SopMatcher.so" -passes=sop-matcher \
+     -disable-output "$WORK/kernel_rw.ll" 2> "$WORK/matcher_hits.log"
+# Both tools print the location of the backedge update instruction, so
+# (file,line,function) is an exact join key. Verified before this was written:
+# all five REWRITE lines join to a HIT at the identical line.
+while IFS=, read -r _tag mfile mline mfn _rest; do
+  hit_risk="$(awk -F, -v f="$mfile" -v l="$mline" -v n="$mfn" \
+    '$1=="HIT" && $2==f && $3==l && $4==n {print $9}' "$WORK/matcher_hits.log")"
+  if [ -z "$hit_risk" ]; then
+    echo "FAIL: $mfn ($mfile:$mline) was rewritten but the matcher emits no HIT"
+    echo "      for it. The pass rewrote a loop its own triage does not"
+    echo "      recognise as a candidate at all."
+    exit 1
+  fi
+  if [ "$hit_risk" != "HIGH" ]; then
+    echo "FAIL: $mfn ($mfile:$mline) was rewritten but the matcher grades it"
+    echo "      $hit_risk, not HIGH. Profitability analysis is no longer in"
+    echo "      front of the rewrite."
+    exit 1
+  fi
+done < <(grep '^REWRITE,' "$WORK/rewrite.log")
+echo "PASS,every_rewrite_is_matcher_high"
+
 echo "== 4. codegen, link, run =="
 $CLANG -O1 -c "$WORK/kernel_orig.ll"      -o "$WORK/kernel_orig.o"
 $CLANG -O1 -c "$WORK/kernel_rw_opt.ll"    -o "$WORK/kernel_rw.o"

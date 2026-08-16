@@ -502,6 +502,31 @@ matcher and is **wrong whenever the chain contains a multiply or divide**, as
 in the last row. Computing it would need the chain walk this pass
 deliberately does not have.
 
+#### What is asserted: the soundness direction only
+
+Verdict equality is not asserted, because the table above is what it would
+assert against. One direction *is* a safety property and is gated:
+
+> **Every loop the pass rewrites is graded HIGH by the matcher.**
+
+`run_pass_test.sh` section 3d builds the matcher plugin and runs it over
+`kernel_rw.ll` — the same IR the pass consumed, not a fresh compile of the
+same source, so a disagreement is evidence about the two analyses rather than
+about two builds. Both tools print the location of the backedge update, so
+`(file, line, function)` is an exact join key.
+
+Two failures, reported separately because they mean different things: a
+rewritten loop with **no HIT at all** (the pass rewrote something its own
+triage does not recognise as a candidate), and a rewritten loop **graded below
+HIGH** (profitability analysis is no longer in front of the rewrite). Both
+negative-tested by mutating the *matcher* — suppressing the `exp-sum` family's
+hits, and dropping `expChain => HIGH` — so the check is known to read real
+matcher output rather than to be tautological.
+
+This is the direction that matters. The reverse direction — matcher-HIGH
+loops the pass does not rewrite — is the pass's documented narrowness
+(section 4's errno contract, 3.3's weight clause), not a defect.
+
 ### 7.2 The threshold
 
 Parameter `min-risk=<low|med|high|none>`, default `high`. A verdict below the

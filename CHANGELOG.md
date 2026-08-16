@@ -11,6 +11,28 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Pass test suite: every rewrite must be graded HIGH by the matcher.**
+
+`run_pass_test.sh` section 3d builds the matcher plugin and runs it over
+`kernel_rw.ll` — the same IR the pass consumed, not a fresh compile of the
+same source, so a disagreement is evidence about the two analyses rather than
+about two builds. Both tools print the backedge update's location, so
+`(file, line, function)` is an exact join key; verified before the check was
+written, all five rewrites join to a HIT at the identical line.
+
+This is the soundness direction, and it is the one that makes "profitability
+analysis in front of any rewrite" mean something: the rewrite cannot fire on a
+loop the triage would not have flagged. Two failures reported separately — no
+HIT at all, and a HIT graded below HIGH. Both negative-tested by mutating the
+*matcher* (suppressing the `exp-sum` family's hits; dropping
+`expChain => HIGH`), so the check is known to read real matcher output.
+
+Verdict **equality** is deliberately not asserted. It is false and documented
+as false in ELIGIBILITY.md 7.1: the matcher's exp-family is wider and its
+`nMul` counts the whole term chain, so `s += a*b*c*d*e` is matcher-MED where
+the pass prints LOW. Asserting equality would either fail immediately or force
+the pass to grow a chain walk it does not otherwise need.
+
 **Pass test suite: the rewritten set is now derived from the pass's output
 and every member must carry a numeric assertion.**
 
