@@ -1,8 +1,17 @@
-// dd_sum.h — double-double compensated summation, the accuracy reference.
+// dd_sum.h — double-double compensated summation.
 //
 // Shared by test_accuracy.cpp (fixed scenarios) and bound_search.cpp (the
-// adversarial search). One copy so the two cannot drift apart and disagree
-// about what "truth" means.
+// adversarial search), so the two cannot disagree about how a sum is
+// accumulated. What gets summed is dd_exp.h's business as of 2026-08-16:
+// both files feed it exp() computed in double-double rather than libm's,
+// after a plain-double reference was found to put a ~1u floor under every
+// measurement and hide a real contract defect for a day.
+//
+// The two files still differ in ONE respect, deliberately. bound_search
+// keeps the reference wide through the comparison, because it reports ratios
+// near 1 and value()'s collapse to a double is worth up to u/2.
+// test_accuracy calls value(), because its scenarios sit 6x-1000x under the
+// bound and cannot be flipped by u/2.
 //
 // TwoSum (Knuth): s = fl(a+b) plus the exact rounding error e, valid for any
 // a, b. Operations are kept in separate statements through named temporaries

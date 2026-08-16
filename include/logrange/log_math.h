@@ -568,7 +568,9 @@ private:
 // Status: the earlier (n+3k+3)*u form was REFUTED by tests/bound_search.cpp —
 //   119 of 400 random inputs exceed it, worst 34.9x, and every violation is
 //   the missing reduction term. The form above holds across that search at
-//   worst 0.79. Note this bound had never been machine-checked before
+//   worst 0.79 at the time, 0.80 re-measured 2026-08-16 against the
+//   double-double reference that replaced the plain-double one. Note this
+//   bound had never been machine-checked before
 //   2026-08-15: test_pos_accum asserted behavior, not the contract. Both
 //   now check it.
 //   - Terms below m_log - ~745 vanish (exp underflow). See header comment.

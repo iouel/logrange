@@ -186,8 +186,11 @@ from the input data; the accumulator carries no instrumentation):
 > u = 2⁻⁵³, where k = rescale events (expected O(ln n) for random order,
 > worst n−1), D = mass-weighted mean insertion depth, S = the exact sum;
 > plus the ~745 log-unit vanishing contract. `pos_accum`:
-> ≤ (n + 3k + 3 + D)·u + |log|S||·u, no cond term (positive sums cannot
-> cancel) — the n·u summation drift is the accepted price of the fast path.
+> ≤ (n + 3k + 3 + D)·u + (|log|S|| + |log|net||)·u, no cond term (positive
+> sums cannot cancel) — the n·u summation drift is the accepted price of the
+> fast path. `net = S/exp(m_log)` is the scaled sum the final reduction takes
+> the log of; that term was added 2026-08-16 after its absence refuted the
+> rp_accum contract at 1.99×.
 
 Both are **first-order** bounds, holding under the assumptions the header
 states: `exp()` within 1 ulp, the vanishing window, and O(n·u²) and higher
@@ -222,9 +225,12 @@ Long sums are ε-level and n-independent: the residual error is the per-term
 
 These six scenarios never exceeded even the old bound, which is the limitation
 of fixed scenarios: they can only fail to refute a universal claim.
-`bound_search` attacks the same claim directly and does refute it. Under the
-corrected bound, observed sits 6–1000× under on these scenarios and 0.85× at
-the worst point the search could construct.
+`bound_search` attacks the same claim directly and does refute it — twice now.
+Under the current bound, observed sits **6.3×–5291× under** on these
+scenarios (re-measured 2026-08-16 against the double-double `exp` reference)
+and **0.50×** at the worst point the search could construct. The 0.85 figure
+published before 2026-08-16 was the worst against the form that has since
+been refuted at 1.99×.
 
 Both new terms are small here, so these scenarios missed both mechanisms
 rather than just one. On the n=10⁶ row the bound moved 7.438e-15 →

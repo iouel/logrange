@@ -309,7 +309,7 @@ tooling tier, which ships as beta with its gaps stated.
       `SumOfProductsMatcher.cpp` and fails when the fixture or the renderer
       misses one.
 - [x] **Emitted-code error bound** (posture condition 4). Done 2026-08-16.
-      `rel err <= (n + 3k + 4 + D)*u + |log|S||*u`, normative in
+      `rel err <= (n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in
       `pass/ELIGIBILITY.md`, searched by `pass/emitted_bound_search.c` against
       the object the pass actually rewrote, gated in `run_pass_test.sh`.
       **Held across 7285 trials, worst observed/bound 0.99.** The gate was

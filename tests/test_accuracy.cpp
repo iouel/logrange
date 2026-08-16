@@ -28,7 +28,19 @@
 
 using namespace logrange;
 
-#include "dd_sum.h" // the reference, shared with bound_search.cpp
+#include "dd_sum.h" // compensated summation, shared with bound_search.cpp
+#include "dd_exp.h" // exp() that assumes nothing about libm
+
+// Feed one exact term into a dd_sum. dd_exp gives exp(L) as a pair; adding
+// both words keeps the reference independent of libm's exp, whose measured
+// worst error is 0.99u (dd_exp.h). This file keeps dd_sum's collapse at
+// value(), worth up to u/2, because its scenarios run 6x-1000x under the
+// bound and a tripwire does not need bound_search's ~1e-14 u resolution.
+static void add_exp_term(dd_sum& acc, double log_abs, double sign = 1.0) {
+  const dd t = dd_exp(log_abs);
+  acc.add(sign * t.hi);
+  acc.add(sign * t.lo);
+}
 
 // ---------------------------------------------------------------------------
 // Formal-bound helpers (header error contract, rp_accum v0.2):
@@ -123,7 +135,7 @@ static void test_long_positive_sum() {
       terms.push_back(v);
       if (v.log_abs > m) { if (i > 0) ++k; m = v.log_abs; }
       acc.add(v);
-      ref.add(std::exp(v.log_abs)); // same linear term the accumulator sees
+      add_exp_term(ref, v.log_abs); // same linear term the accumulator sees
     }
     const double got   = acc.to_log_value().to_linear();
     const double truth = ref.value();
@@ -292,7 +304,7 @@ static void test_magnitude_staircase() {
       v.log_abs = l;
       v.sign = 1.0;
       acc.add(v);
-      ref.add(std::exp(l));
+      add_exp_term(ref, l);
     }
     const double err = std::fabs(acc.to_log_value().log_abs - ref.log_abs());
     worst = (std::max)(worst, err);

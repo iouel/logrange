@@ -230,9 +230,16 @@ static void test_error_contract() {
     const double rel   = std::fabs(acc.to_log_value().to_linear() - truth) /
                          std::fabs(truth);
     const double D     = wdepth.value() / mass.value();
+    // |log|net||: net = S/exp(m_log) is the reduction's other addend, and it
+    // rounds at its own magnitude. Added 2026-08-16 after that omission
+    // refuted rp_accum's contract at 1.99x. It does not bind for pos_accum
+    // (|log|net|| <= log n, and the n*u term dominates), but a tripwire that
+    // asserts an incomplete bound is asserting the wrong thing.
+    const double logS   = ref.log_abs();
+    const double lognet = std::fabs(logS - m);
     const double bound = (static_cast<double>(s.n) +
                           3.0 * static_cast<double>(k) + 3.0 + D) * U +
-                         std::fabs(ref.log_abs()) * U;
+                         (std::fabs(logS) + lognet) * U;
     NC_CHECK(rel <= bound);
   }
 }
