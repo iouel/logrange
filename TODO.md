@@ -186,9 +186,10 @@ tooling tier, which ships as beta with its gaps stated.
       matched only because it divides by a temperature. Fixed and the study
       re-run: 783 hits against 781, HIGH 5 against 3 (matcher/RESULTS.md,
       "The rule that excluded the marquee shape").
-      *Honest limit:* because the pass's only shape requires an `exp` call,
-      its verdict is always HIGH and the gate cannot currently decline a real
-      input. It becomes load-bearing when shape coverage widens.
+      *Honest limit, closed 2026-08-17:* because the pass's only shape
+      required an `exp` call, its verdict was always HIGH and the gate could
+      not decline a real input. The spine widening below made it load-bearing:
+      `dot_sum` verdicts LOW and is refused at the default threshold.
 - [x] **Shipping posture** (intent step 9, second half). Decided
       2026-08-16: **diagnostic-first**. Four artifacts, three labels. The
       header is *the product* at 1.0. `matcher/diagnose.sh` is the **front
@@ -219,6 +220,15 @@ tooling tier, which ships as beta with its gaps stated.
       as this was written); (6) dead original removed or a required DCE run
       documented. 1 and 2 are correctness/interface blockers, 3–6 are label
       blockers.
+      *Status 2026-08-17: 1, 3, 4 and 5 closed; 2 closed for one consumer
+      shape only; 6 open.* Condition 3 closed by "Pass shape coverage" below —
+      both spines are matched, and the gate now declines `dot_sum` at the
+      default threshold. Condition 2 is closed only where `propagate=div`
+      applies; every other consumer still exits through the side global, and
+      last-rewrite-wins remains its stated defect. Closing 3 does not move the
+      posture: neither number that drove the decision (5 HIGH rows in 2859
+      loops; the rescue unobservable without the side global for every shape
+      but one) changed.
       *If the `-inf` fix lands:* condition 1 closes and all three of
       Deliverable 2's stated preconditions are met, so the pass becomes
       blocked on product concerns rather than on preconditions. The
@@ -463,9 +473,46 @@ tooling tier, which ships as beta with its gaps stated.
       published worst-observed figures (0.85 and 0.79) move slightly and the
       derivation text still needs the `u*J` correction. If one exceeds 1.0
       clear of the floor, that is a fourth refuted contract.
-- [ ] **Pass shape coverage.** fmuladd spines and fsub accumulators match in
-      the *matcher* but the *pass* only rewrites plain `fadd(phi, exp(t))`.
-      Extend or document per shape.
+- [x] **Pass shape coverage — fmuladd and `w[i]*exp(t)`.** Done 2026-08-17,
+      and it closes **posture condition 3**. The pass now *matches* three
+      spines — `fadd(phi, X)`, `fadd(phi, fmul(W, X))` and
+      `llvm.fmuladd(W, X, phi)` — and rewrites only the first. Both weighted
+      forms are needed because which one clang emits is `-ffp-contract`, a
+      flag the pass does not control (measured: `=on` gives `fmuladd`, `=off`
+      and `=fast` give `fmul` + `fadd`); the gate compiles the kernel all
+      three ways and asserts the uncontracted builds contain no `fmuladd`, so
+      the check cannot go vacuous.
+      *The point of matching what it will not rewrite:* a shape the pass says
+      nothing about reads exactly like a shape it failed to recognize, and
+      sends the next reader to the matcher instead of to the contract. So
+      weighted spines are declined `DECLINE-WEIGHT,...,unbounded-weight`.
+      **The risk gate now declines a real input at the default threshold**,
+      which is what condition 3 existed for: `dot_sum`'s
+      `llvm.fmuladd(x, y, phi)` has no `exp` in its chain, verdicts LOW, and
+      is refused. Previously every matchable shape required an `exp`, so the
+      verdict was HIGH by construction and only a synthetically raised
+      `min-risk` could exercise the refusal path.
+      *Order is load-bearing and is now normative* (ELIGIBILITY.md 3.3): risk
+      gate first, weight clause second. Reversed, the weight clause shadows
+      the gate and `dot_sum` never reaches it — negative-tested, and it fails
+      the `dot_sum` assertion exactly as predicted. Three further mutations
+      caught: verdict hardcoded HIGH, `noMulNoExp` screen removed (adds two
+      declines), `fmuladd` spine unmatched (removes both).
+      *Corrected while doing it.* The magnitude witness published on
+      2026-08-16 was wrong in both constants: `w=1e300, t=-700` does **not**
+      overflow at `n>=2` (the state reaches 2e300, and `sum|w_i|` needs
+      `n ~ 1.8e8` at that weight), and the linear sum there is 1.97e-4, not
+      ~1e-5. Measured witness: `w=(1e308,1e308)`, `t=(-700,-700)` drives the
+      state to `inf` while the linear loop gives 19719.4.
+      *Also recorded, not used as the reason:* the emitted reduction
+      `exp(m + log(s))` gives NaN for a negative state (`w=(1,-2)`,
+      `t=(0,0)`), but that is a property of the reduction and is fixable with
+      `copysign` — consistent with the 2026-08-16 retraction. Magnitude is the
+      durable constraint, since no reduction recovers an overflowed state.
+      *Still open from the original item:* fsub accumulators.
+      *Yield, measured before building any of it:* 0 `w*exp(t)` sites in 2859
+      corpus loops, so the extension point (a weight proven bounded) stays
+      deliberately untaken.
 - [ ] **Matcher blind spots.** Memory-carried reductions and vectorized
       loops are documented misses; decide whether v1 chases either or the
       docs stay the answer.

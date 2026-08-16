@@ -9,7 +9,8 @@
 //     unique exit block
 //   - exactly one FP-typed phi in the header, of type double, initialized
 //     to constant 0.0 from the preheader
-//   - its backedge update is a plain fadd(phi, X)  (fmuladd out of scope)
+//   - its backedge update is one of three spines: fadd(phi, X),
+//     fadd(phi, fmul(W, X)), or llvm.fmuladd(W, X, phi)
 //   - X is a call to llvm.exp.*, possibly through fpext/fptrunc only
 //     (source-level exp/expf declined: errno — see the errno contract below)
 //   - the call argument is loop-varying (an instruction inside the loop)
@@ -17,6 +18,13 @@
 //     mid-loop-read guard: a prefix-sum-style read would change meaning)
 //   - at least one out-of-loop user of the sum exists (else nothing
 //     observable would change)
+//
+// Matched is not rewritten. Only the unweighted spine, fadd(phi, exp(t)), is
+// rewritten. The two weighted spines are matched so they can be declined with
+// a stated reason: the weight is not proven bounded, so the emitted state
+// would reach sum|w_i| where the unweighted state is at most n (see the
+// weight clause). A spine with neither a multiply nor an exp is not matched
+// at all — the matcher's noMulNoExp rule.
 //
 // Rewrite: streaming logsumexp with rescaling, straight-line — no CFG
 // surgery inside the body; llvm.maxnum plays the role of the select:
@@ -79,8 +87,10 @@
 //   a denormal-fp-math or denormal-fp-math-f32 mode other than IEEE.
 //
 // Emits one line per rewrite on stderr:  REWRITE,<file>,<line>,<function>
-// Declines are logged too: DECLINE-FPENV,<file>,<line>,<fn>,<reason> and
-// DECLINE-ERRNO,<file>,<line>,<fn>,external-exp-call.
+// Declines are logged too: DECLINE-FPENV,<file>,<line>,<fn>,<reason>,
+// DECLINE-ERRNO,<file>,<line>,<fn>,external-exp-call,
+// DECLINE-RISK,<file>,<line>,<fn>,<verdict>,below-min-<tier> and
+// DECLINE-WEIGHT,<file>,<line>,<fn>,unbounded-weight.
 //
 // Usage: opt-21 -load-pass-plugin=./LogRewrite.so \
 //               -passes='log-rewrite<force>' -S in.ll -o out.ll
@@ -174,6 +184,25 @@ ExpKind classifyExpCall(CallBase *CB, Value *&ArgOut) {
     return ExpKind::No;
   ArgOut = A;
   return Kind;
+}
+
+// What a spine term ultimately is: strip fp-only casts, then classify the
+// call underneath. ArgOut is written only when the term does reach an exp
+// call. The walk is deliberately this short — casts and nothing else —
+// because the accepted spines put nothing else between the update and the
+// call, and a longer walk would be claiming coverage the rewrite does not
+// have. It is not the matcher's general walkChain.
+ExpKind classifyTerm(Value *V, const Loop &L, Value *&ArgOut) {
+  while (auto *Cast = dyn_cast<CastInst>(V)) {
+    if (Cast->getOpcode() != Instruction::FPExt &&
+        Cast->getOpcode() != Instruction::FPTrunc)
+      break;
+    V = Cast->getOperand(0);
+  }
+  auto *CB = dyn_cast<CallBase>(V);
+  if (!CB || !L.contains(CB))
+    return ExpKind::No;
+  return classifyExpCall(CB, ArgOut);
 }
 
 // FP-environment screen, applied to the whole function before any loop is
@@ -397,30 +426,84 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!Init || !Init->isZero())
         continue;
 
-      // Backedge update: plain fadd(phi, X), inside the loop.
-      auto *Upd = dyn_cast<BinaryOperator>(Acc->getIncomingValueForBlock(Latch));
-      if (!Upd || Upd->getOpcode() != Instruction::FAdd || !L->contains(Upd))
-        continue;
-      Value *X = nullptr;
-      if (Upd->getOperand(0) == Acc && Upd->getOperand(1) != Acc)
-        X = Upd->getOperand(1);
-      else if (Upd->getOperand(1) == Acc && Upd->getOperand(0) != Acc)
-        X = Upd->getOperand(0);
-      if (!X)
+      // Backedge update. Three spines are accepted, all of them "the phi plus
+      // a term", differing only in whether the term carries a multiplicative
+      // weight and whether that multiply was contracted into the add:
+      //
+      //   fadd(phi, X)             the unweighted spine, the one rewritten
+      //   fadd(phi, fmul(W, X))    weighted, multiply not contracted
+      //   llvm.fmuladd(W, X, phi)  weighted, multiply contracted
+      //
+      // Which of the last two clang emits is a flag the pass does not
+      // control. Measured on pass/test_softmax.c, LLVM 21: -ffp-contract=on
+      // (the default, and the harness's) gives llvm.fmuladd; -ffp-contract=off
+      // and =fast both give fmul + fadd. Matching one form only would make
+      // this pass's coverage a property of the caller's contraction setting.
+      //
+      // The weighted spines are matched in order to be DECLINED with a stated
+      // reason rather than be invisible. Nothing weighted is rewritten.
+      auto *Upd = dyn_cast<Instruction>(Acc->getIncomingValueForBlock(Latch));
+      if (!Upd || !L->contains(Upd))
         continue;
 
-      // X must be the exp call, through nothing but fp casts.
-      while (auto *Cast = dyn_cast<CastInst>(X)) {
-        if (Cast->getOpcode() != Instruction::FPExt &&
-            Cast->getOpcode() != Instruction::FPTrunc)
-          break;
-        X = Cast->getOperand(0);
-      }
-      auto *ExpCall = dyn_cast<CallBase>(X);
-      Value *Arg = nullptr;
-      if (!ExpCall || !L->contains(ExpCall))
+      Value *X = nullptr;      // the term added to the accumulator
+      Value *Weight = nullptr; // its multiplicative factor, or null
+
+      // Of a product's two operands the term is the one that reaches an exp
+      // and the weight is the other. With no exp on either side the split is
+      // arbitrary and does not matter: that verdict is LOW and the risk gate
+      // declines before either value is read again.
+      auto splitProduct = [&](Value *A, Value *B) {
+        Value *Ag = nullptr;
+        if (classifyTerm(B, *L, Ag) != ExpKind::No) {
+          X = B;
+          Weight = A;
+        } else {
+          X = A;
+          Weight = B;
+        }
+      };
+
+      if (auto *FMA = dyn_cast<IntrinsicInst>(Upd)) {
+        if (FMA->getIntrinsicID() != Intrinsic::fmuladd)
+          continue;
+        // The accumulator must be the addend. As a multiplicand it is a
+        // product recurrence, not a sum.
+        if (FMA->getArgOperand(2) != Acc || FMA->getArgOperand(0) == Acc ||
+            FMA->getArgOperand(1) == Acc)
+          continue;
+        splitProduct(FMA->getArgOperand(0), FMA->getArgOperand(1));
+      } else if (auto *BO = dyn_cast<BinaryOperator>(Upd)) {
+        if (BO->getOpcode() != Instruction::FAdd)
+          continue;
+        Value *Other = nullptr;
+        if (BO->getOperand(0) == Acc && BO->getOperand(1) != Acc)
+          Other = BO->getOperand(1);
+        else if (BO->getOperand(1) == Acc && BO->getOperand(0) != Acc)
+          Other = BO->getOperand(0);
+        if (!Other)
+          continue;
+        auto *FM = dyn_cast<BinaryOperator>(Other);
+        if (FM && FM->getOpcode() == Instruction::FMul && L->contains(FM)) {
+          // The fmul is a spine node, so it takes the same clean-use
+          // discipline as the update: its only in-loop user must be the add.
+          // A second reader observes the product mid-loop, and then this is
+          // not the reduction it looks like.
+          if (soleInLoopUser(FM, *L) != Upd)
+            continue;
+          if (FM->getOperand(0) == Acc || FM->getOperand(1) == Acc)
+            continue;
+          splitProduct(FM->getOperand(0), FM->getOperand(1));
+        } else {
+          X = Other;
+        }
+      } else {
         continue;
-      ExpKind EK = classifyExpCall(ExpCall, Arg);
+      }
+
+      Value *Arg = nullptr;
+      ExpKind EK = classifyTerm(X, *L, Arg);
+
       // A source-level exp/expf is the errno case: the exact shape this
       // pass targets, declined because replacing it would change observable
       // errno behaviour. Worth saying out loud — silence here would read as
@@ -433,13 +516,13 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
         errs() << ",external-exp-call\n";
         continue;
       }
-      if (EK != ExpKind::Intrinsic)
-        continue;
 
-      // The exp argument must be loop-varying — an invariant argument is a
-      // hoistable constant sum, not the reduction this project targets.
-      auto *ArgI = dyn_cast<Instruction>(Arg);
-      if (!ArgI || !L->contains(ArgI) || ArgI == Acc)
+      // The matcher's noMulNoExp rule, held to here so the two tools agree on
+      // what is in scope at all. A reduction with neither a multiply nor an
+      // exp is rescuable without logsumexp, so it is a labeled miss on both
+      // sides rather than a decline carrying a verdict. plain_sum is the
+      // named case (matcher/SumOfProductsMatcher.cpp, "noMulNoExp").
+      if (!Weight && EK == ExpKind::No)
         continue;
 
       // Mid-loop-read guard (matcher discipline): the phi's only in-loop
@@ -477,17 +560,20 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // hits are benign-range dot products where a log rewrite only costs
       // speed, and that the rescue-worthy subset is small; the risk verdict
       // is the gate that separates them. Same rule as the matcher's:
-      // exp-family factor in the term chain => HIGH.
+      // exp-family factor in the term chain => HIGH, because exp(t) spans the
+      // whole range from t alone. Otherwise LOW.
       //
-      // For the one shape this prototype matches the verdict is HIGH by
-      // construction — the match REQUIRES an exp call — so this gate cannot
-      // decline any loop the pass can currently rewrite. That is stated
-      // rather than dressed up: the mechanism is here, wired, and logged,
-      // and it starts doing real work the moment shape coverage widens to
-      // the fmuladd and w[i]*exp(t) forms the matcher already recognizes at
-      // MED and LOW. MinRisk exists so both branches are reachable and
-      // testable today.
-      const Risk R = Risk::High; // exp call in the chain, established above
+      // MED is not computed because it is unreachable here. The matcher
+      // grades MED on nMul >= 4, or a log-domain chain with nMul >= 2; every
+      // spine accepted above carries at most one multiply.
+      //
+      // The gate declines a real input as of the fmuladd widening above:
+      // dot_sum's llvm.fmuladd(x, y, phi) is matched, verdicts LOW, and is
+      // refused at the default threshold. Before that widening the only
+      // matchable shape required an exp call, so the verdict was HIGH by
+      // construction and the refusal path was reachable only by raising
+      // min-risk synthetically.
+      const Risk R = EK == ExpKind::No ? Risk::Low : Risk::High;
       if (static_cast<int>(R) < static_cast<int>(MinRisk)) {
         errs() << "DECLINE-RISK,";
         printLoc(errs(), Upd, F);
@@ -495,6 +581,62 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
                << "\n";
         continue;
       }
+
+      // ---- Weight clause ------------------------------------------------
+      // A weighted term is matched and declined. Folding w_i into the term
+      // makes the state accumulate sum(w_i * exp(t_i - m)) instead of
+      // sum(exp(t_i - m)), and w_i is not proven bounded.
+      //
+      // MAGNITUDE is the durable reason. Every scaled term is at most |w_i|,
+      // so the state reaches sum|w_i|, which has no ceiling — where the
+      // unweighted state is at most n by construction, the exponents being
+      // <= 0. Measured on the emitted state machine at n = 2:
+      // w = (1e308, 1e308), t = (-700, -700) drives the state to inf and the
+      // result to inf; the linear loop gives 19719.4. No reduction can
+      // recover a state that already overflowed.
+      //
+      // SIGN is a second failure, and unlike magnitude it is a property of
+      // the reduction rather than of the state: this pass emits
+      // exp(m + log(s)), so w = (1, -2), t = (0, 0) drives the state to -1
+      // and log of it to NaN where the linear loop gives -1. That one is
+      // fixable — copysign(exp(m + log|s|), s) is correct for a negative sum
+      // (matcher census, 2026-08-16, which retracted an earlier claim that
+      // negative weights break semantics outright). It is recorded here as
+      // work a weighted rewrite would have to do, not as the reason for the
+      // decline.
+      //
+      // Ordered AFTER the risk gate, and that order is load-bearing. Reversed,
+      // this clause shadows the gate: every weighted spine would decline here
+      // and dot_sum, the only LOW-verdict input the pass matches, would never
+      // reach the gate at all. Negative-tested by making the gate skip
+      // weighted spines: dot_sum logs DECLINE-WEIGHT and the gate assertion
+      // in run_pass_test.sh fails.
+      //
+      // EXTENSION POINT, deliberately not taken. A weight proven bounded —
+      // a constant is the easy case — is rewritable. It needs the sign
+      // handling above, the error contract re-derived (ELIGIBILITY.md's bound
+      // is pos_accum's, for unit weights), and its own accept and decline
+      // tests. Until those exist, every weight declines. Measured yield
+      // before building any of it: 0 w*exp(t) sites in 2859 corpus loops
+      // (matcher/run_study.sh weights).
+      if (Weight) {
+        errs() << "DECLINE-WEIGHT,";
+        printLoc(errs(), Upd, F);
+        errs() << ",unbounded-weight\n";
+        continue;
+      }
+
+      // Implied by the two clauses above rather than a live branch: an
+      // unweighted spine reaches here only with an exp term (noMulNoExp), and
+      // the external form already declined.
+      if (EK != ExpKind::Intrinsic)
+        continue;
+
+      // The exp argument must be loop-varying — an invariant argument is a
+      // hoistable constant sum, not the reduction this project targets.
+      auto *ArgI = dyn_cast<Instruction>(Arg);
+      if (!ArgI || !L->contains(ArgI) || ArgI == Acc)
+        continue;
 
       // ---- All checks passed: build the streaming logsumexp state. ----
       Type *DTy = Acc->getType();

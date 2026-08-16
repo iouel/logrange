@@ -45,11 +45,13 @@ KFLAGS="-O1 -g -fno-discard-value-names -fno-math-errno"
 RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dsoftmax_full=softmax_full_orig \
             -Dsoftmax_add=softmax_add_orig -Dsoftmax_sum_div=softmax_sum_div_orig \
             -Dplain_sum=plain_sum_orig -Ddot_sum=dot_sum_orig \
-            -Dinvariant_exp_sum=invariant_exp_sum_orig"
+            -Dinvariant_exp_sum=invariant_exp_sum_orig \
+            -Dweighted_sum=weighted_sum_orig"
 RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
            -Dsoftmax_add=softmax_add_rw -Dsoftmax_sum_div=softmax_sum_div_rw \
            -Dplain_sum=plain_sum_rw -Ddot_sum=dot_sum_rw \
-           -Dinvariant_exp_sum=invariant_exp_sum_rw"
+           -Dinvariant_exp_sum=invariant_exp_sum_rw \
+           -Dweighted_sum=weighted_sum_rw"
 $CLANG $KFLAGS -DKERNEL $RENAME_ORIG \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_orig.ll"
 $CLANG $KFLAGS -DKERNEL $RENAME_RW \
@@ -71,10 +73,19 @@ for fn in softmax_denom_rw softmax_full_rw softmax_add_rw softmax_sum_div_rw; do
   grep -q "^REWRITE,.*,$fn,HIGH,exp-chain;exp-sum$" "$WORK/rewrite.log" \
     || { echo "FAIL: rewrite missing for $fn"; exit 1; }
 done
-# On the intended build flags nothing should be declined for a safety reason.
-# A DECLINE line here means -fno-math-errno or the FP environment regressed.
-[ "$(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)" = "0" ] \
+# On the intended build flags nothing should be declined for a SAFETY reason.
+# A DECLINE-FPENV or DECLINE-ERRNO line here means -fno-math-errno or the FP
+# environment regressed.
+#
+# This was a flat "zero DECLINE- lines" until the fmuladd widening, which made
+# two scope declines expected on this build (asserted individually below). It
+# is an allow-list rather than a relaxed count so that a *new* decline still
+# fails: the count check below pins the total, so a third decline of any kind
+# trips it even if it carries one of the allowed tags.
+[ "$(grep -cE '^DECLINE-(FPENV|ERRNO),' "$WORK/rewrite.log" || true)" = "0" ] \
   || { echo "FAIL: unexpected safety decline on the reference build"; exit 1; }
+[ "$(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)" = "2" ] \
+  || { echo "FAIL: expected exactly 2 DECLINE lines on the reference build, got $(grep -c '^DECLINE-' "$WORK/rewrite.log" || true)"; exit 1; }
 grep -q '^CONSUMER-DECLINE,.*,softmax_denom_rw,not-fdiv$' "$WORK/rewrite.log" \
   || { echo "FAIL: standalone denominator consumer shape was not logged"; exit 1; }
 grep -q '^CONSUMER-MATCH,.*,softmax_full_rw,fdiv-of-sum$' "$WORK/rewrite.log" \
@@ -83,6 +94,48 @@ grep -q '^CONSUMER-DECLINE,.*,softmax_add_rw,not-fdiv$' "$WORK/rewrite.log" \
   || { echo "FAIL: fadd near-miss consumer did not log not-fdiv"; exit 1; }
 grep -q '^CONSUMER-DECLINE,.*,softmax_sum_div_rw,not-the-sum$' "$WORK/rewrite.log" \
   || { echo "FAIL: wrong-divisor near-miss consumer did not log not-the-sum"; exit 1; }
+
+# --- shape coverage: the fmuladd spine (posture condition 3) ----------------
+# Both of these are MATCHED and then declined, which is the whole point. Until
+# the match widened past fadd(phi, exp(t)) they were not matched at all, so
+# the pass said nothing about them and the risk gate had no real input to
+# refuse. Written before the implementation and observed failing.
+#
+# (a) The no-exp spine. dot_sum's update is llvm.fmuladd(a, b, phi) at these
+#     flags — structurally identical to the mixture spine, the only difference
+#     being that no operand reaches an exp. Its verdict is LOW, so the DEFAULT
+#     threshold declines it. This is the first time the gate refuses a real
+#     input rather than a synthetically raised threshold, which is what
+#     condition 3 exists for.
+grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-HIGH$' "$WORK/rewrite.log" \
+  || { echo "FAIL: fmuladd dot spine was not matched-and-declined by the gate"; exit 1; }
+# (b) The weighted spine. Verdict is HIGH (an operand reaches exp), so the
+#     gate passes it and the magnitude restriction is what must stop it: the
+#     emitted state would accumulate sum(w_i * exp(t_i - m)), reaching
+#     sum|w_i|, which overflows where the linear original does not.
+grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/rewrite.log" \
+  || { echo "FAIL: weighted spine was not matched-and-declined on magnitude"; exit 1; }
+# (c) The same two spines with the multiply NOT contracted. Whether clang
+#     emits llvm.fmuladd or fmul + fadd is -ffp-contract, a flag the pass does
+#     not control, so matching one form only would make coverage a property of
+#     the caller's setting. Measured here rather than assumed: =on (the
+#     default, used above) gives fmuladd, =off and =fast give fmul + fadd.
+for fc in off fast; do
+  $CLANG $KFLAGS -ffp-contract=$fc -DKERNEL $RENAME_RW \
+        -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/contract_$fc.ll"
+  if grep -q 'llvm.fmuladd' "$WORK/contract_$fc.ll"; then
+    echo "FAIL: -ffp-contract=$fc still contracted; the check is vacuous"; exit 1
+  fi
+  $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+         -passes='log-rewrite<force>' \
+         -S "$WORK/contract_$fc.ll" -o /dev/null \
+         2> "$WORK/contract_$fc.log" || { cat "$WORK/contract_$fc.log"; exit 1; }
+  grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/contract_$fc.log" \
+    || { echo "FAIL: uncontracted weighted spine missed at -ffp-contract=$fc"; exit 1; }
+  grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-HIGH$' "$WORK/contract_$fc.log" \
+    || { echo "FAIL: uncontracted dot spine missed at -ffp-contract=$fc"; exit 1; }
+done
+echo "PASS,weighted_spine_matched_under_all_contract_settings"
 
 # The profitability gate (intent step 9) must be able to DECLINE, not just
 # permit. For this shape the verdict is HIGH by construction, so raising the
@@ -216,7 +269,8 @@ echo "== 3c. propagate=div: compile a _prop copy, run with propagate=div =="
 RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop \
             -Dsoftmax_add=softmax_add_prop -Dsoftmax_sum_div=softmax_sum_div_prop \
             -Dplain_sum=plain_sum_prop -Ddot_sum=dot_sum_prop \
-            -Dinvariant_exp_sum=invariant_exp_sum_prop"
+            -Dinvariant_exp_sum=invariant_exp_sum_prop \
+            -Dweighted_sum=weighted_sum_prop"
 $CLANG $KFLAGS -DKERNEL $RENAME_PROP \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_prop.ll"
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
