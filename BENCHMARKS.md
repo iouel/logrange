@@ -182,7 +182,7 @@ Conclusions, now encoded in code and tests (`test_accuracy` scenario 2b):
 Stated in `log_math.h` and machine-checked in `test_accuracy` (k recomputed
 from the input data; the accumulator carries no instrumentation):
 
-> **rp_accum worst-case relative error ≤ cond · (3k + 4 + D) · u + |log|S|| · u**,
+> **rp_accum worst-case relative error ≤ cond · (3k + 4 + D) · u + (|log|S|| + |log|net||) · u**,
 > u = 2⁻⁵³, where k = rescale events (expected O(ln n) for random order,
 > worst n−1), D = mass-weighted mean insertion depth, S = the exact sum;
 > plus the ~745 log-unit vanishing contract. `pos_accum`:

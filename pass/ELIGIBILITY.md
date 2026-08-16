@@ -130,7 +130,8 @@ the only thing it pays for. How much it may change is bounded:
 
 For a rewritten `s += exp(x_i)` loop whose exact sum `S` is a normal double:
 
-    WORST-CASE RELATIVE ERROR  <=  (n + 3k + 4 + D) * u  +  |log|S|| * u
+    WORST-CASE RELATIVE ERROR  <=  (n + 3k + 4 + D) * u
+                                   +  (|log|S|| + |log|net||) * u
 
 `u`, `k` and `D` are the runtime's, defined at `rp_accum` in
 `include/logrange/log_math.h`: `k` counts adds that strictly raise the
@@ -139,7 +140,16 @@ trip count. The exported log form `__logrange_logsum` satisfies the same
 bound as an absolute error in log space, which is the same statement one
 `exp` earlier.
 
-This is `pos_accum`'s `(n + 3k + 3 + D)*u + |log|S||*u` plus `1u` for the
+`net = S / exp(m)` is the scaled sum the reduction takes the log of;
+`|log|net|| <= log n` here, since every scaled term is at most 1. That term
+was added 2026-08-16 after it refuted `rp_accum`'s contract at 1.99x: the
+reduction's two addends both round at their own magnitudes, and `|log|S||`
+alone charges only the addition's result. It does not bind for this code, for
+the same reason it does not bind for `pos_accum` — the `n*u` term dominates
+`log n` — and it is carried so the statement is correct rather than merely
+unfalsified. Family E in `emitted_bound_search.c` measures it.
+
+This is `pos_accum`'s `(n + 3k + 3 + D)*u + (|log|S|| + |log|net||)*u` plus `1u` for the
 final `exp(m + log(s))` that the runtime does not perform. Term for term the
 emitted arithmetic is `pos_accum`'s: under the `oeq` guard, `t <= m` gives
 `dm` exactly `0`, `exp(0)` is exactly `1.0`, and `s*1.0` is exact, so the
@@ -162,7 +172,7 @@ Three scope conditions, all of them real:
   constant.
 
 Status: **held**, not proved. `pass/emitted_bound_search.c` searches it on
-every `run_pass_test.sh` run and fails the gate on any violation. 6985
+every `run_pass_test.sh` run and fails the gate on any violation. 7285
 trials, worst observed/bound **0.99**, at a large one-depth cluster where the
 running sum's roundings align and the observed error is the classical
 `(n-1)u`. The same run scores the form *without* the reduction term, which is

@@ -312,7 +312,7 @@ tooling tier, which ships as beta with its gaps stated.
       `rel err <= (n + 3k + 4 + D)*u + |log|S||*u`, normative in
       `pass/ELIGIBILITY.md`, searched by `pass/emitted_bound_search.c` against
       the object the pass actually rewrote, gated in `run_pass_test.sh`.
-      **Held across 6985 trials, worst observed/bound 0.99.** The gate was
+      **Held across 7285 trials, worst observed/bound 0.99.** The gate was
       negative-tested by halving the bound: 1261 violations, worst 1.98, exit
       1.
       *The derivation is pos_accum's plus 1u for the final `exp`, and that
@@ -337,10 +337,36 @@ tooling tier, which ships as beta with its gaps stated.
       summation's second-order term eats the constant. The search reaches
       n=16385, four orders below it.
       *The reduction term is required here by measurement.* Every run also
-      scores the form without it: exceeded on 321 of 6985 trials, worst 39x.
-- [ ] **The rescale argument rounding is undocumented, and whether it is
-      covered is undetermined for `rp_accum`.** Found 2026-08-16 while
-      deriving the emitted code's bound, which needed the same reasoning.
+      scores the form without it: exceeded on 321 of 7285 trials, worst 39x.
+- [x] **Settled 2026-08-16, and it found a fourth refuted contract — but not
+      the one this item predicted.** The rescale argument rounding is real and
+      is now documented, but it is *covered*: mass damping and, at large J,
+      the `|log|S||` term. What is not covered is the **final reduction's
+      other addend**. `out.log_abs = m_log + log|net|` charged `u*|log|S||`,
+      the rounding of the addition's result, and ignored that `log|net|` is
+      computed to a relative `u` and so an absolute `u*|log|net||`. The two
+      cancel exactly when the sum is near 1, and there `|log|S||` is zero
+      while `|log|net||` is not.
+      *Witness:* `bound_search` family E, n equal positive terms at
+      `L = -log(n)`. `net = n` exactly, no summation error at all, `cond = 1`,
+      `k = 0`, `D = 0`, `|log|S|| = 0`, so the old budget is `4u`. At
+      n = 166463 the error is **7.97u**, ratio **1.99**. New form
+      `cond*(3k+4+D)*u + (|log|S|| + |log|net||)*u` holds at worst 0.50.
+      `pos_accum` is not refuted (0.80): `|log|net|| <= log n` and its `n*u`
+      term dominates. `rp_accum` is exposed because Neumaier compensation
+      removed that `n*u`.
+      *The reference was rebuilt on the way* (`tests/dd_exp.h`): double-double
+      exp assuming nothing about libm, validated by identities needing no
+      external constant, and kept wide through the subtraction. The old one
+      had two floors, ~1u from double `exp()` per term and u/2 from `truth`
+      being a double at comparison — the second structural and undocumented.
+      Resolution went from ~1u to ~1e-14 u. Two assumptions became
+      measurements: `std::exp` worst 0.99u, `expl` worst 5.8e-4 u.
+      *Stated honestly:* family E's 1.99 would have been visible against the
+      old reference. The family is what found it; the reference is what made
+      the marginal 1.16 plateau case readable and the 0.50 trustworthy.
+      *Original entry, kept because the prediction was wrong in an
+      instructive way:*
       *The documentation defect is certain.* `log_math.h` states "Each
       rescale event multiplies the standing sums by a factor carrying <= 2u
       (exp) + u (multiply)". The rescale's `exp` argument is `m_log -

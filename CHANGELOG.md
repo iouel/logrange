@@ -11,6 +11,68 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Changed: the error contract moved again. `rp_accum`'s corrected form was
+itself refuted, at 1.99x.**
+
+Old (2026-08-15): `cond*(3k + 4 + D)*u + |log|S||*u`
+New (2026-08-16): `cond*(3k + 4 + D)*u + (|log|S|| + |log|net||)*u`
+
+where `net = S / exp(m_log)` is the scaled sum the reduction takes the log of.
+`|log|net|| <= log n` for positive sums, `<= log(n*cond)` in general.
+
+The reduction is `out.log_abs = m_log + log|net|`, and absolute error in log
+space is relative error in linear space, so **both** addends' roundings land
+on the result. The old form charged `u*|log|S||`, which is the rounding of the
+addition's *result*, and ignored that `log|net|` is computed to a relative `u`
+and therefore an absolute `u*|log|net||`. The two addends cancel exactly when
+the sum is near 1, and there `|log|S||` goes to zero while `|log|net||` does
+not.
+
+This is the same defect as the one corrected on 2026-08-15, one level up:
+charging for a result's rounding while ignoring an input's magnitude. That
+one was per-term (`2u` for a term's `exp` ignoring its argument, which became
+`D`). This one is the final reduction.
+
+- **The witness.** `bound_search.cpp` family E: `n` equal positive terms at
+  `L = -log(n)`. Then `net = n` exactly, integer adds below 2^53 are exact so
+  there is no summation error at all, `cond = 1`, `k = 0`, `D = 0`, and
+  `|log|S|| = 0` — the entire old budget is `4u`. At n = 166463 the measured
+  error is **7.97u**, a ratio of **1.99**. Worst against the new form: 0.50.
+- **`pos_accum` is not refuted** (worst 0.80) and carries the new term anyway,
+  for correctness rather than because it binds: `|log|net|| <= log n` and its
+  `n*u` term already dominates `log n`. `rp_accum` is exposed precisely
+  because Neumaier compensation removed its `n*u` term, leaving a flat `7u`
+  budget at `k=1, cond=1`.
+- **Found by asking what a rescale really costs**, while deriving the emitted
+  code's bound. That question led to a plateau-then-step family, which came in
+  at 1.16 — inside the old reference's noise. Family E is the clean maximizer
+  the plateau was approximating.
+
+**Changed: the search's reference no longer assumes anything about libm.**
+
+`bound_search.cpp` built its reference from `std::exp()` in plain double and
+then collapsed the double-double accumulator with `value()`. Two floors: ~1u
+per term, and up to u/2 from "truth" being a *double* at the moment of
+comparison. The second is structural — no libm improvement removes it — and
+it was undocumented.
+
+`tests/dd_exp.h` computes exp in double-double with its own argument reduction
+and Taylor series, and the reference stays wide through the subtraction. Terms
+are scaled by the peak's binary exponent, because `ldexp` on both words drives
+the low word subnormal near the bottom of the range and silently degrades the
+pair to ~61 bits. Validated by identities needing no external constant
+(`exp(0) == 1` exactly, `exp(ln2) == 2`, `exp(x)exp(-x) == 1`,
+`exp(a)exp(b) == exp(a+b)`); `bound_search` refuses to report if they fail.
+Resolution: ~1e-30 relative, about 1e-14 u.
+
+Two assumptions became measurements: `std::exp` is worst **0.99u** over 20001
+points in [-700, 700], and `expl` is worst **5.8e-4 u**. The first confirms
+the floor the old file claimed.
+
+Honest scope: family E's 1.99 would have been visible against the old
+reference too. The family is what found the defect; the reference is what
+makes the marginal cases readable and the 0.50 worst-case trustworthy.
+
 **Changed: the error contract moved.**
 
 The 0.2.0 contract was `rel err ≤ cond·(3k+4)·u`. It was refuted, not
@@ -69,7 +131,7 @@ had one measurement, 1.37e-15 on one benign case, and no bound. Now:
 
 Normative in `pass/ELIGIBILITY.md`. `pass/emitted_bound_search.c` searches it
 against the object the pass actually rewrote, not against a replica, and
-`run_pass_test.sh` fails on any violation. Held across 6985 trials, worst
+`run_pass_test.sh` fails on any violation. Held across 7285 trials, worst
 observed/bound 0.99. Gate negative-tested by halving the bound: 1261
 violations, worst 1.98.
 
@@ -92,7 +154,7 @@ violations, worst 1.98.
   under ~2.1e8, derived from where recursive summation's second-order term
   eats the constant.
 - **The reduction term is measured, not inherited.** Each run also scores the
-  form without it: exceeded on 321 of 6985 trials at up to 39x.
+  form without it: exceeded on 321 of 7285 trials at up to 39x.
 
 Shipping-posture condition 4 closes. Four of six are now closed; shape
 coverage and the dead original chain remain.

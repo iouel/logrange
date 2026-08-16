@@ -203,7 +203,7 @@ Two categories, and the distinction is the safety argument:
   accumulation algorithm changes, so finite results are not bitwise
   identical. Measured 1.37e-15 relative on the benign case (test tolerance
   1e-12), and bounded since 2026-08-16 by
-  `(n + 3k + 4 + D)*u + |log|S||*u` (ELIGIBILITY.md, "Error contract for the
+  `(n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u` (ELIGIBILITY.md, "Error contract for the
   emitted code"). This is what the reassociation grant pays for, and the only
   thing it pays for.
 - **Special-value differences: forbidden.** NaN, `+inf`, `-inf`, signed
@@ -452,9 +452,12 @@ startup instead of trusting them. Under a merely-1-ulp `exp(0)` the branchless
 form would pay `n*u` that `pos_accum` does not.
 
 What the emitted code adds is the final `exp(m + log(s))`, one rounding:
-`(n + 3k + 3 + D)*u` becomes `(n + 3k + 4 + D)*u`, reduction term unchanged.
+`(n + 3k + 3 + D)*u` becomes `(n + 3k + 4 + D)*u`, reduction terms unchanged.
+Both reduction terms are inherited, including the `|log|net||*u` added on
+2026-08-16 when it refuted `rp_accum` at 1.99x; it does not bind here because
+`|log|net|| <= log n` and the `n*u` term dominates.
 
-**What the search found.** 6985 trials, worst observed/bound 0.99.
+**What the search found.** 7285 trials, worst observed/bound 0.99.
 
 - The binding family is a large cluster one depth below a dominant term. Every
   add of the running sum rounds the same direction, so the observed error is
@@ -471,7 +474,7 @@ What the emitted code adds is the final `exp(m + log(s))`, one rounding:
   so the surviving error is `J*s/(s + e^J)*u`, maximized near `J ~ ln n` and
   worth a fraction of a `u` against a `3u` per-rescale budget.
 - **The reduction term is required here by measurement, not by analogy.**
-  Every run also scores the form without it. It is exceeded on 321 of the 6985
+  Every run also scores the form without it. It is exceeded on 321 of the 7285
   trials, worst 39x.
 
 **One limit is derived rather than searched.** Recursive summation's classical
@@ -525,7 +528,7 @@ unmeasured over chains; nothing here bounds a chain.
   and is left for later DCE/ADCE. Harmless: it computes the original
   0.0/NaN alongside.
 - ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted
-  code now carries `(n + 3k + 4 + D)*u + |log|S||*u`, stated normatively in
+  code now carries `(n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in
   ELIGIBILITY.md and searched by `emitted_bound_search.c` on every gate run.
   See below.
 

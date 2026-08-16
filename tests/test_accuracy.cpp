@@ -68,10 +68,25 @@ static double weighted_depth(const std::vector<log_value>& terms) {
   return (mass.value() > 0.0) ? wdepth.value() / mass.value() : 0.0;
 }
 
+// The contract from log_math.h. The reduction contributes BOTH addends of
+// m_log + log|net|: log|net| rounds at its own magnitude, and the addition
+// rounds at |log|S||. Charging only the second was refuted 2026-08-16 at
+// 1.99x by bound_search's family E, so `peak` is required here rather than
+// optional — without it this helper asserts a known-false claim.
 static double formal_bound(double cond, std::size_t k, double depth,
-                           double log_abs_sum) {
+                           double log_abs_sum, double peak) {
+  const double lognet = std::fabs(log_abs_sum - peak);
   return cond * (3.0 * static_cast<double>(k) + 4.0 + depth) * U +
-         std::fabs(log_abs_sum) * U;
+         (std::fabs(log_abs_sum) + lognet) * U;
+}
+
+// The running reference m_log at the end of the accumulation: the largest
+// log_abs among the nonzero terms.
+static double peak_log_abs(const std::vector<log_value>& terms) {
+  double m = -std::numeric_limits<double>::infinity();
+  for (const log_value& v : terms)
+    if (!v.is_zero() && v.log_abs > m) m = v.log_abs;
+  return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +130,7 @@ static void test_long_positive_sum() {
     const double rel   = std::fabs(got - truth) / std::fabs(truth);
     // Positive-only sum: cond == 1 exactly. Assert the header's formal bound.
     const double bound = formal_bound(1.0, k, weighted_depth(terms),
-                                      ref.log_abs());
+                                      ref.log_abs(), peak_log_abs(terms));
 
     char label[64];
     std::snprintf(label, sizeof label, "rp_accum long +sum n=%zu (rel err, k=%zu)", n, k);
@@ -187,7 +202,8 @@ static void test_heavy_cancellation(const cancel_data& d) {
   const double rel   = std::fabs(got - d.truth) / std::fabs(d.truth);
   const double bound = formal_bound(d.cond, count_rescales(d.terms),
                                     weighted_depth(d.terms),
-                                    std::log(std::fabs(d.truth)));
+                                    std::log(std::fabs(d.truth)),
+                                    peak_log_abs(d.terms));
 
   char label[64];
   std::snprintf(label, sizeof label, "rp_accum heavy cancel (rel err, cond=%.1e)", d.cond);
@@ -237,7 +253,8 @@ static void test_ordering_sensitivity(const cancel_data& d) {
   // the fold has no such contract — it keeps the old generous sanity bound.
   const double rp_bound   = formal_bound(d.cond, count_rescales(shuffled),
                                          weighted_depth(shuffled),
-                                         std::log(std::fabs(d.truth)));
+                                         std::log(std::fabs(d.truth)),
+                                         peak_log_abs(shuffled));
   const double fold_bound = d.cond * static_cast<double>(d.terms.size()) * 1e-14;
   report_row("rp_accum heavy cancel SHUFFLED (rel err)", d.terms.size(), rp_rel, rp_bound);
   report_row("log_add fold heavy cancel SHUFFLED (rel err)", d.terms.size(), fold_rel, fold_bound);
