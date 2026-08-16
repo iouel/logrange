@@ -28,6 +28,19 @@ build_plugin() {
   cmake --build "$HERE/build" >/dev/null
 }
 
+# Loop canonicalization the matcher's LLVM recognizer requires, and which a
+# real mid-pipeline pass would already have. Both are unstated preconditions of
+# RecurrenceDescriptor::AddReductionVar:
+#   loop-simplify — it reads the reduction start value via
+#     Phi->getIncomingValueForBlock(L->getLoopPreheader()) with no null check.
+#     With assertions off that is an out-of-bounds read, not a diagnostic.
+#   lcssa         — it inspects out-of-loop users to find the exit instruction.
+#     Without LCSSA it declined 28 reductions on this corpus that it accepts
+#     with it (matcher/DELTA.md).
+# Measured as a no-op for the legacy recognizer: 2859 loops / 783 hits / 5 HIGH
+# with and without, on all three codebases.
+CANON_PASSES="loop-simplify,lcssa"
+
 # Run the matcher over every .bc in a directory; write raw lines to $2.
 scan() {
   local bcdir="$1" out="$2" passes="${3:-sop-matcher}"
@@ -35,7 +48,7 @@ scan() {
   local n=0
   for bc in "$bcdir"/*.bc; do
     [ -e "$bc" ] || continue
-    "$OPT" -load-pass-plugin="$PLUGIN" -passes="$passes" \
+    "$OPT" -load-pass-plugin="$PLUGIN" -passes="$CANON_PASSES,$passes" \
       -disable-output "$bc" 2>> "$out" || true
     n=$((n + 1))
   done
@@ -179,19 +192,67 @@ rejects)
     scan "$bcdir" "$WORK/raw-rejects-$name.txt" 'sop-matcher<explain>'
     cat "$WORK/raw-rejects-$name.txt" >> "$all"
   done
-  cu="$WORK/raw-rejects-cleanuses.txt"
-  grep '^REJECT,cleanUses' "$all" > "$cu" || true
   # Any line not starting with a known record tag means interleaved output.
-  bad=$(grep -vcE '^(LOOP|HIT|REJECT),' "$all" || true)
+  bad=$(grep -vcE '^(LOOP|HIT|REJECT|WEIGHT|DIFF|WARN),' "$all" || true)
+  cause() { grep -c "^REJECT,$1," "$all" || true; }
   echo
   echo "== rejection census: $targets =="
   printf 'malformed lines (interleaving check)   %s\n' "$bad"
-  printf 'cleanUses rejects                      %s\n' "$(wc -l < "$cu")"
-  printf '  extra user is invariant-addr store   %s\n' "$(grep -c 'store-of-spine:invariant-addr' "$cu" || true)"
-  printf '  extra user is varying-addr store     %s\n' "$(grep -c 'store-of-spine:varying-addr' "$cu" || true)"
-  printf '  extra user is a non-store            %s\n' "$(grep -c 'other-user' "$cu" || true)"
-  printf '  none on the update (phi/other spine) %s\n' "$(grep -vcE 'store-of-spine|other-user' "$cu" || true)"
+  printf 'REJECT records                         %s\n' "$(grep -c '^REJECT,' "$all" || true)"
+  printf '  not-reduction  (LLVM: not a reduction) %s\n' "$(cause not-reduction)"
+  printf '  kind           (reduction, wrong kind) %s\n' "$(cause kind)"
+  printf '  dirtyChain     (op outside allowed set)%s\n' "$(cause dirtyChain)"
+  printf '  noMulNoExp     (plain sum, out of scope)%s\n' "$(cause noMulNoExp)"
+  # These three should stay at zero. Non-zero means the scan pipeline lost its
+  # canonicalization (see CANON_PASSES) or getReductionOpChain declined AND the
+  # generic cycle walk also failed — either is a pipeline bug, not a finding.
+  printf '  not-simplified (MUST be 0)             %s\n' "$(cause not-simplified)"
+  printf '  chain          (MUST be 0)             %s\n' "$(cause chain)"
+  printf '  no-terms       (MUST be 0)             %s\n' "$(cause no-terms)"
   [ "$bad" = "0" ] || { echo "FAIL: interleaved output detected"; exit 1; }
+  for z in not-simplified chain no-terms; do
+    [ "$(cause $z)" = "0" ] || { echo "FAIL: $z should be unreachable"; exit 1; }
+  done
+  ;;
+delta)
+  # Every figure in DELTA.md, DERIVED from committed evidence.
+  #
+  # The measurement itself is not re-runnable: it needed both recognizers in
+  # one binary, and the hand-written one was deleted once the comparison was
+  # published. What is committed instead is its paired output,
+  # data/raw-delta.txt — 2859 LOOP + 783 HIT (the old recognizer's stream) +
+  # 96 DIFF records — which is enough to recompute both columns. Same contract
+  # as `figures`: reads only committed text, needs no corpus, no bitcode and
+  # no plugin, so a reader can check DELTA.md without reproducing the study.
+  d="$HERE/data/raw-delta.txt"
+  [ -f "$d" ] || { echo "FAIL: missing committed evidence $d" >&2; exit 1; }
+  n() { grep -c "$1" "$d" || true; }
+  loops=$(n '^LOOP,'); leghits=$(n '^HIT,')
+  lonly=$(n '^DIFF,llvm-only,'); gonly=$(n '^DIFF,legacy-only,')
+  differ=$(n '^DIFF,both-differ,'); recov=$(n '^DIFF,agree-recovered,')
+  llvmhits=$((leghits - gonly + lonly))
+  echo "== recognizer delta (derived from data/raw-delta.txt) =="
+  printf 'loops examined (both recognizers)      %s\n' "$loops"
+  printf 'hits, hand-written spine walk          %s\n' "$leghits"
+  printf 'hits, RecurrenceDescriptor             %s\n' "$llvmhits"
+  printf '  gained                               %s\n' "$lonly"
+  printf '    was rejected at the spine walk     %s\n' "$(n '^DIFF,llvm-only,.*legacy=miss:spine')"
+  printf '    was rejected at the mid-loop guard %s\n' "$(n '^DIFF,llvm-only,.*legacy=miss:cleanUses')"
+  printf '  lost                                 %s\n' "$gonly"
+  printf 'graded differently where both matched  %s\n' "$differ"
+  printf 'chain recovered by the cycle fallback  %s\n' "$recov"
+  bad=$(grep -vcE '^(LOOP|HIT|REJECT|WEIGHT|DIFF|WARN),' "$d" || true)
+  [ "$bad" = "0" ] || { echo "FAIL: $bad malformed lines in $d"; exit 1; }
+  # DELTA.md's central claim: recognition changed, grading did not. If this
+  # ever fires, the two recognizers were not in fact sharing evaluate() and
+  # every gain/loss attribution in that file is unsound.
+  [ "$differ" = "0" ] || { echo "FAIL: a shared match was graded differently"; exit 1; }
+  # The published headline. Asserted, not just printed, so DELTA.md and this
+  # evidence cannot drift apart silently.
+  [ "$loops/$leghits/$llvmhits" = "2859/783/814" ] || {
+    echo "FAIL: derived $loops/$leghits/$llvmhits, DELTA.md publishes 2859/783/814"
+    exit 1; }
+  echo "DELTA OK (2859 loops, 783 -> 814 hits, +$lonly/-$gonly, 0 regrades)"
   ;;
 weights)
   # Weight census, backing the scope decision for the pass's shape coverage.
@@ -270,12 +331,18 @@ coverage)
   expect_hit  manual_lse        HIGH 'exp-chain;exp-sum'
   expect_hit  forward_step_reg  LOW  none
   expect_hit  kernel_sum        LOW  none
-  # Known gaps. These are asserted so the docs cannot quietly become wrong in
-  # EITHER direction: if one starts hitting, RESULTS.md needs updating too.
-  expect_miss forward_step_mem
+  # Memory-carried accumulator: `out[j] += prev[i] * A[i*n+j]`, where the
+  # accumulator IS the array cell. This was a documented blind spot until
+  # 2026-08-17, when recognition moved to RecurrenceDescriptor, which
+  # processes stores to loop-invariant addresses (IntermediateStore).
+  # Asserted as a HIT so the closure cannot silently regress.
+  expect_hit  forward_step_mem  LOW  none
+  # Still a known gap, and asserted so the docs cannot quietly become wrong in
+  # EITHER direction: a pure product is exponent-tracking's job, not this
+  # project's. RecurKind::FMul is filtered out for exactly this reason.
   expect_miss likelihood_product
   if [ "$cov_fail" = 0 ]; then
-    echo "COVERAGE PASS (5 named shapes seen; forward_step_mem and"\
+    echo "COVERAGE PASS (6 named shapes seen incl. memory-carried;"\
          "likelihood_product still missed, as documented)"
   else
     echo "COVERAGE FAIL: RESULTS.md 'Coverage against the shapes this project names' is stale"

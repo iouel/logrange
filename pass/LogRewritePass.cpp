@@ -241,7 +241,12 @@ const char *fpEnvRejectReason(const Function &F) {
   return nullptr;
 }
 
-// Sole in-loop user, exactly as in SumOfProductsMatcher.cpp.
+// Sole in-loop user. This was "exactly as in SumOfProductsMatcher.cpp" until
+// 2026-08-17, when the matcher deleted its copy in favour of
+// RecurrenceDescriptor::isReductionPHI, which establishes the same property.
+// This pass has not been migrated: it is a labeled prototype outside 1.0's
+// supported surface, and the migration is tracked in TODO.md rather than done
+// alongside the matcher's. See matcher/DELTA.md for what the swap measured.
 const User *soleInLoopUser(const Value *V, const Loop &L) {
   const User *Found = nullptr;
   for (const User *U : V->users()) {

@@ -14,12 +14,12 @@ Some sums fail in linear floating point wherever individual terms underflow or
 overflow: mixture likelihoods, forward-algorithm recursions, softmax
 denominators. A naive loop returns 0.0, inf, or NaN.
 
-The header rescues all three. The diagnostic finds two: mixture likelihoods and
-softmax denominators are flagged HIGH. The forward algorithm is flagged in
-neither form it is usually written. `out[j] += ...` is rejected at the
-mid-loop-read guard. The register-accumulator form is seen but graded LOW: its
-underflow accumulates across the enclosing time-step loop while each inner
-reduction looks unremarkable. See [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md),
+The header rescues all three. The diagnostic flags two: mixture likelihoods and
+softmax denominators are flagged HIGH. The forward algorithm is *matched* in
+both forms it is usually written, but graded LOW in both, so it is summarized
+as a count rather than reported. Its underflow accumulates across the
+enclosing time-step loop while each inner reduction looks unremarkable, and
+risk is judged one loop at a time. See [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md),
 "Scope limits".
 
 LogRange is a C++17 header-only library for signed log-domain accumulation.

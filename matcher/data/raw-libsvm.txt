@@ -31,6 +31,7 @@ LOOP,svm.cpp,831,_ZN6Solver18select_working_setERiS0_
 LOOP,svm.cpp,918,_ZN6Solver12do_shrinkingEv
 LOOP,svm.cpp,0,_ZN6Solver12do_shrinkingEv
 LOOP,svm.cpp,977,_ZN6Solver13calculate_rhoEv
+HIT,svm.cpp,0,_ZN6Solver13calculate_rhoEv,runtime,4,1,plain,LOW,none
 LOOP,svm.cpp,1053,_ZN9Solver_NU18select_working_setERiS0_
 LOOP,svm.cpp,1083,_ZN9Solver_NU18select_working_setERiS0_
 LOOP,svm.cpp,442,_ZN9Solver_NU12do_shrinkingEv

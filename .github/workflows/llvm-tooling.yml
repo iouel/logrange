@@ -1,10 +1,12 @@
-# The four correctness gates for the LLVM tooling, which until recently only
+# The correctness gates for the LLVM tooling, which until recently only
 # ever ran when a human typed them into WSL:
 #
 #   matcher/run_study.sh selftest   labeled ground truth for the matcher
 #   matcher/run_study.sh coverage   the coverage claims in matcher/RESULTS.md
 #   pass/run_pass_test.sh           the rewrite prototype, end to end
 #   matcher/test_scan.sh            the diagnostic front door, end to end
+#   matcher/run_study.sh figures    published figures, from committed evidence
+#   matcher/run_study.sh delta      DELTA.md's figures, likewise
 #
 # Deliberately a SEPARATE workflow from tests.yml. This job installs a
 # toolchain from a third-party apt mirror; the header-only library's signal
@@ -138,6 +140,19 @@ jobs:
           bash matcher/run_study.sh figures | tee "$RUNNER_TEMP/figures.out"
           grep -q '^FIGURES OK' "$RUNNER_TEMP/figures.out" \
             || { echo "FAIL: no FIGURES OK line"; exit 1; }
+
+      # Gate 6. matcher/DELTA.md's figures, derived from the committed
+      # matcher/data/raw-delta.txt. That measurement cannot be re-run — it
+      # needed both recognizers in one binary, and the hand-written one was
+      # deleted once the comparison was published — so its paired output is
+      # committed instead and recomputed here. Same no-corpus contract as
+      # Gate 5. Also asserts the claim the whole swap rests on: recognition
+      # changed and no risk grade did.
+      - name: Gate 6 — recognizer delta derived from committed evidence
+        run: |
+          bash matcher/run_study.sh delta | tee "$RUNNER_TEMP/delta.out"
+          grep -q '^DELTA OK' "$RUNNER_TEMP/delta.out" \
+            || { echo "FAIL: no DELTA OK line"; exit 1; }
 
       # The raw matcher output is the evidence behind the two matcher gates;
       # keep it so a red run can be read without re-running anything locally.
