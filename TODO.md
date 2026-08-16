@@ -220,15 +220,16 @@ tooling tier, which ships as beta with its gaps stated.
       as this was written); (6) dead original removed or a required DCE run
       documented. 1 and 2 are correctness/interface blockers, 3–6 are label
       blockers.
-      *Status 2026-08-17: 1, 3, 4 and 5 closed; 2 closed for one consumer
-      shape only; 6 open.* Condition 3 closed by "Pass shape coverage" below —
-      both spines are matched, and the gate now declines `dot_sum` at the
-      default threshold. Condition 2 is closed only where `propagate=div`
-      applies; every other consumer still exits through the side global, and
-      last-rewrite-wins remains its stated defect. Closing 3 does not move the
-      posture: neither number that drove the decision (5 HIGH rows in 2859
-      loops; the rescue unobservable without the side global for every shape
-      but one) changed.
+      *Status 2026-08-17: 1, 4 and 5 closed; 2 closed for one consumer shape
+      only; 3 literal-text-met but property open; 6 open.* Condition 2 is
+      closed only where `propagate=div` applies; every other consumer still
+      exits through the side global, and last-rewrite-wins remains its stated
+      defect. Condition 3's spines are matched, but the gate prevents no
+      rewrite and cannot until the rewritable set exceeds the HIGH set — the
+      condition is restated in `logrange_intent.md` rather than ticked. None
+      of this moves the posture: neither number that drove the decision (5
+      HIGH rows in 2859 loops; the rescue unobservable without the side
+      global for every shape but one) changed.
       *If the `-inf` fix lands:* condition 1 closes and all three of
       Deliverable 2's stated preconditions are met, so the pass becomes
       blocked on product concerns rather than on preconditions. The
@@ -473,8 +474,28 @@ tooling tier, which ships as beta with its gaps stated.
       published worst-observed figures (0.85 and 0.79) move slightly and the
       derivation text still needs the `u*J` correction. If one exceeds 1.0
       clear of the floor, that is a fourth refuted contract.
-- [x] **Pass shape coverage — fmuladd and `w[i]*exp(t)`.** Done 2026-08-17,
-      and it closes **posture condition 3**. The pass now *matches* three
+- [~] **Pass shape coverage — fmuladd and `w[i]*exp(t)`.** Done 2026-08-17.
+      **Posture condition 3's literal text is met; its property is not.**
+      Audited the same day and the closure did not survive: the gate is
+      *reachable* (a matched shape verdicts LOW and is refused at the default
+      threshold) but not *load-bearing* (no rewrite is prevented by it, and
+      none can be). Eligibility requires an accepted `exp` term and a HIGH
+      verdict means the same thing, so `rewritable ⊆ HIGH` by construction;
+      every LOW loop is weighted and the weight clause refuses it at any
+      threshold. Measured: the rewrite set at `min-risk=low` is identical to
+      the default, now asserted. Condition 3 restated in `logrange_intent.md`
+      to name its own success: the gate closes when the rewritable set
+      exceeds the HIGH set, which needs bounded-weight support, not more
+      matched-and-declined shapes. Left open on that basis.
+      *What the audit also found, all fixed 2026-08-17:* the suite was a
+      closed-world whitelist — "these 4 names are rewritten" and "these names
+      are bit-identical" were two independent hand-maintained lists with
+      nothing tying them, so relaxing the weight clause to admit constant
+      weights produced a pass that rewrote `s += 0.5*exp(x)` with the `0.5`
+      silently dropped **while the entire suite stayed green**. The rewritten
+      set is now derived from the pass's own output and each member must
+      carry a passing `cover_<fn>_*` numeric assertion.
+      The pass now *matches* three
       spines — `fadd(phi, X)`, `fadd(phi, fmul(W, X))` and
       `llvm.fmuladd(W, X, phi)` — and rewrites only the first. Both weighted
       forms are needed because which one clang emits is `-ffp-contract`, a
@@ -486,12 +507,12 @@ tooling tier, which ships as beta with its gaps stated.
       nothing about reads exactly like a shape it failed to recognize, and
       sends the next reader to the matcher instead of to the contract. So
       weighted spines are declined `DECLINE-WEIGHT,...,unbounded-weight`.
-      **The risk gate now declines a real input at the default threshold**,
-      which is what condition 3 existed for: `dot_sum`'s
-      `llvm.fmuladd(x, y, phi)` has no `exp` in its chain, verdicts LOW, and
-      is refused. Previously every matchable shape required an `exp`, so the
-      verdict was HIGH by construction and only a synthetically raised
-      `min-risk` could exercise the refusal path.
+      The risk gate now declines a real input at the default threshold:
+      `dot_sum`'s `llvm.fmuladd(x, y, phi)` has no `exp` in its chain,
+      verdicts LOW, and is refused. Previously every matchable shape required
+      an `exp`, so the verdict was HIGH by construction and only a
+      synthetically raised `min-risk` could exercise the refusal path. This
+      is reachability only — see the property note above.
       *Order is load-bearing and is now normative* (ELIGIBILITY.md 3.3): risk
       gate first, weight clause second. Reversed, the weight clause shadows
       the gate and `dot_sum` never reaches it — negative-tested, and it fails

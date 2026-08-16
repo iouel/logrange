@@ -52,8 +52,13 @@ does not control: measured `=on` (default) → `llvm.fmuladd`, `=off` and
 `=fast` → `fmul` + `fadd`.
 
 A spine with neither a multiply nor an `exp` is **not matched at all** and
-stays silent — the matcher's `noMulNoExp` rule, so the two tools agree on
-scope. `plain_sum` is the named case on both sides.
+stays silent — the matcher's `noMulNoExp` rule, applied here so `plain_sum`
+is a labeled miss on both sides rather than a decline carrying a verdict.
+
+That is agreement on *one rule*, and it does not generalize: the pass and the
+matcher disagree on verdicts for reachable shapes, and the pass is silent on
+several the matcher grades HIGH. The differences are tabulated in
+ELIGIBILITY.md 7.1 rather than summarized as "scope agreement".
 
 The normative contract is **`pass/ELIGIBILITY.md`**. This file is the
 design narrative and the measured record; where the two differ,
@@ -323,9 +328,14 @@ CONSUMER-DECLINE,pass/test_softmax.c,49,softmax_add_rw,not-fdiv
 REWRITE,pass/test_softmax.c,57,softmax_sum_div_rw,HIGH,exp-chain;exp-sum
 CONSUMER-DECLINE,pass/test_softmax.c,59,softmax_sum_div_rw,not-the-sum
 DECLINE-WEIGHT,pass/test_softmax.c,87,weighted_sum_rw,unbounded-weight
-DECLINE-RISK,pass/test_softmax.c,95,dot_sum_rw,LOW,below-min-HIGH
+DECLINE-WEIGHT,pass/test_softmax.c,105,const_weight_sum_rw,unbounded-weight
+REWRITE,pass/test_softmax.c,122,expf_widened_rw,HIGH,exp-chain;exp-sum
+CONSUMER-DECLINE,pass/test_softmax.c,123,expf_widened_rw,not-fdiv
+DECLINE-RISK,pass/test_softmax.c,130,dot_sum_rw,LOW,below-min-HIGH
 PASS,weighted_spine_matched_under_all_contract_settings
 PASS,gate_declines_above_threshold
+PASS,threshold_relation_low_and_med
+PASS,gate_is_reachable_but_not_load_bearing
 PASS,unknown_parameter_refused
 == 3b. safety declines (force must NOT override any of these) ==
 PASS,decline_external_exp_call
@@ -348,7 +358,7 @@ PASS,unknown_propagate_refused
 PASS,force_alone_does_not_propagate
 == 4. codegen, link, run ==
 INFO,benign,orig=1654.7821267630925,rw=1654.7821267630948,rel=1.37e-15,logsum=7.4114246336847733,logref=7.4114246336847733
-PASS,benign_linear_agree_1e-12
+PASS,cover_softmax_denom_rw_benign_1e-12
 PASS,benign_exported_logsum
 INFO,rescue,orig=0,rw_linear=0,logsum=-792.61968910109306,logref=-792.61968910109306
 PASS,rescue_orig_underflows_to_zero
@@ -392,13 +402,20 @@ PASS,zerotrip_reference_neginf
 PASS,negctl_plain_sum_untouched
 PASS,negctl_dot_sum_untouched
 PASS,negctl_weighted_sum_untouched
+PASS,negctl_const_weight_untouched
 PASS,negctl_invariant_exp_untouched
+INFO,weight_witness,orig=19719.353087519543,rw=19719.353087519543
+PASS,weight_witness_linear_is_finite
+PASS,weight_witness_rw_matches_linear
+INFO,expf_widened,orig=1705.6274770982563,rw=1705.6274777201195,rel=3.65e-10,logsum=7.4416883441373232,logref=7.4416883441373232
+PASS,cover_expf_widened_rw_agree_float_1e-6
+PASS,cover_expf_widened_rw_matches_double_ref
 INFO,softmax_full,max_rel=1.64e-15
-PASS,softmax_full_rw_agree_1e-12
+PASS,cover_softmax_full_rw_agree_1e-12
 INFO,softmax_add,max_rel=1.6e-15
-PASS,softmax_add_rw_agree_1e-12
+PASS,cover_softmax_add_rw_agree_1e-12
 INFO,softmax_sum_div,max_rel=1.65e-15
-PASS,softmax_sum_div_rw_agree_1e-12
+PASS,cover_softmax_sum_div_rw_agree_1e-12
 INFO,prop_benign,linear=2.26e-16,reconvert=1.63e-15,propagated=2.42e-15
 PASS,prop_benign_agrees_1e-12
 INFO,prop_ranking,trials=64,prop_wins=0,ratio_min=1.33,ratio_max=13.92,ref_logL_err=1.7e-18
@@ -407,6 +424,7 @@ PASS,prop_rescue_linear_is_broken
 PASS,prop_rescue_all_finite
 PASS,prop_rescue_sums_to_one
 OVERALL,PASS
+PASS,every_rewrite_semantically_covered,5
 run_pass_test: PASS
 ```
 
@@ -430,14 +448,19 @@ run_pass_test: PASS
   `strictfp`, constrained ops with `strictfp` stripped, and
   `-fdenormal-fp-math=preserve-sign` each produce 0 rewrites and the
   expected reason token.
-- **Negative controls** (same module), and they now split into two kinds.
-  *Not matched, silent:* plain sum (no multiply, no `exp` — the matcher's
-  `noMulNoExp`) and loop-invariant-`exp` sum. *Matched and declined with a
-  reason:* dot product (`DECLINE-RISK,LOW`) and weighted sum
-  (`DECLINE-WEIGHT`). The script asserts *exactly four* `REWRITE` lines and
-  *exactly two* `DECLINE-` lines, so a new decline of any kind fails the gate
-  even if it carries an allowed tag; the harness checks all four controls'
-  orig/rw results bit-identical.
+- **Negative controls** (same module), in two kinds. *Not matched, silent:*
+  plain sum (no multiply, no `exp` — the matcher's `noMulNoExp`) and
+  loop-invariant-`exp` sum. *Matched and declined with a reason:* dot product
+  (`DECLINE-RISK,LOW`), weighted sum and constant-weight sum (both
+  `DECLINE-WEIGHT`). All five are asserted bit-identical orig/rw.
+- **Semantic coverage is derived, not listed.** The script reads the set of
+  rewritten functions out of the pass's own output and requires a passing
+  `cover_<fn>_*` numeric assertion for each. Before 2026-08-17 the rewritten
+  set and the validated set were two hand-maintained lists with nothing tying
+  them, and a pass that rewrote `s += 0.5*exp(x)` while dropping the `0.5`
+  kept the whole suite green. A lower bound (the five named shapes must still
+  be rewritten) guards the other direction, since a loop that stopped being
+  rewritten would trivially agree with itself.
 
 ### The reference oracle was wrong on infinities, and is now fixed
 
@@ -550,22 +573,25 @@ unmeasured over chains; nothing here bounds a chain.
 - **The export hook is a prototype.** One process-global external symbol,
   last-rewrite-wins, and any module the pass rewrites must be linked
   against something defining `__logrange_logsum`.
-- ~~**Profitability gating is wired, and cannot decline anything yet.**~~
-  Closed 2026-08-17 by the spine widening above. The pass computes the same
-  risk verdict the matcher does and refuses to rewrite below `min-risk`
-  (default HIGH), logging `REWRITE,<file>,<line>,<fn>,HIGH,exp-chain;exp-sum`
-  or `DECLINE-RISK,...,below-min-<tier>`. `dot_sum`'s
-  `llvm.fmuladd(x, y, phi)` is now matched, verdicts LOW, and is refused **at
-  the default threshold** — the first real input the gate turns away.
-  Previously the only matchable spine required an `exp` call, so the verdict
-  was HIGH by construction and the refusal path was reachable only through a
-  synthetically raised `min-risk`. That path is still tested
-  (`min-risk=none`), and the new one is negative-tested two ways: hardcoding
-  the verdict HIGH, and reordering the weight clause ahead of the gate. Both
-  make the `dot_sum` assertion fail. MED stays uncomputed and is stated as
-  unreachable rather than reported: every matched spine carries at most one
-  multiply, and the matcher's MED needs `nMul >= 4` or a log chain with
-  `nMul >= 2`.
+- **Profitability gating is reachable, and still not load-bearing.** The pass
+  refuses to rewrite below `min-risk` (default HIGH), logging
+  `REWRITE,<file>,<line>,<fn>,HIGH,exp-chain;exp-sum` or
+  `DECLINE-RISK,...,below-min-<tier>`. Since 2026-08-17 `dot_sum`'s
+  `llvm.fmuladd(x, y, phi)` is matched, verdicts LOW, and is refused at the
+  default threshold — a real input, not a synthetic threshold.
+  **That is reachability, not gating.** Eligibility requires an accepted `exp`
+  term and a HIGH verdict means exactly that, so `rewritable ⊆ HIGH`; and
+  every LOW loop is weighted, so the weight clause refuses it at any
+  threshold. The rewrite set at `min-risk=low` is identical to the default
+  one, and `run_pass_test.sh` asserts that equality — an inverted assertion
+  that turns red when the limitation is fixed. It closes when the rewritable
+  set exceeds the HIGH set, which needs bounded-weight support rather than
+  more matched-and-declined shapes.
+  Negative-tested three ways: hardcoding the verdict HIGH, reordering the
+  weight clause ahead of the gate, and dropping a `cover_<fn>_*` assertion.
+  MED is uncomputed and unreachable *in the verdict function*; that is not
+  the same as no matched loop being MED — the matcher grades
+  `s += a*b*c*d*e` MED where this pass prints LOW (ELIGIBILITY.md 7.1).
 - **The dead original is left in place.** The pass adds and redirects; it
   does not delete. The orphaned `phi`/`fadd`/`exp` chain feeds only itself
   and is left for later DCE/ADCE. Harmless: it computes the original

@@ -559,20 +559,40 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // Shape is not profitability. The matcher study found the abundant
       // hits are benign-range dot products where a log rewrite only costs
       // speed, and that the rescue-worthy subset is small; the risk verdict
-      // is the gate that separates them. Same rule as the matcher's:
-      // exp-family factor in the term chain => HIGH, because exp(t) spans the
-      // whole range from t alone. Otherwise LOW.
+      // is the gate that separates them. The rule here: an accepted exp call
+      // in the term => HIGH, because exp(t) spans the whole range from t
+      // alone. Otherwise LOW.
       //
-      // MED is not computed because it is unreachable here. The matcher
-      // grades MED on nMul >= 4, or a log-domain chain with nMul >= 2; every
-      // spine accepted above carries at most one multiply.
+      // NOT the matcher's rule, and the difference is stated rather than
+      // glossed. Two divergences, both measured:
+      //   - The matcher's exp-family is exp/expm1/exp2/pow (substring match).
+      //     This pass accepts only exp/expf/llvm.exp, so `s += pow(a,b)` is
+      //     matcher-HIGH and a silent miss here, and `s += c*pow(a,b)` is
+      //     matcher-HIGH while this gate prints LOW.
+      //   - The matcher's MED needs nMul >= 4, or a log chain with nMul >= 2,
+      //     counted over the WHOLE term chain by walkChain — including
+      //     multiplies inside the exp argument, and counting fdiv. This pass
+      //     counts spine multiplies only, which is a different quantity. So
+      //     `s += a*b*c*d*e` is matcher-MED and prints LOW here.
+      // MED is therefore unreachable in THIS function by construction (it
+      // computes only Low and High), which is not the same claim as "no
+      // matched loop can be graded MED". The matcher can and does grade some
+      // of them MED.
       //
       // The gate declines a real input as of the fmuladd widening above:
       // dot_sum's llvm.fmuladd(x, y, phi) is matched, verdicts LOW, and is
-      // refused at the default threshold. Before that widening the only
-      // matchable shape required an exp call, so the verdict was HIGH by
-      // construction and the refusal path was reachable only by raising
-      // min-risk synthetically.
+      // refused at the default threshold.
+      //
+      // It is still NOT load-bearing, and that is asserted rather than
+      // described. Eligibility below requires EK == Intrinsic, and the
+      // verdict is HIGH exactly when EK != No, so every rewritable loop
+      // verdicts HIGH; and every LOW loop is weighted (the noMulNoExp screen
+      // guarantees Weight is non-null when EK == No), so the weight clause
+      // refuses it at any threshold. The gate therefore changes which reason
+      // token is printed, never whether a rewrite happens.
+      // run_pass_test.sh pins this: the rewrite set at min-risk=low is
+      // identical to the default one, and that assertion turns red when the
+      // rewritable set finally exceeds the HIGH set.
       const Risk R = EK == ExpKind::No ? Risk::Low : Risk::High;
       if (static_cast<int>(R) < static_cast<int>(MinRisk)) {
         errs() << "DECLINE-RISK,";
@@ -772,6 +792,13 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // profitability signal let it through, not just that it happened.
       errs() << "REWRITE,";
       printLoc(errs(), Upd, F);
+      // The reason list is a CONSTANT, not a computed taxonomy, and does not
+      // track the matcher's definitions. The matcher emits exp-sum only when
+      // nMul == 0 over the whole term chain, so for `s += exp(a*b*c*d)` it
+      // prints exp-chain alone while this line prints exp-chain;exp-sum.
+      // Every rewritten shape does carry an exp in the term, so exp-chain is
+      // always correct here; exp-sum is not. Computing it needs the chain
+      // walk this pass deliberately does not have (see classifyTerm).
       errs() << "," << riskName(R) << ",exp-chain;exp-sum\n";
       for (const ConsumerUse &CU : ConsumerUses) {
         const char *Kind = classifyConsumerUse(CU, *L);

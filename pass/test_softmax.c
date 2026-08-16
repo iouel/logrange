@@ -88,6 +88,41 @@ double weighted_sum(const double *w, const double *x, int n) {
   return s;
 }
 
+/* Constant weight: provably positive, provably bounded, and still DECLINED.
+ * The refusal is structural, not a magnitude analysis — the rewrite has no
+ * way to represent a weight at all (nothing reads it after the weight
+ * clause), so a weight that slipped through would be silently DROPPED, and
+ * the result would be wrong by a factor of w at every magnitude, not merely
+ * unbounded at extreme ones.
+ *
+ * This kernel exists because its absence made the suite green while the pass
+ * miscompiled: relaxing the clause to `Weight && !isa<ConstantFP>(Weight)`
+ * left the REWRITE count at 4, both expected declines in place, and every
+ * assertion passing. Nothing in the corpus had a constant weight. */
+double const_weight_sum(const double *x, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += 0.5 * exp(x[i]);
+  return s;
+}
+
+/* f32 source widened into a double accumulator: clang emits llvm.exp.f32 and
+ * an fpext, and the pass rewrites it through the fpext path in classifyTerm.
+ * This is a REWRITING path, and it had no test of any kind until 2026-08-17.
+ *
+ * Its orig/rw agreement is float-level, not double-level, and that is not a
+ * defect in the rewrite: the original computes (double)expf(x_i), a
+ * float-precision exponential, while the rewritten state computes exp() in
+ * double on the exactly-widened argument. The rewrite is the more accurate of
+ * the two. The error contract in ELIGIBILITY.md section 5 bounds the
+ * rewritten code against the exact sum, which is the assertion below. */
+double expf_widened(const float *x, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += expf(x[i]);
+  return s;
+}
+
 /* Dot product: fmuladd/fmul update, not fadd(phi, exp(t)). */
 double dot_sum(const double *x, const double *y, int n) {
   double s = 0.0;
@@ -125,6 +160,10 @@ extern double dot_sum_orig(const double *x, const double *y, int n);
 extern double dot_sum_rw(const double *x, const double *y, int n);
 extern double weighted_sum_orig(const double *w, const double *x, int n);
 extern double weighted_sum_rw(const double *w, const double *x, int n);
+extern double const_weight_sum_orig(const double *x, int n);
+extern double const_weight_sum_rw(const double *x, int n);
+extern double expf_widened_orig(const float *x, int n);
+extern double expf_widened_rw(const float *x, int n);
 extern double invariant_exp_sum_orig(double c, int n);
 extern double invariant_exp_sum_rw(double c, int n);
 
@@ -221,7 +260,11 @@ int main(void) {
     double lref = ref_logsumexp(x, N);
     printf("INFO,benign,orig=%.17g,rw=%.17g,rel=%.3g,logsum=%.17g,logref=%.17g\n",
            so, sr, rel, lg, lref);
-    check("benign_linear_agree_1e-12", rel < 1e-12);
+    /* cover_<fn>_* is a contract, not a style: run_pass_test.sh derives the
+     * set of rewritten functions from the pass's own output and requires a
+     * passing cover_<fn>_ check for each one. A rewrite with no semantic
+     * assertion behind it fails the gate. */
+    check("cover_softmax_denom_rw_benign_1e-12", rel < 1e-12);
     check("benign_exported_logsum", fabs(lg - lref) <= 1e-12 * fabs(lref));
   }
 
@@ -383,12 +426,69 @@ int main(void) {
           plain_sum_orig(x, N) == plain_sum_rw(x, N));
     check("negctl_dot_sum_untouched",
           dot_sum_orig(x, y, N) == dot_sum_rw(x, y, N));
-    /* Matched and declined, unlike the two either side of it, which are not
+    /* Matched and declined, unlike plain_sum and invariant_exp, which are not
      * matched at all. A decline must leave the loop bit-identical too. */
     check("negctl_weighted_sum_untouched",
           weighted_sum_orig(y, x, N) == weighted_sum_rw(y, x, N));
+    check("negctl_const_weight_untouched",
+          const_weight_sum_orig(x, N) == const_weight_sum_rw(x, N));
     check("negctl_invariant_exp_untouched",
           invariant_exp_sum_orig(0.5, N) == invariant_exp_sum_rw(0.5, N));
+  }
+
+  /* (n) The weighted spine's refusal, made EXECUTABLE.
+   *
+   *     Until now the reason for DECLINE-WEIGHT lived only in comments, and
+   *     the suite asserted the fact of the refusal without ever evaluating
+   *     the inputs the refusal exists for. These are those inputs: the linear
+   *     loop is healthy (19719.4) while a state that folded w in would reach
+   *     sum|w_i| = inf at n = 2 and reduce to inf.
+   *
+   *     It passes trivially while the decline holds. It stops passing the
+   *     moment a weighted rewrite lands without magnitude handling — including
+   *     an otherwise-correct one, which is the case the bit-identity control
+   *     above cannot survive being updated for. */
+  {
+    double wv[2] = {1e308, 1e308};
+    double xv[2] = {-700.0, -700.0};
+    double wo = weighted_sum_orig(wv, xv, 2);
+    double wr = weighted_sum_rw(wv, xv, 2);
+    printf("INFO,weight_witness,orig=%.17g,rw=%.17g\n", wo, wr);
+    check("weight_witness_linear_is_finite", isfinite(wo));
+    check("weight_witness_rw_matches_linear", wo == wr);
+  }
+
+  /* (o) f32 widening into a double accumulator: the fpext path, which is a
+   *     REWRITING path and had no coverage of any kind before 2026-08-17.
+   *
+   *     Two different tolerances, and the gap between them is the point. The
+   *     original computes (double)expf(x_i) — a float-precision exponential,
+   *     carrying ~2^-24 relative per term. The rewritten state widens the
+   *     argument exactly and computes exp() in double. So the two agree only
+   *     to float precision, and the REWRITE is the more accurate of the two.
+   *     What the error contract bounds is the rewritten code against the
+   *     exact sum, and that is asserted at 1e-12 against the double
+   *     reference. Asserting orig/rw at 1e-12 would be asserting that the
+   *     rewrite reproduces the original's float rounding, which it does not
+   *     and should not. */
+  {
+    static float xf[N];
+    static double xd[N];
+    double so, sr, lg, lref, rel;
+    for (i = 0; i < N; ++i) {
+      xf[i] = (float)nrand();
+      xd[i] = (double)xf[i];
+    }
+    so = expf_widened_orig(xf, N);
+    sr = expf_widened_rw(xf, N);
+    lg = __logrange_logsum;
+    lref = ref_logsumexp(xd, N);
+    rel = fabs(sr - so) / fabs(so);
+    printf("INFO,expf_widened,orig=%.17g,rw=%.17g,rel=%.3g,"
+           "logsum=%.17g,logref=%.17g\n", so, sr, rel, lg, lref);
+    check("cover_expf_widened_rw_agree_float_1e-6", rel < 1e-6);
+    check("cover_expf_widened_rw_matches_double_ref",
+          fabs(lg - lref) <= 1e-12 * fabs(lref));
   }
 
   /* (k) Consumer-shape kernels. The spike only logs their consumer IR shape;
@@ -403,19 +503,19 @@ int main(void) {
     softmax_full_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_full,max_rel=%.3g\n", rel);
-    check("softmax_full_rw_agree_1e-12", rel < 1e-12);
+    check("cover_softmax_full_rw_agree_1e-12", rel < 1e-12);
 
     softmax_add_orig(x, out_orig, N);
     softmax_add_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_add,max_rel=%.3g\n", rel);
-    check("softmax_add_rw_agree_1e-12", rel < 1e-12);
+    check("cover_softmax_add_rw_agree_1e-12", rel < 1e-12);
 
     softmax_sum_div_orig(x, out_orig, N);
     softmax_sum_div_rw(x, out_rw, N);
     rel = max_rel_diff(out_orig, out_rw, N);
     printf("INFO,softmax_sum_div,max_rel=%.3g\n", rel);
-    check("softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
+    check("cover_softmax_sum_div_rw_agree_1e-12", rel < 1e-12);
   }
 
   /* (m0) Benign inputs through the propagated path, and the accuracy

@@ -145,6 +145,22 @@ is a property of the reduction, not of the state, and it is fixable:
 `copysign(exp(m + log|s|), s)` is correct for a negative sum. Recorded as
 work a weighted rewrite would have to do.
 
+**The clause is structural, and the token overstates it.** The check is
+`if (Weight)` — presence, not magnitude. A provably positive, provably
+bounded weight declines identically: `s += 0.5*exp(x[i])` logs
+`unbounded-weight`, and `0.5` is not unbounded. The token is retained because
+the durable reason for refusing the *general* case is magnitude, but a reader
+should not infer that a magnitude analysis ran.
+
+**What a leak would actually cost is worse than overflow.** No code reads
+`Weight` after this clause, so a weighted spine admitted here is rewritten
+with the weight **silently discarded** — the emitted state accumulates
+`sum(exp(t_i - m))` and the result is wrong by a factor of `w` at every
+magnitude, not merely at extreme ones. `const_weight_sum` in
+`pass/test_softmax.c` exists for exactly this: relaxing the clause to
+`Weight && !isa<ConstantFP>(Weight)` previously left the whole suite green
+while the pass miscompiled `s += 0.5*exp(x)`.
+
 Clause order is **normative**: the section 7 risk gate runs first, this
 clause second. Reversed, this clause shadows the gate and the only
 LOW-verdict input the pass matches never reaches it.
@@ -445,14 +461,46 @@ term and buys nothing; the rescue-worthy subset is 5 HIGH rows in 2859 loops
 
 ### 7.1 The verdict
 
-Same rule as the matcher's: **an exp-family factor in the term chain gives
-HIGH**, because `exp(t)` spans the whole range from `t` alone. Otherwise LOW.
+**An accepted `exp` call in the term gives HIGH**, because `exp(t)` spans the
+whole range from `t` alone. Otherwise LOW.
 
-MED is not computed, because it is unreachable for these spines. The matcher
-grades MED on `nMul >= 4`, or a log-domain chain with `nMul >= 2`; every
-spine in 3.1 carries at most one multiply. A pass reporting a tier it can
-never reach would be claiming an agreement with the matcher that has not
-been tested.
+#### This is not the matcher's rule
+
+An earlier version of this section claimed it was. It is not, and the
+divergences are reachable on ordinary code. Both measured, LLVM 21:
+
+| loop | matcher | this pass |
+|---|---|---|
+| `s += a*b*c*d*e` | MED `deep-chain` | `DECLINE-RISK,LOW` |
+| `s += log(a)*log(b)*c` | MED `log-chain` | `DECLINE-RISK,LOW` |
+| `s += c*pow(a,b)` | HIGH `exp-chain` | `DECLINE-RISK,LOW` |
+| `s += pow(a,b)`, `s += exp2(x)` | HIGH | silent (not matched) |
+| `s += exp(a*b*c*d)` | HIGH `exp-chain` | REWRITE `exp-chain;exp-sum` |
+
+Two independent causes:
+
+- **exp-family is wider in the matcher.** `isExpFamilyName` matches
+  `exp`/`pow` by substring, so `pow`, `exp2` and `expm1` all grade HIGH there.
+  Section 4's errno contract restricts this pass to `exp`/`expf`/`llvm.exp`.
+  Where the pass matches such a loop anyway (because it carries a weight) it
+  prints LOW for a loop the matcher calls HIGH.
+- **`nMul` is a different quantity.** The matcher's `walkChain` counts
+  multiplies over the **whole term chain**, including inside the `exp`
+  argument, and counts `fdiv` as a multiply. This pass counts spine
+  multiplies only, of which there is at most one.
+
+**MED is unreachable in this pass by construction** — the verdict function
+computes only `Low` and `High`. That is a narrower claim than "no matched
+loop can be graded MED", which is false: the matcher grades the first two
+rows above MED.
+
+#### The reason list is a constant
+
+Every `REWRITE` line prints `exp-chain;exp-sum` unconditionally. `exp-chain`
+is always correct for a rewritten shape. `exp-sum` means `nMul == 0` to the
+matcher and is **wrong whenever the chain contains a multiply or divide**, as
+in the last row. Computing it would need the chain walk this pass
+deliberately does not have.
 
 ### 7.2 The threshold
 
@@ -468,16 +516,35 @@ typo.
 `none` is ordered above `high` deliberately: it is a threshold no verdict can
 reach, so `min-risk=none` means "decline everything".
 
-### 7.3 The gate declines a real input
+### 7.3 The gate is reachable, and it is not load-bearing
 
 `dot_sum` in `pass/test_softmax.c` — `llvm.fmuladd(x, y, phi)`, no `exp` — is
 matched by 3.1, verdicts LOW, and is refused at the **default** threshold.
+That is reachability, and it is new as of the 3.1 widening.
 
-This is new as of the 3.1 widening. Before it, the only matchable spine
-required an `exp` call, so the verdict was HIGH by construction and the
-refusal path was reachable only by raising `min-risk` synthetically. That
-limitation was stated rather than dressed up while it held, and closes
-"Shipping Posture" condition 3 in `TODO.md`.
+**It does not follow that the gate gates anything.** From the implementation:
+
+    rewritable   ⟺  EK == Intrinsic     (the eligibility guard)
+    verdict HIGH ⟺  EK != No            (the verdict function)
+
+The same predicate. Every rewritable loop verdicts HIGH, so no rewrite is
+ever below the threshold. And every LOW loop is weighted — 3.2 guarantees
+`Weight` is non-null whenever there is no `exp` — so 3.3 refuses it at *any*
+threshold. Measured: at `min-risk=low` the LOW inputs clear the gate and log
+`DECLINE-WEIGHT` instead. **The gate selects which reason token is printed;
+it never changes whether a rewrite happens.**
+
+`run_pass_test.sh` asserts this directly: the set of `REWRITE` lines at
+`min-risk=low` is identical to the set at the default threshold. The
+assertion is inverted on purpose — it encodes the limitation, so it turns red
+exactly when the limitation is fixed.
+
+**What would close it.** The gate becomes load-bearing when the rewritable
+set exceeds the HIGH set — that is, when the pass can soundly rewrite a shape
+that verdicts LOW or MED. Bounded-weight support (3.3's extension point) is
+the natural candidate: `s += 0.5*x[i]` verdicts LOW and would be rewritable,
+so the gate would refuse an actual rewrite. Adding matched-but-declined
+shapes cannot close it, however many are added.
 
 Both branches are gated in `run_pass_test.sh`, and the decline branch is
 negative-tested two ways: hardcoding the verdict HIGH, and reordering 3.3
