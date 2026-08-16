@@ -197,6 +197,21 @@ inline log_value log_div(const log_value& a, const log_value& b) {
 // of the same size, and log1p contributes its own ulp. Both terms are
 // checked in bound_search.
 //
+// Why the defect that refuted both accumulator contracts does not reach here.
+// That defect needs two things at once: an addend computed with its own
+// relative error, and that addend's magnitude unbounded relative to the
+// result. `m_log + log|net|` had both, so charging only u*|log|S|| missed
+// u*|log|net||. This add has the same shape, `a + log1p(...)`, and the first
+// property, but not the second: the terms are ordered so the exp argument is
+// <= 0, so `log1p(exp(-d))` lies in (0, log 2] and its rounding is at most
+// 0.693u. The (d + 3)*u covers it with room to spare.
+//
+// `log_mul` and `log_div` are immune for a different reason: both their
+// addends are supplied by the caller, so neither is computed here and neither
+// carries an error to propagate. The one place in this header that still has
+// both properties is `add_scaled`, which forms `v.log_abs + std::log(c)`;
+// see TODO.md.
+//
 // Edge semantics (intent v0.3 requirement — NaN out for NaN in, no silent
 // absorption of infinities):
 //   NaN, x     -> NaN        (poison propagates)
