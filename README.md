@@ -144,4 +144,4 @@ Library and tests: C++17 compiler only.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Vendor freely; keep the notice.
+see [LICENSE](LICENSE).
