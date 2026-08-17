@@ -90,21 +90,45 @@ double weighted_sum(const double *w, const double *x, int n) {
   return s;
 }
 
-/* Constant weight: provably positive, provably bounded, and still DECLINED.
- * The refusal is structural, not a magnitude analysis — the rewrite has no
- * way to represent a weight at all (nothing reads it after the weight
- * clause), so a weight that slipped through would be silently DROPPED, and
- * the result would be wrong by a factor of w at every magnitude, not merely
- * unbounded at extreme ones.
+/* Constant weight: provably positive, provably bounded, and REWRITTEN as of
+ * 2026-08-17 by folding log(w) into the exponent (WeightPlan). Until then it
+ * was declined, because nothing downstream read the weight and one that
+ * slipped through was silently DROPPED — wrong by a factor of w at every
+ * magnitude, not merely unbounded at extreme ones.
  *
  * This kernel exists because its absence made the suite green while the pass
  * miscompiled: relaxing the clause to `Weight && !isa<ConstantFP>(Weight)`
  * left the REWRITE count at 4, both expected declines in place, and every
- * assertion passing. Nothing in the corpus had a constant weight. */
+ * assertion passing. Nothing in the corpus had a constant weight.
+ *
+ * Its assertion is therefore on the VALUE, not on the rewrite's presence, and
+ * 0.5 is chosen so a dropped weight doubles the result — a failure no
+ * tolerance can absorb. */
 double const_weight_sum(const double *x, int n) {
   double s = 0.0;
   for (int i = 0; i < n; ++i)
     s += 0.5 * exp(x[i]);
+  return s;
+}
+
+/* A second constant, far from 1 and not a power of two, so a fold that
+ * hardcodes or mis-signs log(w) cannot pass by coincidence. log(1e6) is
+ * 13.8155…, well away from log(0.5) = -0.6931…. */
+double const_weight_big(const double *x, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += 1e6 * exp(x[i]);
+  return s;
+}
+
+/* Negative constant weight: still DECLINED, and not as a harder version of
+ * the bounded case. exp cannot represent a negative term, so this needs the
+ * signed pos/neg representation rp_accum uses, where cancellation is part of
+ * the representation rather than of the sum. Declined by its own name. */
+double neg_weight_sum(const double *x, int n) {
+  double s = 0.0;
+  for (int i = 0; i < n; ++i)
+    s += -2.0 * exp(x[i]);
   return s;
 }
 
@@ -164,6 +188,10 @@ extern double weighted_sum_orig(const double *w, const double *x, int n);
 extern double weighted_sum_rw(const double *w, const double *x, int n);
 extern double const_weight_sum_orig(const double *x, int n);
 extern double const_weight_sum_rw(const double *x, int n);
+extern double const_weight_big_orig(const double *x, int n);
+extern double const_weight_big_rw(const double *x, int n);
+extern double neg_weight_sum_orig(const double *x, int n);
+extern double neg_weight_sum_rw(const double *x, int n);
 extern double expf_widened_orig(const float *x, int n);
 extern double expf_widened_rw(const float *x, int n);
 extern double invariant_exp_sum_orig(double c, int n);
@@ -432,10 +460,45 @@ int main(void) {
      * matched at all. A decline must leave the loop bit-identical too. */
     check("negctl_weighted_sum_untouched",
           weighted_sum_orig(y, x, N) == weighted_sum_rw(y, x, N));
-    check("negctl_const_weight_untouched",
-          const_weight_sum_orig(x, N) == const_weight_sum_rw(x, N));
+    check("negctl_neg_weight_untouched",
+          neg_weight_sum_orig(x, N) == neg_weight_sum_rw(x, N));
     check("negctl_invariant_exp_untouched",
           invariant_exp_sum_orig(0.5, N) == invariant_exp_sum_rw(0.5, N));
+  }
+
+  /* (d2) Bounded constant weights, which ARE rewritten. The assertion is on
+   *      the value, never on the presence of a REWRITE record: the failure
+   *      this guards against is a weight that is analysed and then not
+   *      consumed, which leaves the rewrite in place and the answer wrong by
+   *      exactly w. Both constants are chosen so that failure cannot hide —
+   *      dropping 0.5 doubles the result, dropping 1e6 divides it by a
+   *      million. Neither is within any tolerance of correct. */
+  {
+    double lo, hi, ro, rr;
+    for (i = 0; i < N; ++i) x[i] = nrand();
+    lo = const_weight_sum_orig(x, N);
+    hi = const_weight_sum_rw(x, N);
+    printf("INFO,const_weight,orig=%.17g,rw=%.17g,rel=%.3g\n", lo, hi,
+           fabs(hi - lo) / fabs(lo));
+    check("cover_const_weight_sum_rw_agrees_1e-12",
+          fabs(hi - lo) <= 1e-12 * fabs(lo));
+    /* The specific miscompile this file was written for: dropping 0.5
+     * doubles the answer, which no tolerance absorbs. */
+    check("const_weight_not_dropped", fabs(hi - 2.0 * lo) > 0.25 * fabs(lo));
+
+    ro = const_weight_big_orig(x, N);
+    rr = const_weight_big_rw(x, N);
+    printf("INFO,const_weight_big,orig=%.17g,rw=%.17g,rel=%.3g\n", ro, rr,
+           fabs(rr - ro) / fabs(ro));
+    check("cover_const_weight_big_rw_agrees_1e-12",
+          fabs(rr - ro) <= 1e-12 * fabs(ro));
+    check("const_weight_big_not_dropped",
+          fabs(rr - ro / 1e6) > 0.25 * fabs(ro));
+    /* A fold that used ONE hardcoded weight for both kernels would still
+     * agree with itself on each. The ratio between them is what catches
+     * that: it must be the ratio of the weights, 1e6 / 0.5. */
+    check("const_weight_ratio_is_the_weights",
+          fabs(rr / hi - 1e6 / 0.5) <= 1e-9 * (1e6 / 0.5));
   }
 
   /* (n) The weighted spine's refusal, made EXECUTABLE.

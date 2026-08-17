@@ -123,6 +123,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 #include <cmath>
+#include <optional>
 
 using namespace llvm;
 
@@ -336,6 +337,145 @@ const char *classifyConsumerUse(const ConsumerUse &CU, const Loop &L) {
     return "shared-result";
   return "fdiv-of-sum";
 }
+
+// ---------------------------------------------------------------------------
+// WeightPlan — stage 3's answer, and the ONLY route to stage 4's exponent.
+//
+// The four stages of weight handling (ELIGIBILITY.md 3.3):
+//   1. RecurrenceDescriptor — is the accumulator a reduction
+//   2. this pass            — does the term decompose as exp(t) or W*exp(t)
+//   3. WeightPlan::analyse  — is W provably acceptable
+//   4. WeightPlan::exponent — the emitted code consumes W
+//
+// Stage 4 previously had no enforcement at all: `Weight` was computed, checked
+// for presence, and never read again, so relaxing the check rewrote
+// `s += 0.5*exp(x)` with the 0.5 silently discarded while the whole suite
+// stayed green. Tests were the only thing standing between analysis and use.
+//
+// This type removes that gap structurally rather than by assertion. The
+// emission cannot obtain the exponent except through exponent(), so a rewrite
+// that ignores the analysed weight is not something you can forget to write —
+// it is something you cannot write. An unweighted spine is an explicit
+// unit() plan, not the absence of one.
+//
+// The fold is w*exp(t) == exp(t + log w), which keeps the state's ceiling at
+// n. Scaling the term instead (s += w*exp(t-m)) is what 3.3 declines: it puts
+// the ceiling at sum|w_i|, which has none.
+class WeightPlan {
+  bool Unit;      // no weight, or weight exactly 1.0: nothing to fold
+  double LogW;    // log(w), evaluated at compile time; 0.0 when Unit
+  Value *Src;     // the analysed IR value, for diagnostics; null when Unit
+
+  WeightPlan(bool U, double L, Value *S) : Unit(U), LogW(L), Src(S) {}
+
+public:
+  // An unweighted spine. Explicit: there is no default constructor, so the
+  // caller states which case it is.
+  static WeightPlan unit() { return WeightPlan(true, 0.0, nullptr); }
+
+  // Stage 3. Returns nullopt when W is not provably acceptable, with Why set
+  // to the decline reason. Only a positive finite constant in the
+  // accumulator's own type is taken — the "easy case" ELIGIBILITY.md 3.3
+  // names.
+  //
+  // WHAT IS AND IS NOT FREE. No log is evaluated at run time; that is the
+  // whole reason constants are the accepted case. The *numerical* cost is not
+  // zero. std::log below returns fl(log w), an approximation, and the emitted
+  // code computes exp(t + fl(log w)) where the intended value is w*exp(t).
+  // Writing d = fl(log w) - log w,
+  //     exp(t + fl(log w)) = w * exp(t) * exp(d) ~= w * exp(t) * (1 + d),
+  // so the weight enters as a relative error of |d| on the term. Under the
+  // <=1-ulp libm assumption this project already makes for exp() (see
+  // BENCHMARKS.md, "Second toolchain"), |d| <= |log w|*u. That is the same
+  // shape as the runtime's add_scaled term and is charged to the contract in
+  // ELIGIBILITY.md section 5 — searched there, not inherited by analogy: the
+  // library's add_scaled is add_log(v + log c), while this is
+  // exp(t + log w) feeding a streaming reduction, which is a different error
+  // path even though the injected term matches.
+  //
+  // HOST DEPENDENCE, stated because it is real. std::log runs in the pass
+  // binary against the host libm, not in LLVM's constant folder, so the
+  // emitted constant's low bits are a property of the machine that built the
+  // plugin. The bound above holds on any conforming <=1-ulp libm, so the
+  // CONTRACT is host-independent; the exact bit pattern is not.
+  // run_pass_test.sh pins the emitted constant bit-exactly so a host that
+  // disagrees turns the gate red rather than drifting silently.
+  //
+  // A negative weight is a separate problem, not a harder version of this
+  // one: exp cannot represent a negative term, so it needs the signed
+  // pos/neg split the runtime's rp_accum uses, and cancellation becomes part
+  // of the representation rather than of the sum. Declined by name.
+  static std::optional<WeightPlan> analyse(Value *W, Type *AccTy,
+                                           const char *&Why) {
+    auto *C = dyn_cast<ConstantFP>(W);
+    if (!C) {
+      Why = "non-constant-weight";
+      return std::nullopt;
+    }
+    // Scope the type domain explicitly rather than let a wider constant be
+    // silently narrowed. The accumulator is already known to be double; a
+    // weight in that type, or one that widens to it exactly, is in scope.
+    // x86_fp80 / fp128 / half are not: their conversion can lose bits, and a
+    // weight whose value changed before its log was taken is not the weight
+    // the source wrote.
+    Type *WTy = C->getType();
+    if (WTy != AccTy && !WTy->isFloatTy()) {
+      Why = "weight-type-unsupported";
+      return std::nullopt;
+    }
+    const APFloat &A = C->getValueAPF();
+    if (!A.isFinite() || A.isZero()) {
+      Why = "non-finite-weight";
+      return std::nullopt;
+    }
+    if (A.isNegative()) {
+      Why = "negative-weight";
+      return std::nullopt;
+    }
+    bool Lossy = true;
+    APFloat D(A);
+    D.convert(APFloat::IEEEdouble(), APFloat::rmNearestTiesToEven, &Lossy);
+    if (Lossy) {
+      // Unreachable given the type check above, and enforced rather than
+      // assumed: an ignored "this may have been lossy" flag on a safety
+      // boundary is exactly the kind of unused signal this project does not
+      // keep.
+      Why = "weight-type-unsupported";
+      return std::nullopt;
+    }
+    const double Wd = D.convertToDouble();
+    if (!(Wd > 0.0) || !std::isfinite(Wd)) {
+      Why = "non-finite-weight";
+      return std::nullopt;
+    }
+    if (Wd == 1.0)
+      return WeightPlan::unit(); // exp(t + 0) — emit nothing
+    const double L = std::log(Wd);
+    if (!std::isfinite(L)) {
+      Why = "non-finite-weight";
+      return std::nullopt;
+    }
+    return WeightPlan(false, L, W);
+  }
+
+  bool isUnit() const { return Unit; }
+  double logWeight() const { return LogW; }
+  Value *source() const { return Src; }
+
+  // Stage 4. The emission's only route to the value it exponentiates.
+  // Widens the raw exp argument to the accumulator type and folds log(w) in.
+  Value *exponent(IRBuilder<> &B, Value *RawArg, Type *DTy) const {
+    Value *T = RawArg;
+    if (T->getType() != DTy)
+      T = B.CreateFPExt(T, DTy, "lr.t"); // expf(float) case
+    if (Unit)
+      return T;
+    // One fadd against a precomputed constant. No log at run time; the
+    // constant is fl(log w), and its distance from log w is charged to the
+    // contract (see analyse()).
+    return B.CreateFAdd(T, ConstantFP::get(DTy, LogW), "lr.tw");
+  }
+};
 
 // Risk tiers, ordered, matching SumOfProductsMatcher.cpp's triage. Kept as a
 // plain enum rather than shared code because the two plugins build
@@ -717,11 +857,10 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // weighted spines: dot_sum logs DECLINE-WEIGHT and the gate assertion
       // in run_pass_test.sh fails.
       //
-      // EXTENSION POINT, deliberately not taken. A weight proven bounded —
-      // a constant is the easy case — is rewritable. It needs the sign
-      // handling above, the error contract re-derived (ELIGIBILITY.md's bound
-      // is pos_accum's, for unit weights), and its own accept and decline
-      // tests. Until those exist, every weight declines.
+      // EXTENSION POINT, taken 2026-08-17 for the constant case only.
+      // WeightPlan::analyse accepts a positive finite constant and folds
+      // log(w) into the exponent, which keeps the state's ceiling at n; every
+      // other weight still declines, now by name rather than as one bucket.
       //
       // The yield evidence for NOT building it is thin, and was published
       // worse than thin: 0 w*exp(t) multiplies, but among the 5 exp-carrying
@@ -729,11 +868,19 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       // gated on expChain and runs after the HIT, so it cannot see loops
       // rejected upstream — including the mirrored out[j] += w*exp(t) form.
       // See ELIGIBILITY.md 3.3; derivation: matcher/run_study.sh figures.
+      // Stage 3. The result is REQUIRED to reach stage 4 — see WeightPlan.
+      WeightPlan WP = WeightPlan::unit();
       if (Weight) {
-        errs() << "DECLINE-WEIGHT,";
-        printLoc(errs(), Upd, F);
-        errs() << ",unbounded-weight\n";
-        continue;
+        const char *Why = "unbounded-weight";
+        std::optional<WeightPlan> Analysed =
+            WeightPlan::analyse(Weight, Acc->getType(), Why);
+        if (!Analysed) {
+          errs() << "DECLINE-WEIGHT,";
+          printLoc(errs(), Upd, F);
+          errs() << "," << Why << "\n";
+          continue;
+        }
+        WP = *Analysed;
       }
 
       // Implied by the two clauses above rather than a live branch: an
@@ -758,9 +905,13 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       SPhi->addIncoming(ConstantFP::get(DTy, 0.0), Preheader);
 
       IRBuilder<> B(Upd); // insert just before the (now-parallel) fadd
-      Value *T = Arg;
-      if (T->getType() != DTy)
-        T = B.CreateFPExt(T, DTy, "lr.t"); // expf(float) case
+      // Stage 4. There is no other way to obtain the exponent: WeightPlan
+      // owns the widening AND the log(w) fold, so a weight analysed at stage
+      // 3 cannot fail to be consumed here. Everything downstream — the
+      // running max, both guarded subtractions, the state — is computed from
+      // this T, so the weight is inside the state's magnitude, not applied to
+      // it afterwards.
+      Value *T = WP.exponent(B, Arg, DTy);
       Value *NewM =
           B.CreateBinaryIntrinsic(Intrinsic::maxnum, MPhi, T, {}, "lr.newm");
       // Infinity guard. The exponents are differences against the running

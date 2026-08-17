@@ -48,6 +48,8 @@ RENAME_ORIG="-Dsoftmax_denom=softmax_denom_orig -Dsoftmax_full=softmax_full_orig
             -Dinvariant_exp_sum=invariant_exp_sum_orig \
             -Dweighted_sum=weighted_sum_orig \
             -Dconst_weight_sum=const_weight_sum_orig \
+            -Dconst_weight_big=const_weight_big_orig \
+            -Dneg_weight_sum=neg_weight_sum_orig \
             -Dexpf_widened=expf_widened_orig"
 RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
            -Dsoftmax_add=softmax_add_rw -Dsoftmax_sum_div=softmax_sum_div_rw \
@@ -55,6 +57,8 @@ RENAME_RW="-Dsoftmax_denom=softmax_denom_rw -Dsoftmax_full=softmax_full_rw \
            -Dinvariant_exp_sum=invariant_exp_sum_rw \
            -Dweighted_sum=weighted_sum_rw \
            -Dconst_weight_sum=const_weight_sum_rw \
+           -Dconst_weight_big=const_weight_big_rw \
+           -Dneg_weight_sum=neg_weight_sum_rw \
            -Dexpf_widened=expf_widened_rw"
 $CLANG $KFLAGS -DKERNEL $RENAME_ORIG \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_orig.ll"
@@ -129,16 +133,19 @@ grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-HIGH$' "$WORK/rewrite.log" \
 #     gate passes it and the magnitude restriction is what must stop it: the
 #     emitted state would accumulate sum(w_i * exp(t_i - m)), reaching
 #     sum|w_i|, which overflows where the linear original does not.
-grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/rewrite.log" \
+grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,non-constant-weight$' "$WORK/rewrite.log" \
   || { echo "FAIL: weighted spine was not matched-and-declined on magnitude"; exit 1; }
-# (b2) A CONSTANT weight — provably positive, provably bounded — must decline
-#      too. The refusal is structural: nothing reads the weight after the
-#      clause, so a weight admitted here would be silently dropped and the
-#      result wrong by a factor of w at every magnitude. This case is the one
-#      that was missing when the suite went green against a pass that
-#      miscompiled `s += 0.5*exp(x)`.
-grep -q '^DECLINE-WEIGHT,.*,const_weight_sum_rw,unbounded-weight$' "$WORK/rewrite.log" \
-  || { echo "FAIL: constant weight was not declined"; exit 1; }
+# (b2) A CONSTANT weight — provably positive, provably bounded — is REWRITTEN
+#      as of 2026-08-17, by folding log(w) into the exponent. It declined
+#      until then because nothing read the weight after this clause, so one
+#      admitted here was silently dropped. That is now structurally
+#      impossible (WeightPlan owns the exponent), and the assertions that
+#      matter are on the VALUE, in test_softmax.c — presence of a REWRITE
+#      record proves nothing about whether the weight was used.
+grep -q '^REWRITE,.*,const_weight_sum_rw,HIGH,' "$WORK/rewrite.log" \
+  || { echo "FAIL: bounded constant weight was not rewritten"; exit 1; }
+grep -q '^REWRITE,.*,const_weight_big_rw,HIGH,' "$WORK/rewrite.log" \
+  || { echo "FAIL: second bounded constant weight was not rewritten"; exit 1; }
 # (c) The same two spines with the multiply NOT contracted. Whether clang
 #     emits llvm.fmuladd or fmul + fadd is -ffp-contract, a flag the pass does
 #     not control, so matching one form only would make coverage a property of
@@ -154,7 +161,7 @@ for fc in off fast; do
          -passes='loop-simplify,lcssa,log-rewrite<force>' \
          -S "$WORK/contract_$fc.ll" -o /dev/null \
          2> "$WORK/contract_$fc.log" || { cat "$WORK/contract_$fc.log"; exit 1; }
-  grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/contract_$fc.log" \
+  grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,non-constant-weight$' "$WORK/contract_$fc.log" \
     || { echo "FAIL: uncontracted weighted spine missed at -ffp-contract=$fc"; exit 1; }
   grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-HIGH$' "$WORK/contract_$fc.log" \
     || { echo "FAIL: uncontracted dot spine missed at -ffp-contract=$fc"; exit 1; }
@@ -194,7 +201,7 @@ done
 # dot_sum verdicts LOW. At min-risk=low it clears the gate and the weight
 # clause refuses it one line later; at min-risk=med the gate refuses it. The
 # two tags pin the threshold relation from both sides.
-grep -q '^DECLINE-WEIGHT,.*,dot_sum_rw,unbounded-weight$' "$WORK/mr_low.log" \
+grep -q '^DECLINE-WEIGHT,.*,dot_sum_rw,non-constant-weight$' "$WORK/mr_low.log" \
   || { echo "FAIL: at min-risk=low, dot_sum should clear the gate and decline on weight"; exit 1; }
 grep -q '^DECLINE-RISK,.*,dot_sum_rw,LOW,below-min-MED$' "$WORK/mr_med.log" \
   || { echo "FAIL: at min-risk=med, dot_sum should be declined by the gate"; exit 1; }
@@ -289,6 +296,54 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
 [ "$(grep -c '^DECLINE-PIPELINE,' "$WORK/pipe.log" || true)" = "0" ] \
   || { echo "FAIL: full prefix still reported a pipeline decline"; exit 1; }
 echo "PASS,missing_canonicalization_is_named"
+
+# (i-c) The folded weight constant is fl(log w) and nothing else.
+#
+#       WeightPlan computes log(w) with the HOST libm, in the pass binary,
+#       not in LLVM's constant folder. The numerical contract survives that
+#       (any conforming <=1-ulp libm keeps the |log w|*u term valid, which is
+#       the same assumption already made for exp()), but the emitted bit
+#       pattern is a property of the build machine. Asserted here so the
+#       pass cannot introduce error of its OWN on top of libm's, and printed
+#       so a cross-host difference is visible in the record rather than
+#       silent.
+cat > "$WORK/logw.c" <<'EOF'
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+int main(void) {
+  double v[2]; unsigned long long b; int i;
+  v[0] = log(0.5); v[1] = log(1e6);
+  for (i = 0; i < 2; ++i) { memcpy(&b, &v[i], 8); printf("0x%016llX\n", b); }
+  return 0;
+}
+EOF
+$CLANG -O1 "$WORK/logw.c" -o "$WORK/logw" -lm
+$OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+     -passes='loop-simplify,lcssa,log-rewrite<force;min-risk=low>' \
+     -S "$WORK/kernel_rw.ll" -o "$WORK/wfold.ll" 2> /dev/null
+# Emitted constants, uppercased and zero-padded to match the C printf above.
+grep -oE '%lr\.tw[0-9]* = fadd double [^,]+, 0x[0-9A-F]+' "$WORK/wfold.ll" \
+  | grep -oE '0x[0-9A-F]+' | sort -u > "$WORK/wfold.hex"
+"$WORK/logw" | sort -u > "$WORK/libm.hex"
+echo "INFO,weight_fold_constants,$(tr '\n' ' ' < "$WORK/wfold.hex")"
+diff "$WORK/libm.hex" "$WORK/wfold.hex" > /dev/null || {
+  echo "FAIL: emitted weight constants are not the host libm's log(w)"
+  echo "  host libm:"; cat "$WORK/libm.hex"
+  echo "  emitted:  "; cat "$WORK/wfold.hex"
+  echo "  If the host libm changed, that is a recordable event, not a"
+  echo "  number to bump: see ELIGIBILITY.md 3.3 on host dependence."
+  exit 1; }
+echo "PASS,weight_fold_is_host_log_exactly"
+
+# (i-d) Weight declines are named individually, not bucketed. A negative
+#       constant is a different problem from a varying weight and says so.
+for want in non-constant-weight:weighted_sum negative-weight:neg_weight_sum; do
+  reason="${want%%:*}"; fn="${want##*:}"
+  grep -q "^DECLINE-WEIGHT,.*,${fn}_rw,$reason\$" "$WORK/rewrite.log" \
+    || { echo "FAIL: $fn did not decline with $reason"; exit 1; }
+done
+echo "PASS,weight_declines_are_named"
 
 # (ii) strict/constrained FP. A small TU compiled -ffp-model=strict carries
 #      the strictfp function attribute AND llvm.experimental.constrained.*

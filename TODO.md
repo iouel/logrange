@@ -517,6 +517,22 @@ tooling tier, which ships as beta with its gaps stated.
       unconsumed weight unrepresentable — the rewrite takes `W` as a
       required input — rather than relying on a test to catch it.
       `ELIGIBILITY.md` 3.3 carries the table.
+      *Bounded constant weights implemented 2026-08-17, and the condition
+      still does not close.* A positive finite constant is now folded as
+      `exp(t + fl(log w))`; the four stages are linked by `WeightPlan`, whose
+      `exponent()` is the emission's only route to the value it
+      exponentiates, so an analysed weight cannot fail to be consumed —
+      structure, not a test. Section 5 gained two searched terms,
+      `(|log w| + max|t'|)*u`, held at 0.96 over 4482 trials and shown
+      necessary (without them: 19 exceedances, worst 1.53x).
+      **What it did NOT do is make the gate load-bearing.** The rewrite
+      requires an accepted `exp`, and any loop with one verdicts HIGH, so
+      `rewritable ⊆ HIGH` still holds by construction and the min-risk
+      equality assertion still passes. An earlier plan for this item
+      predicted that assertion would turn red; it does not, and the
+      prediction was wrong about why. Closing needs a rewritable shape that
+      verdicts below HIGH, which means a rewrite that does not require an
+      `exp` — not more weight coverage.
       *What the audit also found, all fixed 2026-08-17:* the suite was a
       closed-world whitelist — "these 4 names are rewritten" and "these names
       are bit-identical" were two independent hand-maintained lists with

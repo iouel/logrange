@@ -45,6 +45,23 @@
  * ceiling the runtime's log_value form does not have. Trials whose reference
  * leaves that range are skipped and counted, not silently dropped.
  *
+ * WEIGHTED CANDIDATE. A bounded constant weight is rewritten as
+ * exp(t + fl(log w)) rather than w*exp(t), which keeps the state's ceiling at
+ * n. That is NOT the same error path as the unweighted form and the existing
+ * candidate does not cover it, so it gets its own bound and its own search
+ * rather than inheriting the runtime's add_scaled term by analogy:
+ *
+ *     rel err  <=  (n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u
+ *                  + (|log w| + max_i |t'_i|)*u
+ *
+ * Two sources, neither present unweighted. fl(log w) differs from log w by up
+ * to |log w|*u under the <=1-ulp libm assumption this file already makes for
+ * exp(), and exp carries that straight through as a relative error on every
+ * term. And t' = fl(x_i + fl(log w)) rounds at its own magnitude, so exp(t')
+ * inherits |t'|*u — where the unweighted exponent is a loaded value and
+ * rounds not at all. max_i is used rather than a mass weighting because the
+ * term is charged once per term regardless of that term's share.
+ *
  * REFERENCE FLOOR. expl() at 64-bit mantissa, Kahan-summed. All terms are
  * positive, so per-term relative errors average rather than accumulate and
  * the reference carries ~2^-64 relative, about 0.001u. Ratios below ~0.01
@@ -83,6 +100,12 @@
 
 double softmax_denom_rw(const double *x, int n);   /* rewritten by the pass */
 double softmax_denom_orig(const double *x, int n); /* the linear original */
+
+/* Bounded-constant-weight kernels, rewritten by folding log(w) into the
+ * exponent. Searched separately because the fold adds error the unweighted
+ * candidate does not budget for — see WEIGHTED CANDIDATE below. */
+double const_weight_sum_rw(const double *x, int n); /* w = 0.5 */
+double const_weight_big_rw(const double *x, int n); /* w = 1e6 */
 
 /* The pass's export hook. The consuming link must define it. */
 double __logrange_logsum = 0.0;
@@ -172,6 +195,75 @@ static struct verdict evaluate(const double *x, int n) {
   v.ratio_nored = v.obs_lin / v.bound_nored;
   v.ratio_full  = v.obs_lin / v.bound_full;
   v.ratio_log   = v.obs_log / v.bound_full;
+  return v;
+}
+
+/* Weighted variant. Same emitted state machine, one extra fadd per term
+ * folding fl(log w) into the exponent. Calls the object the pass rewrote, as
+ * the unweighted path does — a bound derived against a replica would bound
+ * the replica. */
+static struct verdict evaluate_w(const double *x, int n, double w,
+                                 double (*fn)(const double *, int)) {
+  struct verdict v = {0};
+  double m = -INFINITY;
+  int k = 0, first = 1;
+  long double wsum = 0.0L, wdepth = 0.0L;
+  /* The same constant the pass embedded: run_pass_test.sh asserts the pass's
+   * emitted bit pattern equals the host libm's log(w), so this is it. */
+  const double LT = log(w);
+  double maxtp = 0.0;
+
+  for (int i = 0; i < n; ++i) {
+    const double tp = x[i] + LT; /* t', in double, exactly as emitted */
+    if (fabs(tp) > maxtp) maxtp = fabs(tp);
+    if (tp > m) {
+      if (!first) ++k;
+      m = tp;
+    }
+    first = 0;
+    long double e = expl((long double)tp);
+    wsum   += e;
+    wdepth += e * (long double)(m - tp);
+  }
+
+  /* Reference: the mathematical sum w * Σexp(x_i), not Σexp(t'_i). The
+   * difference between them IS the error being bounded. */
+  const long double truth = (long double)w * ref_sum(x, n);
+  v.n = n;
+  v.k = k;
+  v.depth = (double)(wdepth / wsum);
+  v.outmag = fabs((double)logl(truth));
+  v.skipped = 0;
+
+  const long double amax = 8.98846567431158e307L;
+  const long double amin = 2.2250738585072014e-308L;
+  if (!(truth > amin && truth < amax)) {
+    v.skipped = 1;
+    return v;
+  }
+
+  __logrange_logsum = 0.0;
+  const double got = fn(x, n);
+  const double lg = __logrange_logsum;
+
+  double peak = -INFINITY;
+  for (int i = 0; i < n; ++i) if (x[i] + LT > peak) peak = x[i] + LT;
+  v.lognet = (double)fabsl(logl(truth) - (long double)peak);
+  v.obs_lin = (double)(fabsl((long double)got - truth) / truth);
+  v.obs_log = (double)fabsl((long double)lg - logl(truth));
+
+  /* Unweighted candidate, i.e. this bound with the two weight terms removed.
+   * Scored on every trial so their necessity is MEASURED, the same way the
+   * reduction term's is: if this never exceeded 1, the weight terms would be
+   * padding and the bound would be overstating what the fold costs. */
+  const double bound_noweight =
+      ((double)n + 3.0 * (double)k + 4.0 + v.depth) * U
+      + (v.outmag + v.lognet) * U;
+  v.bound_nored = bound_noweight;
+  v.bound_full = bound_noweight + (fabs(LT) + maxtp) * U;
+  v.ratio_nored = v.obs_lin / v.bound_nored;
+  v.ratio_full = v.obs_lin / v.bound_full;
+  v.ratio_log = v.obs_log / v.bound_full;
   return v;
 }
 
@@ -277,6 +369,34 @@ static void run(const char *label, int n, int verbose) {
     printf("  %-34s %6d %5d %6.1f %6.1f %9.2e %9.2e %8.2f %8.2f\n", label, v.n,
            v.k, v.depth, v.outmag, v.obs_lin, v.obs_log, v.ratio_nored,
            v.ratio_full);
+}
+
+/* Weighted counters, kept apart so a weighted violation cannot be masked by
+ * the unweighted margin, and so the two bounds are reported separately. */
+static double worst_w = 0.0, worst_w_noweight = 0.0;
+static int w_violations = 0, w_trials = 0, w_skipped = 0, w_noweight_exceeded = 0;
+static char worst_w_label[128] = "none", w_noweight_label[128] = "none";
+
+static void run_w(const char *label, int n, double w,
+                  double (*fn)(const double *, int)) {
+  struct verdict v = evaluate_w(buf, n, w, fn);
+  if (v.skipped) { ++w_skipped; return; }
+  ++w_trials;
+  if (v.ratio_full > worst_w) {
+    worst_w = v.ratio_full;
+    snprintf(worst_w_label, sizeof worst_w_label, "%s", label);
+  }
+  if (v.ratio_nored > worst_w_noweight) {
+    worst_w_noweight = v.ratio_nored;
+    snprintf(w_noweight_label, sizeof w_noweight_label, "%s", label);
+  }
+  if (v.ratio_nored > 1.0) ++w_noweight_exceeded;
+  if (v.ratio_full > 1.0 || v.ratio_log > 1.0) {
+    ++w_violations;
+    printf("  %-34s %6d %5d %6.1f %6.1f %9.2e %9.2e %8.2f %8.2f\n", label, v.n,
+           v.k, v.depth, v.outmag, v.obs_lin, v.obs_log, v.ratio_nored,
+           v.ratio_full);
+  }
 }
 
 int main(void) {
@@ -391,16 +511,75 @@ int main(void) {
   }
   printf("  300 sizes, worst full ratio now %.2f\n", worst_full);
 
+  /* E8 — the weighted fold, against its own candidate. Reuses the shapes that
+   * bind hardest above (extreme magnitude, ascending rescales, depth
+   * clusters, equal-normalized) rather than inventing new ones: the weight
+   * adds terms, it does not change which shapes stress the state machine.
+   * Both weights are swept because a fold that used one hardcoded constant
+   * would still be self-consistent on either alone. */
+  printf("-- E8 bounded constant weight, w = 0.5 and 1e6 ------------------\n");
+  {
+    const double ws[] = {0.5, 1e6};
+    double (*const fns[])(const double *, int) = {const_weight_sum_rw,
+                                                  const_weight_big_rw};
+    for (unsigned q = 0; q < 2; ++q) {
+      char lab[128];
+      /* magnitude */
+      for (unsigned p = 0; p < sizeof peaks / sizeof *peaks; ++p)
+        for (int n = 1; n <= 64; n *= 8) {
+          snprintf(lab, sizeof lab, "w=%g peak=%.0f n=%d", ws[q], peaks[p], n);
+          run_w(lab, fam_magnitude(peaks[p], n), ws[q], fns[q]);
+        }
+      /* depth clusters */
+      for (unsigned i = 0; i < sizeof clus_n / sizeof *clus_n; ++i)
+        for (int j = 0; j < 120; ++j) {
+          const double d = 0.5 + 0.0137 * (double)j * 7.0;
+          snprintf(lab, sizeof lab, "w=%g depth=%.3f N=%d", ws[q], d, clus_n[i]);
+          run_w(lab, fam_depth_cluster(d, clus_n[i]), ws[q], fns[q]);
+        }
+      /* ascending, k = n-1 */
+      for (unsigned i = 0; i < sizeof asc_n / sizeof *asc_n; ++i) {
+        const int n = asc_n[i];
+        const double jmax = 1370.0 / (double)(n - 1);
+        for (int j = 0; j < 40; ++j) {
+          const double jump = jmax * (double)(j + 1) / 40.0;
+          snprintf(lab, sizeof lab, "w=%g jump=%.3f n=%d", ws[q], jump, n);
+          run_w(lab, fam_ascending(-685.0, jump, n), ws[q], fns[q]);
+        }
+      }
+      /* equal-normalized, the family that broke rp_accum */
+      for (int i = 0; i < 200; ++i) {
+        const int n = (int)(pow(20000.0, (double)i / 199.0)) + 1;
+        snprintf(lab, sizeof lab, "w=%g equal-normalized n=%d", ws[q], n);
+        run_w(lab, fam_equal_normalized(n), ws[q], fns[q]);
+      }
+      /* random */
+      for (int i = 0; i < 1500; ++i) {
+        const int n = fam_random();
+        snprintf(lab, sizeof lab, "w=%g random#%d", ws[q], i);
+        run_w(lab, n, ws[q], fns[q]);
+      }
+    }
+  }
+  printf("  weighted trials=%d skipped=%d worst=%.2f (%s)\n", w_trials,
+         w_skipped, worst_w, worst_w_label);
+
   printf("\ntrials=%d skipped(out of double range)=%d violations=%d\n", trials,
          skipped, violations);
   printf("worst observed/bound: full=%.2f (%s)  log-export=%.2f\n", worst_full,
          worst_label, worst_log);
   printf("without the reduction term: worst=%.2f (%s), exceeded on %d of %d "
          "trials\n", worst_nored, nored_label, nored_violations, trials);
-  if (violations > 0) {
-    printf("REFUTED,%d,%.2f\n", violations, worst_full);
+  printf("weighted fold: worst=%.2f (%s), exceeded on %d of %d trials\n",
+         worst_w, worst_w_label, w_violations, w_trials);
+  printf("  without the weight terms: worst=%.2f (%s), exceeded on %d of %d\n",
+         worst_w_noweight, w_noweight_label, w_noweight_exceeded, w_trials);
+  if (violations > 0 || w_violations > 0) {
+    printf("REFUTED,%d,%.2f\n", violations + w_violations,
+           worst_full > worst_w ? worst_full : worst_w);
     return 1;
   }
-  printf("HELD,%d,%.2f\n", trials, worst_full);
+  printf("HELD,%d,%.2f\n", trials + w_trials,
+         worst_full > worst_w ? worst_full : worst_w);
   return 0;
 }
