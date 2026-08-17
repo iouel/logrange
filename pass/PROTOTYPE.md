@@ -147,9 +147,11 @@ the transform legal"). Three layers, all verified:
 2. Even when named, it declines every function unless the function carries
    `"unsafe-fp-math"="true"` (what `-ffast-math` /
    `-funsafe-math-optimizations` set) **or** the pass parameter form
-   `-passes='log-rewrite<force>'` was used. Verified: plain `log-rewrite`
-   on the un-annotated test kernel performs 0 rewrites; the same kernel
-   compiled `-ffast-math` rewrites without `force`.
+   `-passes='loop-simplify,lcssa,log-rewrite<force>'` was used. Verified:
+   plain `log-rewrite` on the un-annotated test kernel performs 0 rewrites;
+   the same kernel compiled `-ffast-math` rewrites without `force`. The
+   `loop-simplify,lcssa` prefix is a separate requirement and not part of
+   the grant — see ELIGIBILITY.md section 0.
 3. New instructions carry **no fast-math flags**: the grant covers the
    structural reassociation performed here, not further FP relaxation of
    the emitted logsumexp code.
@@ -612,7 +614,8 @@ unmeasured over chains; nothing here bounds a chain.
   instruction in it has a use and plain DCE cannot start. Measured on the test
   kernel: log-rewrite alone leaves 26 `llvm.exp.f64` calls, `,dce` still 26,
   `,adce` 22 — one dead exp per rewritten f64 loop. The supported pipeline is
-  `-passes='log-rewrite<force>,adce'`, asserted in `run_pass_test.sh`. This
+  `-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`, asserted in
+  `run_pass_test.sh`. This
   file said "later DCE/ADCE" until 2026-08-17, which was wrong about the pass
   and unchecked by anything.
 - ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted

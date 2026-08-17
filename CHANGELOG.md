@@ -11,6 +11,40 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**`pass/` no longer reimplements reduction analysis either.** The matcher
+stopped on 2026-08-17; the pass followed the same day. `isReductionPHI`
+filtered to `FAdd`/`FMulAdd` identifies the accumulator, `getRecurrenceStartValue`
+and `getLoopExitInstr` replace hand-read incoming values, and the phi/update
+clean-use pair is gone.
+
+**Measured identical.** Pre- and post-migration runs of `run_pass_test.sh` in
+isolated worktrees produce the same assertions, the same rewrite and decline
+records, and byte-identical `INFO` values — every accuracy ratio and the
+bound-search worst case (0.99 over 7285 trials). Nothing about what the pass
+rewrites changed.
+
+Kept deliberately: the stricter clauses are rewrite legality, not recognition,
+and `isReductionPHI` does not imply them — single FP phi in the header, double
+only, constant-zero start, unique exiting and exit block. `soleInLoopUser`
+survives for one use, the `fmul` in `fadd(phi, fmul(W, X))`, which is a
+term-side node no reduction analysis has an opinion about.
+
+**The supported pass pipeline is now
+`-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.** Normative in
+`ELIGIBILITY.md` section 0. Both prefixes are required and they fail
+differently: without `loop-simplify` the pass reports `not-loop-simplified`,
+with it but without `lcssa` it reports `not-lcssa`, and neither rewrites
+anything. A new `DECLINE-PIPELINE` record names whichever is missing, because
+the failure mode is a clean empty report that reads as "no eligible loop".
+
+Two things about that guard are worth recording, since both were wrong first.
+It was placed after the preheader/latch null checks, where it is unreachable
+for the case it exists to name — an un-canonicalized loop has no preheader and
+bails there silently. And it checked only loop-simplify form, which on this
+kernel is the half that was already satisfied. `run_pass_test.sh` now asserts
+both tiers and the clean case, mutation-tested by swapping the expected
+reasons.
+
 **`logrange_intent.md` states intent again: 282 lines to 148.** Removed a
 94-line "First Action — status" work log that indexed records living in
 `BENCHMARKS.md`, `matcher/RESULTS.md`, `pass/PROTOTYPE.md`, `matcher/DELTA.md`,

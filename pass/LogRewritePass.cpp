@@ -57,7 +57,11 @@
 // when explicitly named in -passes — that is the prototype's opt-in — AND
 // additionally requires either the function attribute
 // "unsafe-fp-math"="true" or the pass parameter force:
-//     -passes='log-rewrite<force>'
+//     -passes='loop-simplify,lcssa,log-rewrite<force>'
+// The two canonicalization passes are REQUIRED (ELIGIBILITY.md section 0):
+// recognition delegates to RecurrenceDescriptor, whose AddReductionVar reads
+// through the preheader and inspects out-of-loop users. Without them every
+// loop declines and the run reports nothing.
 // Reassociation permission is the caller's grant; this pass never
 // self-authorizes it. New instructions carry NO fast-math flags — the grant
 // covers the structural reassociation performed here, not further FP
@@ -93,13 +97,18 @@
 // DECLINE-WEIGHT,<file>,<line>,<fn>,unbounded-weight.
 //
 // Usage: opt-21 -load-pass-plugin=./LogRewrite.so \
-//               -passes='log-rewrite<force>' -S in.ll -o out.ll
+//               -passes='loop-simplify,lcssa,log-rewrite<force>,adce' \
+//               -S in.ll -o out.ll
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"
+#include "llvm/Analysis/DemandedBits.h"
+#include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Dominators.h"
@@ -241,12 +250,13 @@ const char *fpEnvRejectReason(const Function &F) {
   return nullptr;
 }
 
-// Sole in-loop user. This was "exactly as in SumOfProductsMatcher.cpp" until
-// 2026-08-17, when the matcher deleted its copy in favour of
-// RecurrenceDescriptor::isReductionPHI, which establishes the same property.
-// This pass has not been migrated: it is a labeled prototype outside 1.0's
-// supported surface, and the migration is tracked in TODO.md rather than done
-// alongside the matcher's. See matcher/DELTA.md for what the swap measured.
+// Sole in-loop user.
+//
+// This is NOT the accumulator's clean-use discipline — isReductionPHI
+// establishes that, and this pass stopped carrying its own copy on 2026-08-17.
+// What remains is a check on a TERM-side node: the `fmul` in
+// `fadd(phi, fmul(W, X))` is not part of the reduction chain, so no reduction
+// analysis has an opinion about who else reads it. Kept for that one use.
 const User *soleInLoopUser(const Value *V, const Loop &L) {
   const User *Found = nullptr;
   for (const User *U : V->users()) {
@@ -387,6 +397,13 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
     }
 
     auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
+    // Required by RecurrenceDescriptor::isReductionPHI. DB/AC drive its
+    // minimal-bit-width computation (irrelevant for FP, but the API takes
+    // them); SE is what lets it treat a store to a loop-invariant address as
+    // part of the reduction rather than as a mid-loop read.
+    auto &AC = AM.getResult<AssumptionAnalysis>(F);
+    auto &DB = AM.getResult<DemandedBitsAnalysis>(F);
+    auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
     bool Changed = false;
 
     // Snapshot: we add blocks (edge split) but never delete or restructure
@@ -396,16 +413,51 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!L->isInnermost())
         continue;
       BasicBlock *Header = L->getHeader();
+
+      // Pipeline diagnosis runs FIRST, before the shape checks below.
+      //
+      // `isReductionPHI` needs loop-simplify form — AddReductionVar reads the
+      // start value through getLoopPreheader() with no null check, which with
+      // assertions off is an out-of-bounds read — and LCSSA, to find the exit
+      // instruction. Both come from the required `loop-simplify,lcssa` prefix
+      // (ELIGIBILITY.md section 0).
+      //
+      // Stated rather than skipped, for the reason every other decline here
+      // is stated: a caller who omits the prefix gets zero rewrites, and
+      // silence reads as "no eligible loop" rather than "misconfigured
+      // pipeline".
+      //
+      // Order matters and was got wrong once. Placed after the
+      // preheader/latch null checks below, this guard is unreachable for the
+      // case it exists to name: an un-canonicalized loop has no preheader, so
+      // it bails there and declines silently anyway. Measured on the test
+      // kernel — bare pipeline, 0 rewrites and 0 declines.
+      const char *PipeReason = nullptr;
+      if (!L->isLoopSimplifyForm())
+        PipeReason = "not-loop-simplified";
+      else if (!L->isLCSSAForm(DT))
+        PipeReason = "not-lcssa";
+      if (PipeReason) {
+        errs() << "DECLINE-PIPELINE,";
+        printLoc(errs(), &*Header->begin(), F);
+        errs() << "," << PipeReason << "\n";
+        continue;
+      }
+
       BasicBlock *Preheader = L->getLoopPreheader();
       BasicBlock *Latch = L->getLoopLatch();
       BasicBlock *ExitingBB = L->getExitingBlock(); // unique or null
       BasicBlock *ExitBB = L->getExitBlock();       // unique or null
+      // Preheader and Latch are implied by loop-simplify form; the unique
+      // exiting and exit blocks are not, and are this pass's own requirement.
       if (!Preheader || !Latch || !ExitingBB || !ExitBB)
         continue;
 
       // Exactly one FP phi in the header: the accumulator. A second FP phi
       // would be another loop-carried FP value interacting with the sum in
-      // ways this prototype does not analyze.
+      // ways this prototype does not analyze. This is a REWRITE-legality
+      // condition, not a recognition one — isReductionPHI is happy to
+      // describe two independent reductions in one loop — so it stays.
       PHINode *Acc = nullptr;
       bool MultipleFPPhis = false;
       for (PHINode &P : Header->phis()) {
@@ -421,13 +473,25 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
         continue;
       if (!Acc->getType()->isDoubleTy())
         continue; // float accumulators: documented out of scope
-      if (Acc->getNumIncomingValues() != 2)
+
+      // Is it a reduction, and are its uses clean? LLVM's answer, not this
+      // file's. Until 2026-08-17 the pass established this itself, with a
+      // copy of the matcher's mid-loop-read guard and its own reading of the
+      // phi's incoming values; matcher/DELTA.md measured what that cost.
+      // FAdd and FMulAdd are the sum-shaped kinds — FMul is a product
+      // recurrence, min/max are not sums, and neither is rewritable here.
+      RecurrenceDescriptor RD;
+      if (!RecurrenceDescriptor::isReductionPHI(Acc, L, RD, &DB, &AC, &DT, &SE))
+        continue;
+      const RecurKind RK = RD.getRecurrenceKind();
+      if (RK != RecurKind::FAdd && RK != RecurKind::FMulAdd)
         continue;
 
       // Init must be constant 0.0: the streaming state (m=-inf, s=0)
       // represents exactly "the sum of terms so far"; a nonzero init would
       // need a log_add of the incoming value, out of scope here.
-      auto *Init = dyn_cast<ConstantFP>(Acc->getIncomingValueForBlock(Preheader));
+      Value *Start = RD.getRecurrenceStartValue(); // TrackingVH -> Value*
+      auto *Init = dyn_cast_or_null<ConstantFP>(Start);
       if (!Init || !Init->isZero())
         continue;
 
@@ -447,7 +511,7 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       //
       // The weighted spines are matched in order to be DECLINED with a stated
       // reason rather than be invisible. Nothing weighted is rewritten.
-      auto *Upd = dyn_cast<Instruction>(Acc->getIncomingValueForBlock(Latch));
+      Instruction *Upd = RD.getLoopExitInstr();
       if (!Upd || !L->contains(Upd))
         continue;
 
@@ -530,12 +594,10 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!Weight && EK == ExpKind::No)
         continue;
 
-      // Mid-loop-read guard (matcher discipline): the phi's only in-loop
-      // user is the update, and the update's only in-loop user is the phi.
-      if (soleInLoopUser(Acc, *L) != Upd)
-        continue;
-      if (soleInLoopUser(Upd, *L) != Acc)
-        continue;
+      // The mid-loop-read guard that stood here — the phi's only in-loop user
+      // is the update and vice versa — is established by isReductionPHI
+      // above. AddReductionVar walks the chain and refuses any in-loop user
+      // that is not part of it, which is the same property.
 
       // Out-of-loop users of the running sum (phi) and the final sum (upd).
       SmallVector<Instruction *, 4> PhiOut, UpdOut;
