@@ -504,6 +504,19 @@ tooling tier, which ships as beta with its gaps stated.
       rewritable set exceeds the HIGH set, which needs bounded-weight
       support, not more
       matched-and-declined shapes. Left open on that basis.
+      *Design constraint recorded 2026-08-17, before any of it is built.*
+      Four stages stay separate: (1) `RecurrenceDescriptor` — is it a
+      reduction; (2) this pass — does the term decompose as `exp(t)` or
+      `W*exp(t)`; (3) weight analysis — is `W` provably acceptable; (4) the
+      rewrite — does the emitted code consume `W`. Moving stage 1 to LLVM
+      changed nothing about 2–4 and must not be read as having made them
+      safer: `RecurKind::FMulAdd` says the update is `fmuladd(a, b, phi)`
+      and nothing about which operand is the weight or whether the other
+      reaches an `exp`. Stage 4 has no natural enforcement and is exactly
+      where the `s += 0.5*exp(x)` bug lived, so the accept path must make an
+      unconsumed weight unrepresentable — the rewrite takes `W` as a
+      required input — rather than relying on a test to catch it.
+      `ELIGIBILITY.md` 3.3 carries the table.
       *What the audit also found, all fixed 2026-08-17:* the suite was a
       closed-world whitelist — "these 4 names are rewritten" and "these names
       are bit-identical" were two independent hand-maintained lists with

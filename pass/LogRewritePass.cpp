@@ -416,16 +416,19 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
 
       // Pipeline diagnosis runs FIRST, before the shape checks below.
       //
-      // `isReductionPHI` needs loop-simplify form — AddReductionVar reads the
-      // start value through getLoopPreheader() with no null check, which with
-      // assertions off is an out-of-bounds read — and LCSSA, to find the exit
-      // instruction. Both come from the required `loop-simplify,lcssa` prefix
-      // (ELIGIBILITY.md section 0).
+      // These are prerequisites of the ANALYSIS THIS PASS HAPPENS TO USE, not
+      // conditions on when a log-domain rewrite is legal. isReductionPHI needs
+      // loop-simplify form (AddReductionVar reads the start value through
+      // getLoopPreheader() with no null check — an out-of-bounds read with
+      // assertions off) and LCSSA (it inspects out-of-loop users to locate the
+      // exit instruction). Swap the recognizer and this requirement changes
+      // with it. ELIGIBILITY.md keeps it out of the numbered clauses for that
+      // reason; nothing downstream should reason from it.
       //
-      // Stated rather than skipped, for the reason every other decline here
-      // is stated: a caller who omits the prefix gets zero rewrites, and
-      // silence reads as "no eligible loop" rather than "misconfigured
-      // pipeline".
+      // Stated rather than skipped because a caller who omits the prefix gets
+      // zero rewrites, and silence reads as "no eligible loop" rather than
+      // "misconfigured pipeline". DECLINE-PIPELINE is a configuration
+      // diagnostic, not an eligibility decline like DECLINE-WEIGHT.
       //
       // Order matters and was got wrong once. Placed after the
       // preheader/latch null checks below, this guard is unreachable for the
@@ -474,12 +477,27 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       if (!Acc->getType()->isDoubleTy())
         continue; // float accumulators: documented out of scope
 
-      // Is it a reduction, and are its uses clean? LLVM's answer, not this
-      // file's. Until 2026-08-17 the pass established this itself, with a
-      // copy of the matcher's mid-loop-read guard and its own reading of the
-      // phi's incoming values; matcher/DELTA.md measured what that cost.
-      // FAdd and FMulAdd are the sum-shaped kinds — FMul is a product
-      // recurrence, min/max are not sums, and neither is rewritable here.
+      // STAGE 1 of 4: is it a reduction, and are its uses clean? LLVM's
+      // answer, not this file's. Until 2026-08-17 the pass established this
+      // itself, with a copy of the matcher's mid-loop-read guard and its own
+      // reading of the phi's incoming values; matcher/DELTA.md measured what
+      // that cost. FAdd and FMulAdd are the sum-shaped kinds — FMul is a
+      // product recurrence, min/max are not sums, neither is rewritable here.
+      //
+      // THIS IS THE ONLY THING LLVM ESTABLISHES. It does not validate the
+      // term decomposition below. `RecurKind::FMulAdd` says the update is
+      // `fmuladd(a, b, phi)`; which of a and b is the weight and which is the
+      // exp-bearing term is a question LLVM has no opinion about, and
+      // splitProduct answers it on this project's own terms. Do not let a
+      // RecurKind stand in for a decomposition having been checked.
+      //
+      // The four stages are kept separate on purpose (ELIGIBILITY.md 3.3):
+      //   1. RecurrenceDescriptor — reduction candidate
+      //   2. this pass           — candidate decomposes as exp(t) or W*exp(t)
+      //   3. weight analysis     — W is provably acceptable
+      //   4. rewrite             — actually consumes W
+      // Collapsing 3 into 4 is what let `s += 0.5*exp(x)` be rewritten with
+      // the 0.5 silently discarded while the whole suite stayed green.
       RecurrenceDescriptor RD;
       if (!RecurrenceDescriptor::isReductionPHI(Acc, L, RD, &DB, &AC, &DT, &SE))
         continue;
