@@ -71,3 +71,48 @@ double kernel_sum(const double *alpha, const double *k, size_t n) {
   for (size_t i = 0; i < n; ++i) s += alpha[i] * k[i];
   return s;
 }
+
+/* 8 and 9. The forward algorithm WITH its enclosing time-step loop.
+ *
+ * Cases 3 and 4 above are one time step each, which is why neither can
+ * exercise a cross-loop risk signal: the magnitude decay that makes this
+ * family underflow lives in the loop these two do not contain. Added
+ * 2026-08-17 so the shape README names is present in the form that actually
+ * underflows, and so the open item has a concrete target.
+ *
+ * BOTH are asserted as HITS AT LOW, which is the current, wrong-for-the-user
+ * verdict: the matcher sees the reduction and grades each inner iteration
+ * unremarkable, because risk is judged one loop at a time. When a cross-loop
+ * signal lands, these turn red and the coverage table must be updated with
+ * them — which is the point of asserting a gap rather than describing one
+ * (TODO.md, "Per-loop risk cannot see cross-loop decay").
+ *
+ * Two forms, because they are different DETECTION problems and a rule that
+ * handles only the first would look finished:
+ *   8. one buffer indexed by time step — the store and the load share an
+ *      underlying object, which a cheap proxy can see.
+ *   9. two buffers swapped each step — the textbook form. The store and the
+ *      load reach different objects through a rotating pointer pair, so the
+ *      same proxy does not see it without following the swap. */
+void forward_full_flat(const double *A, const double *B, const int *obs,
+                       double *al, size_t n, size_t T) {
+  for (size_t t = 1; t < T; ++t)
+    for (size_t j = 0; j < n; ++j) {
+      double s = 0.0;
+      for (size_t i = 0; i < n; ++i) s += al[(t - 1) * n + i] * A[i * n + j];
+      al[t * n + j] = s * B[obs[t] * n + j];
+    }
+}
+
+void forward_full_swap(const double *A, const double *B, const int *obs,
+                       double *buf0, double *buf1, size_t n, size_t T) {
+  double *prev = buf0, *cur = buf1;
+  for (size_t t = 1; t < T; ++t) {
+    for (size_t j = 0; j < n; ++j) {
+      double s = 0.0;
+      for (size_t i = 0; i < n; ++i) s += prev[i] * A[i * n + j];
+      cur[j] = s * B[obs[t] * n + j];
+    }
+    { double *tmp = prev; prev = cur; cur = tmp; }
+  }
+}

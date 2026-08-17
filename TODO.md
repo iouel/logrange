@@ -673,6 +673,45 @@ tooling tier, which ships as beta with its gaps stated.
       revisit condition, not as 1.0 work. The doc change itself is the
       README bullet under "Diagnostic coverage statements" above.
 
+      *Scoped 2026-08-17, and one assumption it rested on turned out wrong.*
+      The fixtures now exist: `coverage.c` carries `forward_full_flat` and
+      `forward_full_swap`, the shape WITH its enclosing time-step loop, both
+      asserted as hits **at LOW** — the current, wrong-for-the-user verdict.
+      Cases 3 and 4 are one time step each and never could have exercised
+      this, so until now there was no target to fail against. These turn red
+      the day a signal lands, which is the point of asserting the gap.
+
+      **The candidate rule.** For an innermost reduction in a loop with a
+      parent: the result is stored to an object that a term in the same nest
+      loads from on a later parent iteration. `getUnderlyingObject` on the
+      store and the load is the cheap proxy; full alias analysis stays out of
+      scope, as it did for the guard refinement.
+
+      **Do this before writing any of it, because the ordering is not
+      recoverable afterwards: decide whether the signal promotes LOW to MED
+      or LOW to HIGH.** It changes the published HIGH count, and picking the
+      tier once the figures exist is choosing the number first. METHODOLOGY's
+      own rule — fix the rule, then count — applies to this exactly.
+
+      **The yield estimate above is wrong and was wrong in the safe
+      direction.** "No forward-algorithm code in the corpus, so this recovers
+      nothing" reasons from the *shape*; the proxy keys on a *pattern* —
+      output feeding the next outer iteration — that is much broader.
+      Iterative solvers, power iteration, Jacobi and Gauss-Seidel all match
+      it, and GSL is full of them. So the population is unmeasured and
+      plausibly large, this is not a quiet change, and it needs the full
+      delta treatment (`matcher/DELTA.md`'s pattern: both rules over the same
+      loops, publish, then regenerate `FIGURES.txt`).
+
+      **Cost, having looked.** `walkChain` treats `Load` as a leaf and
+      discards the address, which is the one fact the rule needs, so the term
+      walk has to start collecting them. Roughly 60–100 lines plus that
+      threading, then the evidence ceremony. Half a day for the code; the
+      tier decision and the delta are the larger half.
+
+      *Not blocking 1.0 either way* — the diagnostic ships with the gap
+      stated, which is the branch the posture already took.
+
 ## Explicitly not blocking 1.0
 
 - [x] **Formal-bound presentation cleanup.** Done 2026-08-15, in

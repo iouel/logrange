@@ -151,9 +151,21 @@ day describing `coverage.c` as a standing check when nothing ran it.)
 | softmax denominator, textbook form | yes | HIGH exp-chain;exp-sum |
 | forward algorithm, register accumulator | yes | **LOW** |
 | forward algorithm, `out[j] += ...` | yes (since 2026-08-17) | **LOW** |
+| forward algorithm, full nest, one buffer | yes (since 2026-08-17) | **LOW** |
+| forward algorithm, full nest, swapped buffers | yes (since 2026-08-17) | **LOW** |
 | hand-written logsumexp | yes | HIGH exp-chain;exp-sum |
 | kernel / weighted sum (libsvm family) | yes | LOW |
 | product of likelihoods | no — correct, exponent-tracking's job | — |
+
+The last two rows were added because the four preceding forward-algorithm
+entries are all **one time step**, and the decay that makes this family
+underflow lives in the loop none of them contain. A fixture that cannot
+exhibit the problem cannot test a fix for it. Both full-nest forms are
+asserted at LOW — the verdict a reader does not want — so a cross-loop signal
+turns them red rather than shipping while this table still says LOW.
+Two forms because they are different detection problems: one buffer indexed
+by time step shares an underlying object between the store and the load; the
+textbook swapped pair does not, and reaches it through a rotating pointer.
 
 One gap remains, and it is the correct one: a pure product belongs to
 exponent-tracking, not here. `RecurKind::FMul` is filtered out deliberately.
