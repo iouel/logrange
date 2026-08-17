@@ -11,6 +11,59 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**Bounded constant weights are rewritten.** `s += w * exp(x)` for a positive
+finite constant `w` in the accumulator's type is folded as
+`exp(t + fl(log w))` — into the exponent, not onto the term, which keeps the
+emitted state's ceiling at `n`. Scaling the term instead is what section 3.3
+declines: it puts the ceiling at `sum|w_i|`, which has none. No `log` runs at
+run time.
+
+Every other weight still declines and now says which: `non-constant-weight`,
+`negative-weight`, `non-finite-weight`, `weight-type-unsupported`. A negative
+weight is declined by name rather than bucketed — `exp` cannot represent a
+negative term, so it needs the signed pos/neg representation `rp_accum` uses,
+where cancellation is part of the representation rather than of the sum.
+
+**The error contract gained two terms, searched rather than inherited.**
+
+    + (|log w| + max_i |t'_i|) * u ,   t'_i = fl(x_i + fl(log w))
+
+`fl(log w)` differs from `log w` by up to `|log w|*u` under the `<=1-ulp`
+libm assumption already made for `exp()`, and `t'` rounds at its own
+magnitude where the unweighted exponent — a loaded value — does not round at
+all. Neither term is the runtime's `add_scaled` term reused by analogy:
+`add_scaled` is `add_log(v + log c)` and this is `exp(t + log w)` feeding a
+streaming reduction, a different error path. Family E8 in
+`emitted_bound_search.c` sweeps both weights over the shapes that bind
+hardest, against the object the pass rewrote: **4482 trials, 0 violations,
+worst 0.96**. Scored without the two terms on the same trials the old bound
+is **exceeded on 19 of 4482, worst 1.53x**, so they are load-bearing rather
+than padding.
+
+**`fl(log w)` is host-dependent, and that is stated rather than assumed
+away.** It is computed by the host libm inside the pass binary, not by LLVM's
+constant folder, so the emitted bit pattern is a property of the build
+machine. The contract survives — any conforming `<=1-ulp` libm keeps the
+`|log w|*u` term valid — and `run_pass_test.sh` pins the emitted constant
+against the host's own `log(w)`, so a divergence is a red gate rather than
+silent drift.
+
+**Stage 3 and stage 4 are now linked structurally, not by test.** `WeightPlan`
+owns both the analysis and the exponent the emission consumes: `exponent()`
+is the only route to the value that gets exponentiated, so a weight analysed
+at stage 3 cannot fail to be used at stage 4. The previous bug — `Weight`
+computed, checked for presence, never read, so `s += 0.5*exp(x)` was rewritten
+with the `0.5` discarded while the whole suite stayed green — is no longer
+something a test has to catch. `const_weight_sum`'s assertions moved from
+"was it left bit-identical" to value checks, with a second kernel at `w = 1e6`
+and a ratio check between them so one hardcoded constant cannot satisfy both.
+
+**Not claimed: the section 7 gate is still not load-bearing.** The rewrite
+requires an accepted `exp` and any loop with one verdicts HIGH, so
+`rewritable ⊆ HIGH` holds by construction and the `min-risk=low` equality
+assertion still passes. Bounded weights widen which HIGH loops are
+rewritable; they add no LOW or MED one. Posture condition 3 stays open.
+
 **`pass/` no longer reimplements reduction analysis either.** The matcher
 stopped on 2026-08-17; the pass followed the same day. `isReductionPHI`
 filtered to `FAdd`/`FMulAdd` identifies the accumulator, `getRecurrenceStartValue`

@@ -197,10 +197,29 @@ Clause order is **normative**: the section 7 risk gate runs first, this
 clause second. Reversed, this clause shadows the gate and the only
 LOW-verdict input the pass matches never reaches it.
 
-**Extension point, deliberately not taken.** A weight proven bounded — a
-constant is the easy case — is rewritable. It needs the sign handling above,
-the section 5 error contract re-derived (it is `pos_accum`'s, for unit
-weights), and its own accept and decline tests.
+**Extension point, taken 2026-08-17 for the constant case.** A positive finite
+constant weight in the accumulator's type is accepted and folded as
+`exp(t + fl(log w))`, which keeps the state's ceiling at `n`; section 5 states
+and searches the two error terms that fold adds. Everything else still
+declines, and now says which: `non-constant-weight`, `negative-weight`,
+`non-finite-weight`, `weight-type-unsupported`.
+
+`fl(log w)` is computed by the **host libm in the pass binary**, not by LLVM's
+constant folder. The contract survives that — any conforming `<=1-ulp` libm
+keeps the `|log w|*u` term valid — but the emitted bit pattern is a property
+of the build machine, and `run_pass_test.sh` pins it against the host's own
+`log(w)` so a divergence is a red gate rather than silent drift. A host whose
+libm differs is a recordable event, not a number to bump.
+
+**This did not make the section 7 gate load-bearing, and the reason is worth
+stating.** The rewrite requires an accepted `exp` in the term — it builds
+exponential state — and any loop carrying one verdicts HIGH. So
+`rewritable ⊆ HIGH` still holds by construction, `run_pass_test.sh`'s
+`gate_is_reachable_but_not_load_bearing` still passes, and the equality of
+the rewrite sets at `min-risk=low` and the default is unchanged. Bounded
+weights widen *which* HIGH loops are rewritable; they do not add a LOW or MED
+one. The condition closes only when a shape that verdicts below HIGH becomes
+soundly rewritable, which needs a rewrite that does not require an `exp`.
 
 **Four stages, and they must stay separate.** The failure recorded above is
 what happens when they blur:
@@ -303,7 +322,37 @@ the same reason it does not bind for `pos_accum` — the `n*u` term dominates
 `log n` — and it is carried so the statement is correct rather than merely
 unfalsified. Family E in `emitted_bound_search.c` measures it.
 
-This is `pos_accum`'s `(n + 3k + 3 + D)*u + (|log|S|| + |log|net||)*u` plus `1u` for the
+### With a bounded constant weight
+
+A loop `s += w * exp(x_i)` accepted under 3.3 is rewritten as
+`exp(t + fl(log w))`, and carries **two further terms**:
+
+    WORST-CASE RELATIVE ERROR  <=  (n + 3k + 4 + D) * u
+                                   +  (|log|S|| + |log|net||) * u
+                                   +  (|log w| + max_i |t'_i|) * u
+
+where `t'_i = fl(x_i + fl(log w))` is the exponent actually computed.
+
+Neither term exists in the unweighted form and neither is inherited by
+analogy from the runtime's `add_scaled`. `fl(log w)` differs from `log w` by
+up to `|log w|*u` under the same `<=1-ulp` libm assumption already made for
+`exp()`, and `exp` carries that through as a relative error on every term.
+`t'` rounds at its own magnitude, where the unweighted exponent is a loaded
+value and does not round at all; `max_i` rather than a mass weighting because
+the term is charged once per term whatever that term's share of the sum.
+
+**Searched, and the added terms are demonstrated necessary rather than
+assumed.** Family E8 in `emitted_bound_search.c` sweeps both weights over the
+shapes that bind hardest — extreme magnitude, ascending rescales, depth
+clusters, equal-normalized, random — against the object the pass rewrote.
+4482 trials, 0 violations, worst observed/bound **0.96**, binding on the same
+depth-cluster shape as the unweighted case. Scored on the same trials without
+the two weight terms, the unweighted bound is **exceeded on 19 of 4482, worst
+1.53x**, at `w = 1e6` with `n = 4`: few terms make `n*u` small and `|log w|`
+is 13.8, so the fold's error is what is left.
+
+The unweighted statement above is `pos_accum`'s
+`(n + 3k + 3 + D)*u + (|log|S|| + |log|net||)*u` plus `1u` for the
 final `exp(m + log(s))` that the runtime does not perform. Term for term the
 emitted arithmetic is `pos_accum`'s: under the `oeq` guard, `t <= m` gives
 `dm` exactly `0`, `exp(0)` is exactly `1.0`, and `s*1.0` is exact, so the
