@@ -11,6 +11,32 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**`coverage.c` gained the forward algorithm with its enclosing time-step
+loop**, in both the forms real code writes it: one buffer indexed by time
+(`forward_full_flat`) and the textbook swapped pair (`forward_full_swap`).
+
+Every forward-algorithm fixture until now was **one time step**, so none of
+them could exhibit the decay that makes the family underflow — it lives in
+the loop they did not contain. A fixture that cannot show the problem cannot
+test a fix for it, and the open item had no target to fail against.
+
+Both are asserted as hits **at LOW**, which is the verdict a reader does not
+want: the matcher sees each inner reduction and grades it unremarkable,
+because risk is judged one loop at a time. Asserting the wrong answer on
+purpose is what makes a cross-loop signal turn the gate red the day it lands,
+rather than shipping while `RESULTS.md`'s coverage table still says LOW. Two
+forms because they are different detection problems — the flat form shares an
+underlying object between the store and the load, the swapped pair reaches it
+through a rotating pointer and does not.
+
+No rule, no figures moved: this is the target, not the fix. Scoping for the
+fix is in `TODO.md`, including a correction — the earlier estimate that a
+cross-loop signal "recovers nothing, there is no forward-algorithm code in
+the corpus" reasoned from the shape, while the candidate rule keys on a
+broader pattern (output feeding the next outer iteration) that iterative
+solvers, power iteration, Jacobi and Gauss-Seidel all match. The population
+is unmeasured and plausibly large.
+
 **Bounded constant weights are rewritten.** `s += w * exp(x)` for a positive
 finite constant `w` in the accumulator's type is folded as
 `exp(t + fl(log w))` — into the exponent, not onto the term, which keeps the

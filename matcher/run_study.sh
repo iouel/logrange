@@ -337,13 +337,22 @@ coverage)
   # processes stores to loop-invariant addresses (IntermediateStore).
   # Asserted as a HIT so the closure cannot silently regress.
   expect_hit  forward_step_mem  LOW  none
+  # The forward algorithm WITH its enclosing time-step loop, in both the forms
+  # real code writes it. Seen, and graded LOW — which is the open gap, not the
+  # desired answer: the decay that makes this family underflow lives in the
+  # outer loop and per-loop risk cannot see it. Asserted at the wrong verdict
+  # deliberately, so a cross-loop signal turns these red on the day it lands
+  # and cannot ship without this table being updated with it.
+  expect_hit  forward_full_flat  LOW  none
+  expect_hit  forward_full_swap  LOW  none
   # Still a known gap, and asserted so the docs cannot quietly become wrong in
   # EITHER direction: a pure product is exponent-tracking's job, not this
   # project's. RecurKind::FMul is filtered out for exactly this reason.
   expect_miss likelihood_product
   if [ "$cov_fail" = 0 ]; then
-    echo "COVERAGE PASS (6 named shapes seen incl. memory-carried;"\
-         "likelihood_product still missed, as documented)"
+    echo "COVERAGE PASS (8 named shapes seen incl. memory-carried and both"\
+         "full forward-algorithm forms at LOW; likelihood_product still"\
+         "missed, as documented)"
   else
     echo "COVERAGE FAIL: RESULTS.md 'Coverage against the shapes this project names' is stale"
     exit 1
