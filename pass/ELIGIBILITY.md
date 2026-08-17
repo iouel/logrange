@@ -4,30 +4,40 @@
 `pass/run_pass_test.sh` tests it. Where this file and PROTOTYPE.md differ,
 this file wins.*
 
-A loop is eligible only if **every** clause below holds. There are no
+A loop is eligible only if **every** numbered clause below holds. There are no
 fallbacks and no partial credit: a failed clause is a decline.
 
-## 0. The pipeline must canonicalize loops first
+---
 
-`-passes='loop-simplify,lcssa,log-rewrite<...>'`. Both prefixes are
-**required**, not advisory.
+## Invocation prerequisites — implementation, not contract
 
-The pass identifies the accumulator with
-`RecurrenceDescriptor::isReductionPHI`, whose `AddReductionVar` reads the
-reduction's start value through `L->getLoopPreheader()` with no null check,
-and inspects out-of-loop users to find the exit instruction. Neither
-precondition is stated in `IVDescriptors.h`; both were established by
-measurement (`matcher/DELTA.md`).
+**This section is not an eligibility clause and is deliberately unnumbered.**
+Nothing here is a statement about when a log-domain rewrite is legal. These are
+prerequisites of the analysis the pass currently *happens* to use, and they
+would change or disappear if it used a different one. Do not reason from them
+about the rewrite model.
 
-Without the prefix the pass declines every loop and reports nothing, which
-reads as "no eligible loop found" rather than as a misconfigured pipeline.
-The pass guards `isLoopSimplifyForm()` before the call so the failure is a
-decline rather than an out-of-bounds read — with assertions off,
-`AddReductionVar` on a loop with no preheader segfaults.
-
-`adce` after the pass is separately required to remove the dead original;
-see section 6 and PROTOTYPE.md. The full supported pipeline is
+Run the pass as
 `-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.
+
+- **`loop-simplify` and `lcssa`** are unstated preconditions of
+  `RecurrenceDescriptor::isReductionPHI`, which the pass uses to find the
+  accumulator. `AddReductionVar` reads the start value through
+  `L->getLoopPreheader()` with no null check, and inspects out-of-loop users to
+  locate the exit instruction. Neither is documented in `IVDescriptors.h`; both
+  were established by measurement (`matcher/DELTA.md`). They fail differently —
+  bare reports `not-loop-simplified`, `loop-simplify` alone reports
+  `not-lcssa` — and neither rewrites anything.
+- **`adce`** removes the dead original chain. That one *is* about the transform
+  and is section 6's business, not this section's.
+
+The pass emits `DECLINE-PIPELINE,<file>,<line>,<fn>,<not-loop-simplified|not-lcssa>`
+when a prerequisite is missing. **That record is a configuration diagnostic, not
+a decline in the sense the numbered clauses use the word.** A `DECLINE-WEIGHT`
+or `DECLINE-RISK` says the pass looked at your loop and refused it;
+`DECLINE-PIPELINE` says the pass was never in a position to look. It exists
+because the alternative is a clean empty report that reads as "no eligible loop
+found".
 
 ## 1. Explicit LogRange opt-in is required
 
@@ -191,6 +201,31 @@ LOW-verdict input the pass matches never reaches it.
 constant is the easy case — is rewritable. It needs the sign handling above,
 the section 5 error contract re-derived (it is `pos_accum`'s, for unit
 weights), and its own accept and decline tests.
+
+**Four stages, and they must stay separate.** The failure recorded above is
+what happens when they blur:
+
+| stage | who answers it | question |
+|---|---|---|
+| 1 | `RecurrenceDescriptor` | is the accumulator a reduction? |
+| 2 | this pass | does the term decompose as `exp(t)` or `W * exp(t)`? |
+| 3 | weight analysis | is `W` provably acceptable? |
+| 4 | the rewrite | does the emitted code **consume** `W`? |
+
+Stage 1 moved to LLVM on 2026-08-17 and **that changed nothing about stages
+2–4.** `RecurKind::FMulAdd` reports that the update is `fmuladd(a, b, phi)`;
+it does not say which operand is the weight, does not check that the other
+reaches an `exp`, and has no notion of a weight being bounded. A migration
+that made stage 1 someone else's problem did not make stages 2–4 safer, and
+must not be read as having done so.
+
+Stage 4 is the one with no natural enforcement. Accepting a weight in stage 3
+and then not reading it in stage 4 is silent and wrong at every magnitude —
+the bug above — so the accept path must be structured to make that
+unrepresentable rather than merely tested for: the rewrite should take `W` as
+a required input, so a weight that reaches stage 4 cannot fail to be
+consumed. Tests that assert a *value*, not the presence of a `REWRITE`
+record, are the backstop, not the mechanism.
 
 **The yield evidence is thinner than it was published as, and does not settle
 the question.** The census found **0** `w*exp(t)` multiplies, but its

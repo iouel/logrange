@@ -30,12 +30,33 @@ survives for one use, the `fmul` in `fadd(phi, fmul(W, X))`, which is a
 term-side node no reduction analysis has an opinion about.
 
 **The supported pass pipeline is now
-`-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.** Normative in
-`ELIGIBILITY.md` section 0. Both prefixes are required and they fail
-differently: without `loop-simplify` the pass reports `not-loop-simplified`,
-with it but without `lcssa` it reports `not-lcssa`, and neither rewrites
-anything. A new `DECLINE-PIPELINE` record names whichever is missing, because
-the failure mode is a clean empty report that reads as "no eligible loop".
+`-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.** Both prefixes are
+required and they fail differently: without `loop-simplify` the pass reports
+`not-loop-simplified`, with it but without `lcssa` it reports `not-lcssa`, and
+neither rewrites anything. A new `DECLINE-PIPELINE` record names whichever is
+missing, because the failure mode is a clean empty report that reads as "no
+eligible loop".
+
+`ELIGIBILITY.md` carries this **outside** its numbered clauses, deliberately.
+It is a prerequisite of the analysis the pass currently uses, not a condition
+on when a log-domain rewrite is legal; swap the recognizer and it changes with
+it. `DECLINE-PIPELINE` is a configuration diagnostic in the same sense — a
+`DECLINE-WEIGHT` says the pass looked at your loop and refused it, this says
+the pass was never in a position to look. It was first written as a numbered
+"section 0", which read as though canonicalization had joined the rewrite
+model.
+
+**Recorded, not implemented: the four stages must stay separate.**
+`RecurrenceDescriptor` answers stage 1 — is the accumulator a reduction.
+Stage 2 (does the term decompose as `exp(t)` or `W*exp(t)`), stage 3 (is `W`
+provably acceptable) and stage 4 (does the emitted code consume `W`) are
+unchanged and unaffected by the migration. `RecurKind::FMulAdd` reports that
+the update is `fmuladd(a, b, phi)`; it does not say which operand is the
+weight, does not check the other reaches an `exp`, and has no notion of
+boundedness. Stage 4 is the one with no natural enforcement, and is where the
+`s += 0.5*exp(x)` bug lived — accepted at stage 3, never read at stage 4,
+suite green throughout. `ELIGIBILITY.md` 3.3 now states that the accept path
+must make an unconsumed weight unrepresentable rather than merely tested for.
 
 Two things about that guard are worth recording, since both were wrong first.
 It was placed after the preheader/latch null checks, where it is unreachable
