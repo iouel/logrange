@@ -7,7 +7,10 @@
 #     cmake -S pass -B <builddir> -DCMAKE_BUILD_TYPE=Release
 #   cmake --build <builddir>
 #   opt-21 -load-pass-plugin=<builddir>/LogRewrite.so \
-#          -passes='log-rewrite<force>' -S module.ll -o rewritten.ll
+#          -passes='loop-simplify,lcssa,log-rewrite<force>' -S module.ll -o rewritten.ll
+#
+# The two canonicalization passes are required, not optional: ELIGIBILITY.md
+# section 0. Without them the pass declines every loop and reports nothing.
 cmake_minimum_required(VERSION 3.20)
 project(LogRewrite CXX)
 

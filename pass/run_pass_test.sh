@@ -63,7 +63,7 @@ $CLANG $KFLAGS -DKERNEL $RENAME_RW \
 
 echo "== 3. rewrite (force=1: the explicit reassociation grant) =="
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-       -passes='log-rewrite<force>' -verify-each \
+       -passes='loop-simplify,lcssa,log-rewrite<force>' -verify-each \
        -S "$WORK/kernel_rw.ll" -o "$WORK/kernel_rw_opt.ll" \
        2> "$WORK/rewrite.log" || { cat "$WORK/rewrite.log"; exit 1; }
 cat "$WORK/rewrite.log"
@@ -151,7 +151,7 @@ for fc in off fast; do
     echo "FAIL: -ffp-contract=$fc still contracted; the check is vacuous"; exit 1
   fi
   $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-         -passes='log-rewrite<force>' \
+         -passes='loop-simplify,lcssa,log-rewrite<force>' \
          -S "$WORK/contract_$fc.ll" -o /dev/null \
          2> "$WORK/contract_$fc.log" || { cat "$WORK/contract_$fc.log"; exit 1; }
   grep -q '^DECLINE-WEIGHT,.*,weighted_sum_rw,unbounded-weight$' "$WORK/contract_$fc.log" \
@@ -166,7 +166,7 @@ echo "PASS,weighted_spine_matched_under_all_contract_settings"
 # threshold above HIGH is the only way to exercise the refusal path — do it,
 # rather than ship a gate whose decline branch has never run.
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-       -passes='log-rewrite<force;min-risk=none>' \
+       -passes='loop-simplify,lcssa,log-rewrite<force;min-risk=none>' \
        -S "$WORK/kernel_rw.ll" -o /dev/null \
        2> "$WORK/gate.log" || { cat "$WORK/gate.log"; exit 1; }
 grep -q '^DECLINE-RISK,.*,softmax_denom_rw,HIGH,below-min-NONE$' "$WORK/gate.log" \
@@ -187,7 +187,7 @@ echo "PASS,gate_declines_above_threshold"
 # and nothing would have failed.
 for mr in low med; do
   $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-         -passes="log-rewrite<force;min-risk=$mr>" \
+         -passes="loop-simplify,lcssa,log-rewrite<force;min-risk=$mr>" \
          -S "$WORK/kernel_rw.ll" -o /dev/null \
          2> "$WORK/mr_$mr.log" || { cat "$WORK/mr_$mr.log"; exit 1; }
 done
@@ -224,7 +224,7 @@ echo "PASS,gate_is_reachable_but_not_load_bearing"
 # An unrecognised parameter must be refused, not silently ignored — a typo in
 # min-risk that quietly reverted to the default would disable the gate.
 if $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-          -passes='log-rewrite<force;min-risk=hgih>' \
+          -passes='loop-simplify,lcssa,log-rewrite<force;min-risk=hgih>' \
           -S "$WORK/kernel_rw.ll" -o /dev/null > /dev/null 2>&1; then
   echo "FAIL: misspelled parameter was accepted"; exit 1
 fi
@@ -251,7 +251,7 @@ $CLANG -O1 -g -fno-discard-value-names -DKERNEL \
 grep -q 'call double @exp(' "$WORK/errno_kernel.ll" \
   || { echo "FAIL: expected an external @exp call without -fno-math-errno"; exit 1; }
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-     -passes='log-rewrite<force>' \
+     -passes='loop-simplify,lcssa,log-rewrite<force>' \
      -S "$WORK/errno_kernel.ll" -o /dev/null \
      2> "$WORK/errno.log" || { cat "$WORK/errno.log"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/errno.log" || true)" = "0" ] \
@@ -259,6 +259,36 @@ $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
 grep -q '^DECLINE-ERRNO,.*,softmax_denom,external-exp-call$' "$WORK/errno.log" \
   || { echo "FAIL: external exp call not declined with the errno reason"; exit 1; }
 echo "PASS,decline_external_exp_call"
+
+# (i-b) A missing canonicalization prefix is NAMED, not silently ignored.
+#       Recognition delegates to RecurrenceDescriptor, which needs
+#       loop-simplify form and LCSSA (ELIGIBILITY.md section 0). Without them
+#       the pass rewrites nothing, and the failure mode this asserts against
+#       is that "nothing" reading as "no eligible loop found".
+#
+#       Both tiers are checked because they fail at different points and the
+#       guard was first written to catch only the first. The bare pipeline
+#       reports not-loop-simplified; loop-simplify alone reports not-lcssa.
+#       Neither rewrites anything, so the prefix is required in full.
+for tier in "log-rewrite<force>:not-loop-simplified" \
+            "loop-simplify,log-rewrite<force>:not-lcssa"; do
+  pipe="${tier%%:*}"; want="${tier##*:}"
+  $OPT -load-pass-plugin="$BUILD/LogRewrite.so" -passes="$pipe" \
+       -S "$WORK/kernel_orig.ll" -o /dev/null 2> "$WORK/pipe.log" \
+    || { cat "$WORK/pipe.log"; exit 1; }
+  [ "$(grep -c '^REWRITE,' "$WORK/pipe.log" || true)" = "0" ] \
+    || { echo "FAIL: '$pipe' rewrote without the required canonicalization"; exit 1; }
+  grep -q "^DECLINE-PIPELINE,.*,$want\$" "$WORK/pipe.log" \
+    || { echo "FAIL: '$pipe' did not decline with $want"; exit 1; }
+done
+# And the full prefix must leave no pipeline decline behind.
+$OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
+     -passes='loop-simplify,lcssa,log-rewrite<force>' \
+     -S "$WORK/kernel_orig.ll" -o /dev/null 2> "$WORK/pipe.log" \
+  || { cat "$WORK/pipe.log"; exit 1; }
+[ "$(grep -c '^DECLINE-PIPELINE,' "$WORK/pipe.log" || true)" = "0" ] \
+  || { echo "FAIL: full prefix still reported a pipeline decline"; exit 1; }
+echo "PASS,missing_canonicalization_is_named"
 
 # (ii) strict/constrained FP. A small TU compiled -ffp-model=strict carries
 #      the strictfp function attribute AND llvm.experimental.constrained.*
@@ -279,7 +309,7 @@ grep -q 'strictfp' "$WORK/strict.ll" \
 grep -q 'llvm.experimental.constrained' "$WORK/strict.ll" \
   || { echo "FAIL: -ffp-model=strict did not produce constrained intrinsics"; exit 1; }
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-     -passes='log-rewrite<force>' \
+     -passes='loop-simplify,lcssa,log-rewrite<force>' \
      -S "$WORK/strict.ll" -o /dev/null \
      2> "$WORK/strict.log" || { cat "$WORK/strict.log"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/strict.log" || true)" = "0" ] \
@@ -302,7 +332,7 @@ sed -e 's/ strictfp//g' -e 's/strictfp //g' "$WORK/strict.ll" \
 grep -q 'llvm.experimental.constrained' "$WORK/constrained.ll" \
   || { echo "FAIL: constrained-only TU lost its constrained intrinsics"; exit 1; }
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-     -passes='log-rewrite<force>' \
+     -passes='loop-simplify,lcssa,log-rewrite<force>' \
      -S "$WORK/constrained.ll" -o /dev/null \
      2> "$WORK/constrained.log" || { cat "$WORK/constrained.log"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/constrained.log" || true)" = "0" ] \
@@ -320,7 +350,7 @@ $CLANG $KFLAGS -fdenormal-fp-math=preserve-sign -DKERNEL \
 grep -q '"denormal-fp-math"="preserve-sign' "$WORK/denorm.ll" \
   || { echo "FAIL: -fdenormal-fp-math=preserve-sign left no attribute"; exit 1; }
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-     -passes='log-rewrite<force>' \
+     -passes='loop-simplify,lcssa,log-rewrite<force>' \
      -S "$WORK/denorm.ll" -o /dev/null \
      2> "$WORK/denorm.log" || { cat "$WORK/denorm.log"; exit 1; }
 [ "$(grep -c '^REWRITE,' "$WORK/denorm.log" || true)" = "0" ] \
@@ -340,7 +370,7 @@ RENAME_PROP="-Dsoftmax_denom=softmax_denom_prop -Dsoftmax_full=softmax_full_prop
 $CLANG $KFLAGS -DKERNEL $RENAME_PROP \
       -S -emit-llvm "$PASSDIR/test_softmax.c" -o "$WORK/kernel_prop.ll"
 $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-       -passes='log-rewrite<force;propagate=div>' \
+       -passes='loop-simplify,lcssa,log-rewrite<force;propagate=div>' \
        -S "$WORK/kernel_prop.ll" -o "$WORK/kernel_prop_opt.ll" \
        2> "$WORK/prop.log" || { cat "$WORK/prop.log"; exit 1; }
 cat "$WORK/prop.log"
@@ -356,7 +386,7 @@ echo "PASS,propagate_div_rewrites_softmax_full"
 
 # An unrecognised propagate= value must be refused, not silently ignored.
 if $OPT -load-pass-plugin="$BUILD/LogRewrite.so" \
-        -passes='log-rewrite<force;propagate=divvv>' \
+        -passes='loop-simplify,lcssa,log-rewrite<force;propagate=divvv>' \
         -S "$WORK/kernel_prop.ll" -o /dev/null > /dev/null 2>&1; then
   echo "FAIL: unknown propagate= value was accepted"; exit 1
 fi

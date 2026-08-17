@@ -7,6 +7,28 @@ this file wins.*
 A loop is eligible only if **every** clause below holds. There are no
 fallbacks and no partial credit: a failed clause is a decline.
 
+## 0. The pipeline must canonicalize loops first
+
+`-passes='loop-simplify,lcssa,log-rewrite<...>'`. Both prefixes are
+**required**, not advisory.
+
+The pass identifies the accumulator with
+`RecurrenceDescriptor::isReductionPHI`, whose `AddReductionVar` reads the
+reduction's start value through `L->getLoopPreheader()` with no null check,
+and inspects out-of-loop users to find the exit instruction. Neither
+precondition is stated in `IVDescriptors.h`; both were established by
+measurement (`matcher/DELTA.md`).
+
+Without the prefix the pass declines every loop and reports nothing, which
+reads as "no eligible loop found" rather than as a misconfigured pipeline.
+The pass guards `isLoopSimplifyForm()` before the call so the failure is a
+decline rather than an out-of-bounds read — with assertions off,
+`AddReductionVar` on a loop with no preheader segfaults.
+
+`adce` after the pass is separately required to remove the dead original;
+see section 6 and PROTOTYPE.md. The full supported pipeline is
+`-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.
+
 ## 1. Explicit LogRange opt-in is required
 
 Two independent grants, both required:
@@ -14,8 +36,8 @@ Two independent grants, both required:
 1. The pass runs only when named in `-passes`. It is registered in no
    default pipeline.
 2. The function must additionally carry either the pass parameter `force`
-   (`-passes='log-rewrite<force>'`) or the function attribute
-   `"unsafe-fp-math"="true"`.
+   (`-passes='loop-simplify,lcssa,log-rewrite<force>'`) or the function
+   attribute `"unsafe-fp-math"="true"`.
 
 Reassociation permission is the caller's to give. The pass never
 self-authorizes it.

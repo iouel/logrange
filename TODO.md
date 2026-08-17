@@ -239,7 +239,14 @@ tooling tier, which ships as beta with its gaps stated.
       Deliverable 2's stated preconditions are met, so the pass becomes
       blocked on product concerns rather than on preconditions. The
       posture does not change: neither number that drove it moves.
-- [ ] **Diagnostic coverage statements** (blocks calling the diagnostic
+- [x] **Diagnostic coverage statements.** Done 2026-08-17. Both statements
+      landed with the recognizer change: `README.md` no longer implies the
+      diagnostic flags the forward algorithm (it says the shape is matched
+      and grades LOW, and why), and `DIAGNOSTIC.md`'s "Scope limits" states
+      measured selectivity. This was the last item marked as blocking the
+      diagnostic being called shippable.
+      *Original entry, kept for the record:*
+      (blocks calling the diagnostic
       shippable, even as beta). The posture is only honest if the reader
       meets the gaps where they meet the tool. DIAGNOSTIC.md's "Scope
       limits" already carries the mechanical ones (shape-lint-not-range-
@@ -388,8 +395,10 @@ tooling tier, which ships as beta with its gaps stated.
       tested both ways: dropping `|log c|` from the claim fails the
       assertion, and rebuilding `c` via `exp()` collapses the ratio to 0.04
       and trips the "the cost is real" check.
-      *Original entry:*
-- [ ] ~~**`add_scaled` injects `|log c|·u` that no contract term names.**~~ Both
+      *Original entry, kept for the record. It carried its own `- [ ]` until
+      2026-08-17, which made a closed item register as open in any scan for
+      unchecked boxes:*
+      ~~**`add_scaled` injects `|log c|·u` that no contract term names.**~~ Both
       accumulators implement `add_scaled(v, c)` as
       `add_log(v.log_abs + std::log(c))`. `std::log(c)` is computed, so it
       carries an absolute error of `|log c|·u`, which lands directly in that
@@ -548,21 +557,29 @@ tooling tier, which ships as beta with its gaps stated.
       whether the extension point is worth taking; deciding that needs the
       census moved ahead of the rejection filters. Derivation:
       `matcher/run_study.sh figures`.
-- [ ] **`pass/` still reimplements the reduction analysis the matcher just
-      stopped reimplementing.** Audited 2026-08-17, not changed.
-      `LogRewritePass.cpp` carries its own `soleInLoopUser` (a copy of the
-      guard the matcher deleted), its own accumulator identification by
-      scanning `Header->phis()` and reading `getIncomingValueForBlock` on the
-      preheader and latch (`:393-445`), and its own clean-uses check
-      (`:530-532`). `RecurrenceDescriptor` supplies all of it:
-      `isReductionPHI`, `getRecurrenceStartValue`, `getLoopExitInstr`.
-      Not done with the matcher because the pass is a labeled prototype
-      outside 1.0's supported surface and has its own 509-line gate and
-      error-bound contract; doing both at once would have doubled the
-      verification surface for a change whose whole point was measurability.
-      The pass would additionally have to keep its stricter conditions
-      (single FP phi, double only, constant-zero init, unique exit), which
-      are rewrite legality requirements, not recognition ones.
+- [x] **`pass/` reimplemented the reduction analysis the matcher stopped
+      reimplementing.** Audited and left 2026-08-17, done the same day.
+      `isReductionPHI` filtered to `FAdd`/`FMulAdd` now identifies the
+      accumulator; `getRecurrenceStartValue` and `getLoopExitInstr` replace
+      the hand-read incoming values; the phi/update clean-use pair is gone.
+      **Measured identical**: pre- and post-migration runs of
+      `run_pass_test.sh` in isolated worktrees give the same 65 assertions,
+      the same rewrite and decline records, and byte-identical `INFO` values
+      including every accuracy ratio and the bound-search worst case (0.99
+      over 7285 trials).
+      *Two things deliberately kept.* The stricter clauses are rewrite
+      legality, not recognition, and `isReductionPHI` does not imply them:
+      single FP phi in the header, double only, constant-zero start, unique
+      exiting and exit block. And `soleInLoopUser` survives for one use — the
+      `fmul` in `fadd(phi, fmul(W, X))` is a term-side node, not part of the
+      reduction chain, so no reduction analysis has an opinion about who else
+      reads it.
+      *Cost:* the pass inherits the matcher's pipeline preconditions. The
+      supported pipeline is now
+      `-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`, normative in
+      ELIGIBILITY.md section 0. Without the prefix the pass declined every
+      loop and reported nothing — found immediately, because the gate failed
+      with `FAIL: rewrite missing for softmax_denom_rw`.
 - [ ] **Matcher blind spots.** Vectorized loops remain a documented miss;
       decide whether v1 chases them or the docs stay the answer.
       *Correction 2026-08-15:* this item briefly claimed the forward

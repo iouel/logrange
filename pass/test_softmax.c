@@ -3,7 +3,7 @@
  * One source file, compiled three times (driven by run_pass_test.sh):
  *   1. -DKERNEL with per-function renames             -> baseline kernel object
  *   2. -DKERNEL with the same renames to *_rw        -> identical IR, then run
- *      through opt-21 -passes='log-rewrite<force>' before codegen
+ *      through opt-21 -passes='loop-simplify,lcssa,log-rewrite<force>' before codegen
  *   3. (no -DKERNEL)                                 -> this main() harness
  * The -D renaming is how two copies of one function coexist in one binary.
  * (Chosen over objcopy --redefine-sym: same effect, no binary surgery, and
