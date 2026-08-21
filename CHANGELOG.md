@@ -5,11 +5,28 @@ Versions identify the header, which is the product. `LOGRANGE_VERSION_*` in
 Ordered comparisons use `LOGRANGE_VERSION` (MAJOR·10000 + MINOR·100 + PATCH),
 so `#if LOGRANGE_VERSION >= 200` means 0.2.0 or newer.
 
-Pre-1.0: the error contract can still change between minor versions. What
-will not change silently is the contract's *existence*: any bound that moves
-is recorded here with its old and new values.
+From 1.0 the error contract is stable across the major version: a bound that
+has to move takes the major with it, and the package config says so
+(`COMPATIBILITY SameMajorVersion`). Pre-1.0 it could move between minors and
+did, three times, each refutation recorded below with its old and new values.
+That history is the reason the promise is worth making rather than assumed.
 
-## Unreleased
+## 1.0.0 — 2026-08-21
+
+**The header is the product, and it is done.** Stable API, an error contract
+that was refuted three times and searched into shape, packaged and consumable
+via `find_package(LogRange 1.0 CONFIG REQUIRED)`. The compatibility mode moves
+from `SameMinorVersion` to `SameMajorVersion`, which is the release's actual
+promise: 1.x will not move a bound.
+
+Shipping alongside, each labeled rather than implied — `matcher/diagnose.sh`
+as a **beta** diagnostic with its coverage gaps enumerated in DIAGNOSTIC.md,
+`matcher/` as its engine and the study instrument at the same maturity, and
+`pass/` as a **labeled prototype**, opt-in, not installed, outside the
+supported surface. Reasoning in logrange_intent.md, "Shipping Posture".
+
+Everything below landed since 0.3.0.
+
 
 **A cross-loop risk signal was built, measured, and declined.** The forward
 algorithm grades LOW because risk is judged one loop at a time; the rule asked

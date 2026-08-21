@@ -177,7 +177,7 @@ Conclusions, now encoded in code and tests (`test_accuracy` scenario 2b):
   `rp_accum` ships with compensated pos/neg sums; `pos_accum` stays
   uncompensated because positive-only sums have no cancellation to amplify.
 
-## The formal bound (v0.3 header contract)
+## The formal bound (v1.0 header contract)
 
 Stated in `log_math.h` and machine-checked in `test_accuracy` (k recomputed
 from the input data; the accumulator carries no instrumentation):
