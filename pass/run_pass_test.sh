@@ -508,36 +508,58 @@ while IFS=, read -r _tag mfile mline mfn _rest; do
 done < <(grep '^REWRITE,' "$WORK/rewrite.log")
 echo "PASS,every_rewrite_is_matcher_high"
 
-# --- the dead original chain, and which pass actually removes it -----------
-# Posture condition 6. The pass adds and redirects; it never deletes, so the
-# original phi/fadd/exp chain survives, feeding only itself.
+# --- the chain the rewrite orphans: the pass deletes it itself -------------
+# Posture condition 6. The rewrite adds and redirects, which leaves the
+# original phi/update/exp chain feeding only itself; the pass now deletes it
+# in the same iteration that created the replacement.
 #
-# ADCE specifically, not DCE, and that distinction was wrong in two files
-# until 2026-08-17. The orphan is a loop-carried CYCLE — phi feeds update,
-# update feeds phi — so every instruction in it has a use and plain DCE cannot
-# get started. Asserted here rather than described, because "later DCE/ADCE
-# may remove it" is exactly the kind of unchecked mechanism claim this repo
-# keeps finding to be wrong.
-DEAD_BEFORE="$(grep -c 'llvm.exp.f64' "$WORK/kernel_rw_opt.ll" || true)"
-$OPT -load-pass-plugin="$BUILD/LogRewrite.so" -passes='dce' \
-     -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_dce.ll"
-$OPT -load-pass-plugin="$BUILD/LogRewrite.so" -passes='adce' \
-     -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_adce.ll"
-DEAD_DCE="$(grep -c 'llvm.exp.f64' "$WORK/after_dce.ll" || true)"
-DEAD_ADCE="$(grep -c 'llvm.exp.f64' "$WORK/after_adce.ll" || true)"
-echo "INFO,dead_chain,after_rewrite=$DEAD_BEFORE,after_dce=$DEAD_DCE,after_adce=$DEAD_ADCE"
-[ "$DEAD_DCE" = "$DEAD_BEFORE" ] \
-  || { echo "FAIL: plain dce removed something; the documented reason ADCE is"
-       echo "      required (a dead loop-carried cycle) no longer holds"; exit 1; }
-# One dead llvm.exp.f64 per rewritten f64 loop. expf_widened is f32, so it is
-# not counted here; derive the expectation rather than hardcoding it.
-NF64="$(grep -c '^REWRITE,' "$WORK/rewrite.log" || true)"
-NF32="$(grep -c '^REWRITE,.*,expf_widened_rw,' "$WORK/rewrite.log" || true)"
-EXPECT=$((DEAD_BEFORE - (NF64 - NF32)))
-[ "$DEAD_ADCE" = "$EXPECT" ] \
-  || { echo "FAIL: adce left $DEAD_ADCE llvm.exp.f64 calls, expected $EXPECT"
-       echo "      (one dead exp per rewritten f64 loop)"; exit 1; }
-echo "PASS,adce_removes_the_dead_original,$DEAD_BEFORE->$DEAD_ADCE"
+# Until 2026-08-21 it did not, and `adce` carried in the supported pipeline
+# was the documented stopgap. That was ruled a placeholder rather than a
+# closure — a condition an artifact can satisfy by describing itself is not a
+# condition — so the assertion below is the one that had to change, not the
+# prose.
+#
+# ASSERTED AS A NO-OP, which is stronger than any count. Run both cleanup
+# passes over the pass's output and require the IR back unchanged: anything
+# the pass failed to delete is by construction what adce would take, so a
+# regression shows up as a diff rather than as a number to re-derive. opt
+# stamps its input path into the ModuleID comment, so line 1 is dropped
+# before comparing.
+#
+# Only meaningful together with section 3's REWRITE assertions: "adce removes
+# nothing" is trivially true of a pass that rewrote nothing, and those are
+# what rule that out.
+#
+# Kept as the record of why this needed the pass to act at all: plain DCE
+# never could. The orphan is a loop-carried CYCLE — phi feeds update, update
+# feeds phi — so every instruction in it has a use and a use-count walk cannot
+# get started. Measured on this kernel before the change: log-rewrite alone
+# left 34 llvm.exp.f64 and 2 llvm.exp.f32, `,dce` still 34/2, `,adce` 28/1 —
+# one dead exp per rewritten loop. The pass alone now emits 28/1.
+$OPT -passes='dce'  -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_dce.ll"
+$OPT -passes='adce' -S "$WORK/kernel_rw_opt.ll" -o "$WORK/after_adce.ll"
+echo "INFO,dead_chain,after_rewrite=$(grep -c 'llvm.exp.f64' "$WORK/kernel_rw_opt.ll" || true)/$(grep -c 'llvm.exp.f32' "$WORK/kernel_rw_opt.ll" || true),after_adce=$(grep -c 'llvm.exp.f64' "$WORK/after_adce.ll" || true)/$(grep -c 'llvm.exp.f32' "$WORK/after_adce.ll" || true)"
+for cleanup in dce adce; do
+  if ! diff <(tail -n +2 "$WORK/kernel_rw_opt.ll") \
+            <(tail -n +2 "$WORK/after_$cleanup.ll") > "$WORK/cleanup_$cleanup.diff"; then
+    echo "FAIL: $cleanup still removes code from the pass's output — the"
+    echo "      rewrite orphaned a chain and did not delete it (condition 6)."
+    head -40 "$WORK/cleanup_$cleanup.diff"
+    exit 1
+  fi
+done
+echo "PASS,pass_deletes_its_own_orphan"
+
+# The one shape the deletion cannot handle is NAMED, not silently skipped: a
+# reduction whose update is also stored to a loop-invariant cell has a second
+# in-loop user, so the cycle walk refuses to start. No kernel here produces
+# it, and the branch is negative-tested rather than left unexercised (see
+# PROTOTYPE.md). If it ever fires on this corpus, an orphan survived and the
+# no-op check above would have caught it first — this pins the reason.
+[ "$(grep -c '^ORPHAN-KEPT,' "$WORK/rewrite.log" || true)" = "0" ] \
+  || { echo "FAIL: a rewrite could not delete its orphan:"
+       grep '^ORPHAN-KEPT,' "$WORK/rewrite.log"; exit 1; }
+echo "PASS,no_rewrite_left_an_orphan"
 
 echo "== 4. codegen, link, run =="
 $CLANG -O1 -c "$WORK/kernel_orig.ll"      -o "$WORK/kernel_orig.o"

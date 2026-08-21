@@ -226,18 +226,27 @@ bound.
       as this was written); (6) **the dead original chain is removed by the
       pass itself.** 1 and 2 are correctness/interface blockers, 3–6 are
       label blockers.
-      *Condition 6 reworded 2026-08-21.* It previously read "dead original
-      removed **or a required DCE run documented**", and the second branch was
-      taken: `PROTOTYPE.md` names `-passes='...,adce'` as the supported
-      pipeline and `run_pass_test.sh` asserts
-      `PASS,adce_removes_the_dead_original`. Ruled a placeholder, not a
-      closure — a condition an artifact can satisfy by describing itself is
-      not a condition. The `adce` requirement stays as the documented stopgap
-      and stays gated; the condition now closes only when the pass deletes
-      what it orphaned.
-      *Status 2026-08-17: 1, 4 and 5 closed; 2 closed for one consumer shape
-      only; 3 literal-text-met but property open; 6 open, and reworded so the
-      documentation branch no longer satisfies it.* Condition 2 is
+      *Condition 6 reworded 2026-08-21, then closed the same day.* It
+      previously read "dead original removed **or a required DCE run
+      documented**", and the second branch was taken: `PROTOTYPE.md` named
+      `-passes='...,adce'` as the supported pipeline and `run_pass_test.sh`
+      asserted `PASS,adce_removes_the_dead_original`. Ruled a placeholder, not
+      a closure — a condition an artifact can satisfy by describing itself is
+      not a condition — and rewritten to close only when the pass deletes what
+      it orphaned. **It now does.** `RecursivelyDeleteDeadPHINode` runs at the
+      end of each rewritten iteration; the `adce` suffix is gone from the
+      supported pipeline in ELIGIBILITY.md section 0. The assertion changed
+      shape rather than its numbers: a count is satisfiable by deleting the
+      right quantity of the wrong thing, so the gate now requires `dce` and
+      `adce` over the pass's output to return it **unchanged**. Measured
+      34/2 `llvm.exp.f64`/`f32` before, 28/1 after, which is exactly what
+      `adce` used to produce; the emitted-code bound search is byte-identical
+      across the change (7285 trials, worst 0.99). The one shape the cycle
+      walk cannot start on — an update also stored to a loop-invariant cell —
+      prints `ORPHAN-KEPT` rather than passing silently, negative-tested by
+      forcing the deletion to fail.
+      *Status 2026-08-21: 1, 4, 5 and 6 closed; 2 closed for one consumer shape
+      only; 3 literal-text-met but property open.* Condition 2 is
       closed only where `propagate=div` applies; every other consumer still
       exits through the side global, and last-rewrite-wins remains its stated
       defect. Condition 3's spines are matched, but the gate prevents no
@@ -620,11 +629,15 @@ bound.
       reduction chain, so no reduction analysis has an opinion about who else
       reads it.
       *Cost:* the pass inherits the matcher's pipeline preconditions. The
-      supported pipeline is now
+      supported pipeline became
       `-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`, normative in
       ELIGIBILITY.md section 0. Without the prefix the pass declined every
       loop and reported nothing — found immediately, because the gate failed
       with `FAIL: rewrite missing for softmax_denom_rw`.
+      *The `adce` suffix was dropped 2026-08-21*, when the pass started
+      deleting the chain it orphans (posture condition 6, above). The
+      `loop-simplify,lcssa` prefix is what this item is about and it stays:
+      it is a precondition of the recognizer, not of the transform.
 - [ ] **Matcher blind spots.** Vectorized loops remain a documented miss;
       decide whether v1 chases them or the docs stay the answer.
       *Correction 2026-08-15:* this item briefly claimed the forward
