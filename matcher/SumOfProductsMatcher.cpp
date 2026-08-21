@@ -679,7 +679,8 @@ struct SopInstrumentPass : PassInfoMixin<SopInstrumentPass> {
 
     FunctionCallee FSite = M->getOrInsertFunction(
         "lr_site", FunctionType::get(Type::getVoidTy(C),
-                                     {I32, I8P, I8P, I32, I32, Dbl}, false));
+                                     {I32, I8P, I8P, I32, I32, Dbl, I32},
+                                     false));
     FunctionCallee FLeaf = M->getOrInsertFunction(
         "lr_leaf",
         FunctionType::get(Type::getVoidTy(C), {I32, I32, Dbl}, false));
@@ -780,11 +781,15 @@ struct SopInstrumentPass : PassInfoMixin<SopInstrumentPass> {
         IRBuilder<> B(Pre->getTerminator());
         Value *LocS = B.CreateGlobalString(loc);
         Value *ChainS = B.CreateGlobalString(D.postfix);
+        // t_declared = 0: no host tolerance is wired yet, so the shim uses the
+        // grid's T_default axis for this site. R2 supplies the host-declared
+        // values (GSL TEST_TOL*, gsl_sf_result.err) and sets the flag, which
+        // flattens the T axis for those sites by construction.
         B.CreateCall(FSite,
                      {ConstantInt::get(I32, id), LocS, ChainS,
                       ConstantInt::get(I32, (int)D.leaves.size()),
                       ConstantInt::get(I32, Phi.getType()->isFloatTy() ? 32 : 64),
-                      ConstantFP::get(Dbl, 1e-10)});
+                      ConstantFP::get(Dbl, 1e-10), ConstantInt::get(I32, 0)});
 
         // Leaves and the term are recorded immediately before the update, so
         // every recorded value dominates the call by construction.
