@@ -6,6 +6,7 @@
 #   pass/run_pass_test.sh           the rewrite prototype, end to end
 #   matcher/test_scan.sh            the diagnostic front door, end to end
 #   matcher/test_diagnose.sh        the report renderer's own branches
+#   matcher/run_study.sh instrument the rescue instrument, both directions
 #   matcher/run_study.sh figures    published figures, from committed evidence
 #   matcher/run_study.sh delta      DELTA.md's figures, likewise
 #
@@ -142,6 +143,18 @@ jobs:
           bash matcher/test_diagnose.sh | tee "$RUNNER_TEMP/diagnose.out"
           grep -q '^test_diagnose: PASS' "$RUNNER_TEMP/diagnose.out" \
             || { echo "FAIL: no test_diagnose: PASS line"; exit 1; }
+
+      # Gate 4c. The rescue instrument's controls, on real IR (RESCUE.md, R1).
+      # Instruments matcher/instr_control.c, links it against rescue_shim.cpp
+      # and runs it. The probe must fire in BOTH directions and must decline an
+      # undecomposable call rather than treat it as a leaf. One direction
+      # cannot tell a safe site from a broken instrument.
+      - name: Gate 4c — rescue instrument controls
+        working-directory: matcher
+        run: |
+          bash ./run_study.sh instrument | tee "$RUNNER_TEMP/instrument.out"
+          grep -q '^INSTRUMENT OK' "$RUNNER_TEMP/instrument.out" \
+            || { echo "FAIL: no INSTRUMENT OK line"; exit 1; }
 
       # Gate 5. Every published corpus figure, derived from the COMMITTED
       # matcher/data/raw-*.txt rather than asserted in prose. Needs no corpus

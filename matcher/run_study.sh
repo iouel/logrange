@@ -417,8 +417,74 @@ report)
     summarize "$raw" "$(basename "$raw" .txt | sed 's/^raw-//')"
   done
   ;;
+instrument)
+  # The rescue instrument's controls, on real IR (matcher/RESCUE.md, R1).
+  #
+  # Instruments matcher/instr_control.c, links it against rescue_shim.cpp and
+  # runs it. The probe must fire in BOTH directions: a positive control that
+  # is rescued and a negative control that is NOT. One direction cannot tell a
+  # safe site from a broken instrument, which is the same defect as a gate that
+  # cannot fail.
+  build_plugin
+  IW="$WORK/instr"
+  mkdir -p "$IW"
+  REPO="$(cd "$HERE/.." && pwd)"
+
+  "$CLANG" -O1 -g -fno-vectorize -fno-slp-vectorize -fno-unroll-loops \
+    -emit-llvm -c "$HERE/instr_control.c" -o "$IW/ctl.bc"
+  "$OPT" -load-pass-plugin="$HERE/build/SopMatcher.so" \
+    -passes=loop-simplify,lcssa,sop-instrument "$IW/ctl.bc" -o "$IW/ctl_i.bc" \
+    2> "$IW/instrument.log"
+  cat "$IW/instrument.log"
+
+  # The shim is C++ (dd_exp.h, log_math.h), the target is C: link with clang++.
+  CXX="${CLANG}++"
+  command -v "$CXX" > /dev/null 2>&1 || CXX="clang++"
+  "$CXX" -O1 -I "$REPO/include" -I "$REPO/tests" \
+    -c "$HERE/rescue_shim.cpp" -o "$IW/shim.o"
+  "$CXX" -O1 "$IW/ctl_i.bc" "$IW/shim.o" -lm -o "$IW/ctl"
+  "$IW/ctl" > "$IW/run.log"
+  cat "$IW/run.log"
+
+  fail=0
+  # The three descriptors are asserted verbatim. They are what the shim's own
+  # test hand-writes, so a drift between the static predicate and the replay
+  # shows up here rather than as a wrong study result.
+  grep -q '^INSTRUMENT,.*,ctl_mixture,HIGH,2,L0 L1 EXP MUL$' "$IW/instrument.log" \
+    || { echo "FAIL: mixture descriptor is not 'L0 L1 EXP MUL'"; fail=1; }
+  grep -q '^INSTRUMENT,.*,ctl_dot,LOW,2,L0 L1 MUL$' "$IW/instrument.log" \
+    || { echo "FAIL: dot descriptor is not 'L0 L1 MUL'"; fail=1; }
+  grep -q '^INSTRUMENT,.*,ctl_softmax_f32,HIGH,1,L0 EXT EXP TRUNCF$' "$IW/instrument.log" \
+    || { echo "FAIL: f32 descriptor is not 'L0 EXT EXP TRUNCF'"; fail=1; }
+
+  # An undecomposable in-loop call must DECLINE, not become a leaf: taking
+  # log|sin(x)| reconstructs whatever sin already collapsed internally, which
+  # is the failure the symbolic replay exists to prevent. This assertion was
+  # added after a mutation (opaque calls -> leaves) left every other control
+  # green, because nothing here had an undecomposable call in a term chain.
+  grep -q '^UNLOGIFIABLE,.*,ctl_opaque,opaque-call,' "$IW/instrument.log" \
+    || { echo "FAIL: opaque call was not declined"; fail=1; }
+  if grep -q '^INSTRUMENT,.*,ctl_opaque,' "$IW/instrument.log"; then
+    echo "FAIL: opaque call was instrumented anyway"; fail=1
+  fi
+
+  # Positive control: rescued, and by a RANGE failure.
+  grep -qE '^INSTR,.*,ctl_mixture,exec=1,rescue=1,.*,range=1,' "$IW/run.log" \
+    || { echo "FAIL: positive control not rescued via a range failure"; fail=1; }
+  # Negative control: NOT rescued. This is the direction a broken probe fakes.
+  grep -qE '^INSTR,.*,ctl_dot,exec=1,rescue=0,' "$IW/run.log" \
+    || { echo "FAIL: negative control was rescued; the probe cannot decline"; fail=1; }
+  # fptrunc: the narrowing collapsed every term, and that is NOT a rescue.
+  # It foreclosed the answer before the accumulation ever saw it, which is a
+  # different finding from "log-domain accumulation would have helped".
+  grep -qE '^INSTR,.*,ctl_softmax_f32,exec=1,rescue=0,.*,trunc_collapse=100,' "$IW/run.log" \
+    || { echo "FAIL: f32 narrowing not counted as a collapse, or counted as a rescue"; fail=1; }
+
+  [ "$fail" = "0" ] || { echo "INSTRUMENT CONTROLS FAILED"; exit 1; }
+  echo "INSTRUMENT OK (both directions fire; descriptors match the shim's test)"
+  ;;
 "")
-  echo "usage: run_study.sh selftest | coverage | figures | weights [name...] | rejects [name...] | <codebase-name> | report" >&2
+  echo "usage: run_study.sh selftest | coverage | figures | instrument | weights [name...] | rejects [name...] | <codebase-name> | report" >&2
   exit 2
   ;;
 *)

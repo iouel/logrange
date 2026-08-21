@@ -34,8 +34,11 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Dominators.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Passes/PassPlugin.h"
@@ -506,6 +509,320 @@ void printLoc(raw_ostream &OS, const Instruction *I, const Function &F) {
   OS << "," << F.getName();
 }
 
+// ---------------------------------------------------------------------------
+// THE LOG-IFIABLE PREDICATE (matcher/RESCUE.md, R1).
+//
+// The rescue study needs each term's LOG-MAGNITUDE, taken symbolically from
+// the chain. Capturing the term's VALUE cannot see the case the diagnostic
+// exists for: in `s += w[i]*exp(logp[i])` at logp ~ -800 the term is already
+// 0.0 when the accumulator sees it, so linear, reference and log-reference all
+// read zero and the marquee site scores as no-failure.
+//
+// This walk decides, statically and mechanically, whether a chain can be
+// decomposed that way, and emits a postfix descriptor for the ones that can.
+// matcher/rescue_shim.cpp replays it. The two must agree on the op vocabulary;
+// the shim's header carries the same table with the arithmetic.
+//
+// FOUR RULES ARE NARROWER THAN THE OBVIOUS ONES, each because the obvious one
+// would corrupt the ground truth:
+//
+//   - fptrunc is NOT a pass-through. A healthy double can be 0.0f after
+//     narrowing, so the destination rounding is modelled at replay. Emitted as
+//     TRUNCF rather than skipped.
+//   - pow gets a sign only from the observed base and an integrality test on
+//     the observed exponent, which is a runtime decision. Statically it is
+//     just POW.
+//   - An in-loop CALL is not a leaf unless it is one of the decomposable
+//     functions below. Taking log|value| of an arbitrary call result
+//     reconstructs whatever the callee already collapsed internally.
+//   - fadd/fsub are decomposable, but their arithmetic must keep signed
+//     cancellation in double-double, which is the shim's job.
+//
+// A loop-INVARIANT value is a leaf, including an invariant call: it is an
+// input to the reduction under study rather than part of it. An in-loop call
+// is part of the computation being measured and has to be decomposed or
+// declined.
+// ---------------------------------------------------------------------------
+
+// Functions whose log-magnitude decomposes exactly. Everything else in-loop is
+// UNLOGIFIABLE. expm1 is deliberately absent: exp(a)-1 has no clean log form.
+const char *decomposableOp(StringRef Name) {
+  if (Name == "exp" || Name == "expf" || Name == "llvm.exp.f64" ||
+      Name == "llvm.exp.f32")
+    return "EXP";
+  if (Name == "exp2" || Name == "exp2f" || Name == "llvm.exp2.f64" ||
+      Name == "llvm.exp2.f32")
+    return "EXP2";
+  if (Name == "pow" || Name == "powf" || Name == "llvm.pow.f64" ||
+      Name == "llvm.pow.f32")
+    return "POW";
+  if (Name == "sqrt" || Name == "sqrtf" || Name == "llvm.sqrt.f64" ||
+      Name == "llvm.sqrt.f32")
+    return "SQRT";
+  if (Name == "fabs" || Name == "fabsf" || Name == "llvm.fabs.f64" ||
+      Name == "llvm.fabs.f32")
+    return "ABS";
+  return nullptr;
+}
+
+struct ChainDesc {
+  std::string postfix;
+  SmallVector<Value *, 16> leaves;
+  bool ok = true;
+  const char *why = "";
+
+  void op(const char *o) {
+    if (!postfix.empty()) postfix += " ";
+    postfix += o;
+  }
+  void leaf(Value *V) {
+    const unsigned slot = leaves.size();
+    leaves.push_back(V);
+    if (!postfix.empty()) postfix += " ";
+    postfix += "L" + std::to_string(slot);
+  }
+  void fail(const char *reason) {
+    if (ok) { ok = false; why = reason; }
+  }
+};
+
+void buildDesc(Value *V, const Loop &L, ChainDesc &D, unsigned depth = 0) {
+  if (!D.ok) return;
+  if (depth > 32) { D.fail("chain-too-deep"); return; }
+  if (D.leaves.size() > 32) { D.fail("too-many-leaves"); return; }
+
+  auto *I = dyn_cast<Instruction>(V);
+  if (!I || !L.contains(I)) { D.leaf(V); return; } // invariant: an input
+
+  switch (I->getOpcode()) {
+  case Instruction::FMul:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    buildDesc(I->getOperand(1), L, D, depth + 1);
+    D.op("MUL");
+    return;
+  case Instruction::FDiv:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    buildDesc(I->getOperand(1), L, D, depth + 1);
+    D.op("DIV");
+    return;
+  case Instruction::FAdd:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    buildDesc(I->getOperand(1), L, D, depth + 1);
+    D.op("ADD");
+    return;
+  case Instruction::FSub:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    buildDesc(I->getOperand(1), L, D, depth + 1);
+    D.op("SUB");
+    return;
+  case Instruction::FNeg:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    D.op("NEG");
+    return;
+  case Instruction::FPExt:
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    D.op("EXT");
+    return;
+  case Instruction::FPTrunc:
+    // Not transparent. The narrowing can take a healthy double to 0.0f, and
+    // the replay applies that rounding.
+    if (!I->getType()->isFloatTy()) { D.fail("fptrunc-not-f32"); return; }
+    buildDesc(I->getOperand(0), L, D, depth + 1);
+    D.op("TRUNCF");
+    return;
+  case Instruction::Load:
+  case Instruction::PHI:
+    D.leaf(I); // program data, and a phi is an input from the term's view
+    return;
+  case Instruction::Call: {
+    auto *CB = cast<CallBase>(I);
+    if (CB->isIndirectCall()) { D.fail("indirect-call"); return; }
+    Function *Callee = CB->getCalledFunction();
+    const char *op = Callee ? decomposableOp(Callee->getName()) : nullptr;
+    if (!op) { D.fail("opaque-call"); return; }
+    for (unsigned i = 0; i < CB->arg_size(); ++i)
+      buildDesc(CB->getArgOperand(i), L, D, depth + 1);
+    D.op(op);
+    return;
+  }
+  default:
+    D.fail("unsupported-op");
+    return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SopInstrumentPass — emits the recording calls rescue_shim.cpp consumes.
+//
+// A SEPARATE pass from SopMatcherPass on purpose. That one is recognition
+// only and returns PreservedAnalyses::all(); RESCUE.md requires the HIT stream
+// to be byte-identical with the instrument on and off, and the cleanest way to
+// guarantee that is for the HIT-emitting pass never to gain a transform.
+// Recognition itself is shared, not duplicated: same file, same
+// recognizeLlvm, same walkChain.
+// ---------------------------------------------------------------------------
+struct SopInstrumentPass : PassInfoMixin<SopInstrumentPass> {
+  static int nextId;
+
+  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
+    auto &LI = AM.getResult<LoopAnalysis>(F);
+    auto &SE = AM.getResult<ScalarEvolutionAnalysis>(F);
+    auto &DT = AM.getResult<DominatorTreeAnalysis>(F);
+    auto &AC = AM.getResult<AssumptionAnalysis>(F);
+    auto &DB = AM.getResult<DemandedBitsAnalysis>(F);
+
+    Module *M = F.getParent();
+    LLVMContext &C = F.getContext();
+    Type *Dbl = Type::getDoubleTy(C);
+    Type *I32 = Type::getInt32Ty(C);
+    PointerType *I8P = PointerType::getUnqual(C);
+
+    FunctionCallee FSite = M->getOrInsertFunction(
+        "lr_site", FunctionType::get(Type::getVoidTy(C),
+                                     {I32, I8P, I8P, I32, I32, Dbl}, false));
+    FunctionCallee FLeaf = M->getOrInsertFunction(
+        "lr_leaf",
+        FunctionType::get(Type::getVoidTy(C), {I32, I32, Dbl}, false));
+    FunctionCallee FTerm = M->getOrInsertFunction(
+        "lr_term", FunctionType::get(Type::getVoidTy(C), {I32, Dbl}, false));
+    FunctionCallee FExec = M->getOrInsertFunction(
+        "lr_exec", FunctionType::get(Type::getVoidTy(C), {I32, Dbl}, false));
+
+    bool changed = false;
+
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      if (!L->isInnermost()) continue;
+      BasicBlock *Latch = L->getLoopLatch();
+      BasicBlock *Pre = L->getLoopPreheader();
+      if (!Latch || !Pre) continue;
+
+      for (PHINode &Phi : L->getHeader()->phis()) {
+        if (!Phi.getType()->isFloatingPointTy()) continue;
+        Value *Back = Phi.getIncomingValueForBlock(Latch);
+        auto *Upd = dyn_cast<Instruction>(Back);
+        if (!Upd || !L->contains(Upd)) continue;
+
+        const Verdict V = evaluate(recognizeLlvm(Phi, L, Back, DT, AC, DB, SE),
+                                   L, SE, Upd);
+        if (!V.hit) continue;
+
+        auto decline = [&](const char *reason) {
+          errs() << "UNLOGIFIABLE,";
+          printLoc(errs(), Upd, F);
+          errs() << "," << reason << "," << V.Risk << "\n";
+        };
+
+        // The term is the update's non-accumulator contribution. Two spine
+        // shapes carry it, and BOTH are required rather than optional:
+        // which one clang emits is -ffp-contract, a flag this study does not
+        // control. Measured on this control file at the study's own flags:
+        // the default contracts `s += a*b` into llvm.fmuladd, so a
+        // fadd-only instrument declines the marquee shape everywhere.
+        // pass/ELIGIBILITY.md 3.1 records the same fact for the rewrite.
+        const unsigned Op = Upd->getOpcode();
+        Value *Term = nullptr;      // single-value term, when there is one
+        Value *MulA = nullptr, *MulB = nullptr; // fmuladd's two factors
+        bool negate = false;
+
+        if (Op == Instruction::FAdd || Op == Instruction::FSub) {
+          if (Upd->getOperand(0) == &Phi) {
+            Term = Upd->getOperand(1);
+            negate = (Op == Instruction::FSub);
+          } else if (Upd->getOperand(1) == &Phi) {
+            Term = Upd->getOperand(0);
+          } else {
+            decline("phi-not-a-spine-operand");
+            continue;
+          }
+        } else if (auto *II = dyn_cast<IntrinsicInst>(Upd)) {
+          const Intrinsic::ID IID = II->getIntrinsicID();
+          if ((IID == Intrinsic::fmuladd || IID == Intrinsic::fma) &&
+              II->getArgOperand(2) == &Phi) {
+            MulA = II->getArgOperand(0);
+            MulB = II->getArgOperand(1);
+          } else {
+            decline("spine-not-recognized");
+            continue;
+          }
+        } else {
+          decline("spine-not-recognized");
+          continue;
+        }
+
+        Type *TermTy = Term ? Term->getType() : MulA->getType();
+        if (!TermTy->isDoubleTy() && !TermTy->isFloatTy()) {
+          decline("term-type-unsupported");
+          continue;
+        }
+
+        BasicBlock *Exit = L->getUniqueExitBlock();
+        if (!Exit) { decline("no-unique-exit"); continue; }
+
+        ChainDesc D;
+        if (Term) {
+          buildDesc(Term, *L, D);
+        } else {
+          buildDesc(MulA, *L, D);
+          buildDesc(MulB, *L, D);
+          D.op("MUL");
+        }
+        if (negate) D.op("NEG");
+        if (!D.ok) { decline(D.why); continue; }
+        if (D.leaves.empty()) { decline("no-leaves"); continue; }
+
+        const int id = nextId++;
+        std::string loc;
+        {
+          raw_string_ostream OS(loc);
+          printLoc(OS, Upd, F);
+        }
+
+        IRBuilder<> B(Pre->getTerminator());
+        Value *LocS = B.CreateGlobalString(loc);
+        Value *ChainS = B.CreateGlobalString(D.postfix);
+        B.CreateCall(FSite,
+                     {ConstantInt::get(I32, id), LocS, ChainS,
+                      ConstantInt::get(I32, (int)D.leaves.size()),
+                      ConstantInt::get(I32, Phi.getType()->isFloatTy() ? 32 : 64),
+                      ConstantFP::get(Dbl, 1e-10)});
+
+        // Leaves and the term are recorded immediately before the update, so
+        // every recorded value dominates the call by construction.
+        B.SetInsertPoint(Upd);
+        auto widen = [&](Value *X) -> Value * {
+          return X->getType()->isDoubleTy() ? X : B.CreateFPExt(X, Dbl);
+        };
+        for (unsigned i = 0; i < D.leaves.size(); ++i)
+          B.CreateCall(FLeaf, {ConstantInt::get(I32, id),
+                               ConstantInt::get(I32, (int)i),
+                               widen(D.leaves[i])});
+        // For a contracted spine the term is not a value in the IR, so the
+        // product is formed here purely for the record. The original
+        // fmuladd is untouched.
+        Value *TermVal = Term ? Term : B.CreateFMul(MulA, MulB);
+        B.CreateCall(FTerm, {ConstantInt::get(I32, id), widen(TermVal)});
+
+        // The reduction's live-out value, in the exit block.
+        Value *ExitVal = Upd;
+        for (PHINode &EP : Exit->phis())
+          for (unsigned i = 0; i < EP.getNumIncomingValues(); ++i)
+            if (EP.getIncomingValue(i) == Upd) { ExitVal = &EP; break; }
+        B.SetInsertPoint(Exit->getFirstNonPHIIt());
+        B.CreateCall(FExec, {ConstantInt::get(I32, id), widen(ExitVal)});
+
+        errs() << "INSTRUMENT,";
+        printLoc(errs(), Upd, F);
+        errs() << "," << V.Risk << "," << D.leaves.size() << "," << D.postfix
+               << "\n";
+        changed = true;
+      }
+    }
+    return changed ? PreservedAnalyses::none() : PreservedAnalyses::all();
+  }
+};
+
+int SopInstrumentPass::nextId = 0;
+
 struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
   // Explain mode: emit a REJECT record naming the check that turned a
   // candidate away, and for the mid-loop-read guard, what the extra in-loop
@@ -708,6 +1025,13 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                   }
                   if (Name == "sop-matcher<explain>") {
                     FPM.addPass(SopMatcherPass(/*Explain=*/true));
+                    return true;
+                  }
+                  // The rescue instrument (matcher/RESCUE.md, R1). A separate
+                  // pass, not a mode: this one TRANSFORMS, and the HIT stream
+                  // must stay byte-identical whether or not it runs.
+                  if (Name == "sop-instrument") {
+                    FPM.addPass(SopInstrumentPass());
                     return true;
                   }
                   return false;
