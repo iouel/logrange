@@ -5,6 +5,7 @@
 #   matcher/run_study.sh coverage   the coverage claims in matcher/RESULTS.md
 #   pass/run_pass_test.sh           the rewrite prototype, end to end
 #   matcher/test_scan.sh            the diagnostic front door, end to end
+#   matcher/test_diagnose.sh        the report renderer's own branches
 #   matcher/run_study.sh figures    published figures, from committed evidence
 #   matcher/run_study.sh delta      DELTA.md's figures, likewise
 #
@@ -128,6 +129,19 @@ jobs:
           bash matcher/test_scan.sh | tee "$RUNNER_TEMP/scan.out"
           grep -q '^test_scan: PASS' "$RUNNER_TEMP/scan.out" \
             || { echo "FAIL: no test_scan: PASS line"; exit 1; }
+
+      # Gate 4b. The renderer's own branches. Gate 4 drives diagnose.sh through
+      # the scan pipeline and gates that pipeline; the report branches are
+      # reached from a raw file and were untested. The diagnostic is the
+      # shipped front door and was the artifact with the least automated
+      # coverage relative to the library behind it, which the posture states
+      # as a gap rather than an oversight. This closes part of it.
+      # Needs no LLVM, no corpus and no plugin, so it runs standalone.
+      - name: Gate 4b — diagnostic renderer branches (diagnose.sh)
+        run: |
+          bash matcher/test_diagnose.sh | tee "$RUNNER_TEMP/diagnose.out"
+          grep -q '^test_diagnose: PASS' "$RUNNER_TEMP/diagnose.out" \
+            || { echo "FAIL: no test_diagnose: PASS line"; exit 1; }
 
       # Gate 5. Every published corpus figure, derived from the COMMITTED
       # matcher/data/raw-*.txt rather than asserted in prose. Needs no corpus
