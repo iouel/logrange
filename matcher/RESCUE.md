@@ -241,11 +241,47 @@ log-reference all read zero and the marquee site scores as no-failure. The
 instrument must therefore capture each term's log-magnitude **symbolically**
 from its chain, and some chains cannot be decomposed that way.
 
-- **HIGH: all 5.** Census, with the limit stated above.
-- **MED: 20, LOW: 20**, fixed-seed draw from the **log-ifiable** members of the
-  committed `data/raw-*.txt`.
-- The 40 MED/LOW sites split **50/50 into development and held-out before any
-  is looked at**. The held-out half opens only in R4.
+### Measured. The frame is smaller than planned, and unevenly so.
+
+`./run_study.sh frame`, static only, evidence in `data/raw-frame.txt`. All 814
+hits are accounted for: every one is either `INSTRUMENT` or `UNLOGIFIABLE`.
+
+| tier | hits | log-ifiable | excluded | exclusion rate |
+|---|---|---|---|---|
+| HIGH | 5 | **5** | 0 | 0.0% |
+| MED | 57 | **8** | 49 | **86.0%** |
+| LOW | 752 | **379** | 373 | 49.6% |
+
+Decline reasons: `opaque-call` 315, `term-type-unsupported` 88,
+`spine-not-recognized` 19.
+
+**The exclusions concentrate in MED, and that is a coverage fact, not a
+detail.** RESCUE.md flagged an uneven frame restriction in advance as a bias
+risk, and it happened, in the direction guessed wrong: LOW was predicted to be
+the vulnerable tier. MED at 86% is the one nearly wiped out. `opaque-call`
+dominates, which is correction 3 doing its job rather than a defect: a term
+whose chain runs through an undecomposable call cannot be measured without
+reconstructing what that call already collapsed.
+
+- **HIGH: all 5.** Census, with the independence limit stated above.
+- **MED: 8**, not 20. The whole log-ifiable population, so it is a census too.
+- **LOW: 20**, fixed-seed draw from the 379 log-ifiable members.
+- The LOW sample splits **50/50 into development and held-out before any is
+  looked at**. The held-out half opens only in R4. MED cannot be split: 8 sites
+  will not carry a held-out half, so **the MED tier has no out-of-sample
+  evidence and R4's condition 3 cannot be satisfied for it.**
+
+**Power at the sizes actually available**, from `./rescue_power.sh`:
+
+| comparison | detectable | example |
+|---|---|---|
+| HIGH 5 vs LOW 20 | ~40 points | 3/5 vs 2/20, p = 0.038 |
+| MED 8 vs LOW 20 | **38 to 48 points** | 3/8 vs 0/20, p = 0.017 |
+
+The published 25-to-35-point table assumed n = 20 per tier and no longer
+applies to MED. A MED/LOW difference smaller than about 40 points will not be
+detected, and the study says "not detected at n = 8" rather than "no
+difference".
 
 A site the instrument cannot decompose emits
 `UNLOGIFIABLE,<file>,<line>,<fn>,<reason>,<risk>` and is excluded from the
