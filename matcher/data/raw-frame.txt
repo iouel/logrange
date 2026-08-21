@@ -1,0 +1,814 @@
+INSTRUMENT,./cheb_eval.c,19,cheb_eval_e,LOW,4,L0 ABS L1 L2 MUL ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,cheb_eval_e,LOW,4,L0 ABS L1 L2 MUL ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,expint_E1_impl,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,expint_E1_impl,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,expint_E1_impl,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,fg_asymp,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,fg_asymp,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,fg_asymp,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,fg_asymp,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_Ci_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_Shi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_Si_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_atanint_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_atanint_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I0_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I0_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I0_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I0_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I1_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I1_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_I1_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_J0_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_J0_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_J1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_J1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_K0_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_K0_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_K1_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_K1_scaled_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_Y0_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_Y0_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_Y1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_Y1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_bessel_Y1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_clausen_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_dawson_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_dawson_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_dawson_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_3_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_4_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_5_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_debye_6_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_erfc_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_erfc_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_erfc_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_expint_3_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_expint_3_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_3half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_3half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_3half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_half_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_mhalf_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_mhalf_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_fermi_dirac_mhalf_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_log_1plusx_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_log_1plusx_mx_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_1piy_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_psi_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_sinc_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_synchrotron_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_synchrotron_1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_synchrotron_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_synchrotron_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_transport_2_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_transport_3_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_transport_4_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_transport_5_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_zeta_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_zeta_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_zeta_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./cheb_eval.c,19,gsl_sf_zetam1_e,LOW,4,L0 L1 MUL ABS L2 ABS ADD L3 ABS ADD
+INSTRUMENT,./common.c,38,dogleg_beta,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,dogleg_double_step,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,dogleg_preloop,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,dogleg_step,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,lm_preduction,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,subspace2D_preloop,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./common.c,38,subspace2D_preloop,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,117,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,117,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,184,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,184,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,184,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,184,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,201,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,201,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,260,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,260,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,296,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,296,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,37,hybrid_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybrid_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybrid_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybrid_set_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybridj_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybridj_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybridj_iterate_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,37,hybridj_set_impl,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./dogleg.c,51,hybrid_iterate_impl,LOW,4,L0 L1 ADD L2 L3 ADD MUL
+INSTRUMENT,./dogleg.c,51,hybridj_iterate_impl,LOW,4,L0 L1 ADD L2 L3 ADD MUL
+INSTRUMENT,./dogleg.c,97,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,97,hybrid_set_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,97,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./dogleg.c,97,hybridj_set_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,broyden_set,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,gnewton_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,gnewton_set,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybrid_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybrid_set_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybridj_iterate_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./enorm.c,27,hybridj_set_impl,LOW,2,L0 L1 MUL
+INSTRUMENT,./examples/go.c,562,pick_move,HIGH,2,L0 L1 POW
+INSTRUMENT,./lmmisc.c,77,lmniel_iterate,LOW,4,L0 L1 SUB L2 L3 ADD MUL
+INSTRUMENT,./lmpar.c,174,iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./lmpar.c,202,iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./lmpar.c,202,iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./lmpar.c,229,lmder_gradient,LOW,2,L0 L1 MUL
+INSTRUMENT,./lmutil.c,104,iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./lmutil.c,23,iterate,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./lmutil.c,23,iterate,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./lmutil.c,23,iterate,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./lmutil.c,23,iterate,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./lmutil.c,23,set,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./lmutil.c,23,set,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,./modnewton1.c,321,modnewton1_solve,LOW,2,L0 L1 MUL
+INSTRUMENT,./modnewton1.c,321,modnewton1_solve,LOW,2,L0 L1 MUL
+INSTRUMENT,./modnewton1.c,321,modnewton1_solve,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25c.c,77,qc25c,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25c.c,82,qc25c,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25f.c,108,qc25f,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25f.c,109,qc25f,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25f.c,96,qc25f,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25f.c,97,qc25f,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,228,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qc25s.c,233,qc25s,LOW,2,L0 L1 MUL
+INSTRUMENT,./qrsolv.c,195,qr_solve,LOW,2,L0 L1 MUL
+INSTRUMENT,./qrsolv.c,196,iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,./real_pass_n.c,75,gsl_fft_real_float_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,./real_pass_n.c,75,gsl_fft_real_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,./real_pass_n.c,76,gsl_fft_real_float_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,./real_pass_n.c,76,gsl_fft_real_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,./rksubs.c,42,rksubs,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_dot_r.h,27,cblas_ddot,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_dot_r.h,27,cblas_dsdot,LOW,2,L0 L1 MUL EXT
+INSTRUMENT,./source_dot_r.h,27,cblas_sdot,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_dot_r.h,27,cblas_sdsdot,LOW,2,L0 L1 MUL EXT
+INSTRUMENT,./source_gbmv_r.h,74,cblas_dgbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gbmv_r.h,74,cblas_sgbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemm_r.h,118,cblas_dgemm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemm_r.h,118,cblas_sgemm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemm_r.h,93,cblas_dgemm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemm_r.h,93,cblas_sgemm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemv_r.h,68,cblas_dgemv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_gemv_r.h,68,cblas_sgemv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_sbmv.h,67,cblas_dsbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_sbmv.h,67,cblas_ssbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_sbmv.h,90,cblas_dsbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_sbmv.h,90,cblas_ssbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_spmv.h,65,cblas_dspmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_spmv.h,65,cblas_sspmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_spmv.h,91,cblas_dspmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_spmv.h,91,cblas_sspmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,107,cblas_dsymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,107,cblas_ssymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,124,cblas_dsymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,124,cblas_ssymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,72,cblas_dsymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,72,cblas_ssymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,89,cblas_dsymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symm_r.h,89,cblas_ssymm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symv.h,62,cblas_dsymv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symv.h,62,cblas_ssymv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symv.h,84,cblas_dsymv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_symv.h,84,cblas_ssymv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,106,cblas_dsyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,106,cblas_ssyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,118,cblas_dsyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,118,cblas_ssyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,82,cblas_dsyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,82,cblas_ssyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,94,cblas_dsyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_syrk_r.h,94,cblas_ssyrk,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,43,cblas_dtbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,43,cblas_stbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,60,cblas_dtbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,60,cblas_stbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,78,cblas_dtbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,78,cblas_stbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,98,cblas_dtbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbmv_r.h,98,cblas_stbmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tbsv_r.h,112,cblas_dtbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,112,cblas_stbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,43,cblas_dtbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,43,cblas_stbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,66,cblas_dtbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,66,cblas_stbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,90,cblas_dtbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tbsv_r.h,90,cblas_stbsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpmv_r.h,42,cblas_dtpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,42,cblas_stpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,58,cblas_dtpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,58,cblas_stpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,75,cblas_dtpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,75,cblas_stpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,91,cblas_dtpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpmv_r.h,91,cblas_stpmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_tpsv_r.h,120,cblas_dtpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,120,cblas_stpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,46,cblas_dtpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,46,cblas_stpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,70,cblas_dtpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,70,cblas_stpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,96,cblas_dtpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_tpsv_r.h,96,cblas_stpsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trmm_r.h,127,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,127,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,143,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,143,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,171,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,171,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,193,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,193,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,210,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,210,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,58,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,58,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,74,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,74,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,97,cblas_dtrmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmm_r.h,97,cblas_strmm,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,39,cblas_dtrmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,39,cblas_strmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,58,cblas_dtrmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,58,cblas_strmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,78,cblas_dtrmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,78,cblas_strmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,97,cblas_dtrmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trmv_r.h,97,cblas_strmv,LOW,2,L0 L1 MUL
+INSTRUMENT,./source_trsv_r.h,120,cblas_dtrsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,120,cblas_strsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,46,cblas_dtrsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,46,cblas_strsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,70,cblas_dtrsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,70,cblas_strsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,96,cblas_dtrsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./source_trsv_r.h,96,cblas_strsv,LOW,2,L0 NEG L1 MUL
+INSTRUMENT,./src/batchnorm_layer.c,80,backward_batchnorm_layer,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/batchnorm_layer.c,80,backward_scale_cpu,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/blas.c,134,l2normalize_cpu,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/blas.c,301,dot_cpu,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/blas.c,315,softmax,HIGH,3,L0 L1 DIV L2 SUB EXT EXP TRUNCF
+INSTRUMENT,./src/blas.c,315,softmax_cpu,HIGH,3,L0 L1 DIV L2 SUB EXT EXP TRUNCF
+INSTRUMENT,./src/gemm.c,102,gemm_cpu,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,./src/gemm.c,102,gemm_nt,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,./src/gemm.c,137,gemm_cpu,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,./src/gemm.c,137,gemm_tt,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,./src/image.c,1051,grayscale_image_3c,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/utils.c,519,normalize_array,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,./src/utils.c,519,normalize_array,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,./src/utils.c,519,print_statistics,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,./src/utils.c,519,variance_array,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,./src/utils.c,550,mse_array,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/utils.c,550,print_statistics,LOW,2,L0 L1 MUL
+INSTRUMENT,./src/utils.c,579,mag_array,LOW,2,L0 L1 MUL
+INSTRUMENT,broyden.c,257,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,broyden.c,351,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,broyden.c,363,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,broyden.c,387,broyden_iterate,LOW,2,L0 L1 MUL
+INSTRUMENT,bsimp.c,273,bsimp_apply,LOW,2,L0 ABS L1 DIV
+INSTRUMENT,bsimp.c,306,bsimp_apply,LOW,2,L0 ABS L1 DIV
+INSTRUMENT,bsimp.c,340,bsimp_apply,LOW,2,L0 ABS L1 DIV
+INSTRUMENT,cquad.c,122,Vinvfx,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,122,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,122,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,122,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,130,Vinvfx,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,138,Vinvfx,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,138,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,146,Vinvfx,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,146,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,259,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,265,gsl_integration_cquad,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,cquad.c,266,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,345,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,351,gsl_integration_cquad,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,cquad.c,352,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,464,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,470,gsl_integration_cquad,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,cquad.c,475,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,530,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,cquad.c,536,gsl_integration_cquad,LOW,4,L0 L1 SUB L2 L3 SUB MUL
+INSTRUMENT,cquad.c,541,gsl_integration_cquad,LOW,2,L0 L1 MUL
+INSTRUMENT,dht.c,220,gsl_dht_apply,LOW,3,L0 L1 DIV L2 MUL
+INSTRUMENT,dwt.c,89,dwt_step,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,89,gsl_wavelet2d_nstransform,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,89,gsl_wavelet2d_nstransform,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,89,gsl_wavelet_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,90,dwt_step,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,90,gsl_wavelet2d_nstransform,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,90,gsl_wavelet2d_nstransform,LOW,2,L0 L1 MUL
+INSTRUMENT,dwt.c,90,gsl_wavelet_transform,LOW,2,L0 L1 MUL
+INSTRUMENT,eval.c,805,gsl_bspline_basis_deriv,LOW,2,L0 L1 MUL
+INSTRUMENT,gamma_inc.c,124,gamma_inc_P_series,LOW,4,L0 L1 L2 L3 ADD DIV MUL
+INSTRUMENT,gaussian.c,205,gsl_filter_gaussian_kernel,HIGH,9,L0 L1 L2 SUB L3 DIV MUL L4 L5 L6 SUB L7 DIV MUL L8 MUL MUL EXP
+INSTRUMENT,gaussian.c,330,gaussian_get,LOW,2,L0 L1 MUL
+INSTRUMENT,hh.c,123,gsl_linalg_HH_svx,LOW,2,L0 L1 MUL
+INSTRUMENT,hh.c,124,gsl_linalg_HH_svx,LOW,2,L0 L1 MUL
+INSTRUMENT,hh.c,150,gsl_linalg_HH_svx,LOW,2,L0 L1 MUL
+INSTRUMENT,hh.c,169,gsl_linalg_HH_svx,LOW,2,L0 L1 MUL
+INSTRUMENT,hh.c,98,gsl_linalg_HH_svx,LOW,2,L0 L1 MUL
+INSTRUMENT,householder.c,204,gsl_linalg_householder_hm,LOW,2,L0 L1 MUL
+INSTRUMENT,householder.c,272,gsl_linalg_householder_mh,LOW,2,L0 L1 MUL
+INSTRUMENT,householder.c,496,gsl_linalg_householder_hm1,LOW,2,L0 L1 MUL
+INSTRUMENT,hyperg_U.c,239,hyperg_zaU_asymp,MED,9,L0 L1 L2 ADD L3 ADD L4 L5 L6 ADD L7 ADD L8 DIV MUL MUL MUL
+INSTRUMENT,hyperg_U.c,240,hyperg_zaU_asymp,MED,10,L0 L1 L2 ADD L3 ADD L4 L5 L6 ADD L7 ADD L8 DIV MUL MUL MUL ABS L9 MUL
+INSTRUMENT,hyperg_U.c,312,hyperg_U_series,MED,7,L0 L1 L2 L3 ADD MUL L4 L5 ADD L6 MUL DIV MUL
+INSTRUMENT,levin_u.c,129,gsl_sum_levin_u_minmax,LOW,6,L0 L1 MUL L2 MUL L3 L4 MUL L5 MUL MUL
+INSTRUMENT,levin_u.c,98,gsl_sum_levin_u_minmax,LOW,6,L0 L1 MUL L2 MUL L3 L4 MUL L5 MUL MUL
+INSTRUMENT,ls.c,148,gsl_bspline_wlssolve,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,mathieu_angfunc.c,170,gsl_sf_mathieu_se_e,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,179,gsl_sf_mathieu_se_e,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,252,gsl_sf_mathieu_ce_array,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,260,gsl_sf_mathieu_ce_array,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,333,gsl_sf_mathieu_se_array,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,341,gsl_sf_mathieu_se_array,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,86,gsl_sf_mathieu_ce_e,LOW,2,L0 L1 MUL
+INSTRUMENT,mathieu_angfunc.c,95,gsl_sf_mathieu_ce_e,LOW,2,L0 L1 MUL
+INSTRUMENT,msadams.c,406,msadams_apply,LOW,4,L0 L1 MUL L2 L3 ADD DIV
+INSTRUMENT,msadams.c,418,msadams_apply,LOW,4,L0 L1 MUL L2 L3 ADD DIV
+INSTRUMENT,multilinear.c,226,gsl_multifit_linear_est,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,multiply.c,127,gsl_linalg_matmult_mod,LOW,2,L0 L1 MUL
+INSTRUMENT,multiply.c,53,gsl_linalg_matmult,LOW,2,L0 L1 MUL
+INSTRUMENT,multiply.c,53,gsl_linalg_matmult_mod,LOW,2,L0 L1 MUL
+INSTRUMENT,multireg.c,953,gsl_multifit_linear_lcurvature,MED,22,L0 L1 DIV L2 L3 MUL L4 L5 L6 MUL ADD DIV L7 L8 MUL L9 L10 L11 MUL ADD DIV L12 MUL L13 L14 L15 MUL L16 L17 L18 MUL ADD DIV SUB MUL L19 DIV MUL MUL L20 L21 DIV MUL
+INSTRUMENT,multireg.c,954,gsl_multifit_linear_lcurvature,MED,21,L0 L1 L2 L3 MUL L4 L5 L6 MUL ADD DIV SUB L7 L8 MUL L9 L10 L11 MUL ADD DIV L12 MUL L13 L14 L15 MUL L16 L17 L18 MUL ADD DIV SUB MUL L19 DIV MUL MUL L20 MUL
+INSTRUMENT,multirobust.c,683,robust_robsigma,MED,5,L0 L1 L2 L3 MUL DIV MUL L4 MUL
+INSTRUMENT,pcholesky.c,515,gsl_linalg_pcholesky_rcond,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,poch.c,135,pochrel_smallx,LOW,2,L0 L1 MUL
+INSTRUMENT,psi.c,745,gsl_sf_psi_1_e,LOW,5,L0 L1 L2 ADD L3 L4 ADD MUL DIV
+INSTRUMENT,qk.c,86,gsl_integration_qk,LOW,5,L0 L1 L2 SUB ABS L3 L4 SUB ABS ADD MUL
+INSTRUMENT,qng.c,128,gsl_integration_qng,LOW,2,L0 L1 MUL
+INSTRUMENT,qng.c,159,gsl_integration_qng,LOW,2,L0 L1 MUL
+INSTRUMENT,spdgemv.c,138,gsl_spblas_dgemv,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,svm.cpp,1771,svm_train,MED,8,L0 L1 MUL L2 L3 L4 ADD DIV L5 L6 L7 ADD DIV MUL MUL
+INSTRUMENT,svm.cpp,1772,svm_train,LOW,6,L0 L1 L2 ADD DIV L3 L4 L5 ADD DIV MUL
+INSTRUMENT,svm.cpp,1773,svm_train,MED,7,L0 L1 L2 L3 ADD DIV L4 L5 L6 ADD DIV MUL MUL
+INSTRUMENT,svm.cpp,1775,svm_train,LOW,5,L0 L1 L2 L3 L4 ADD DIV SUB MUL
+INSTRUMENT,svm.cpp,1776,svm_train,LOW,4,L0 L1 L2 L3 ADD DIV SUB
+INSTRUMENT,svm.cpp,1871,svm_predict_probability,LOW,2,L0 L1 MUL
+INSTRUMENT,svm.cpp,2657,svm_predict_values,LOW,2,L0 L1 MUL
+INSTRUMENT,svm.cpp,2659,svm_predict_values,LOW,2,L0 L1 MUL
+INSTRUMENT,svm.cpp,358,_ZN6Kernel10k_functionEPK8svm_nodeS2_RK13svm_parameter,LOW,2,L0 L1 MUL
+INSTRUMENT,svm.cpp,364,_ZN6Kernel10k_functionEPK8svm_nodeS2_RK13svm_parameter,LOW,2,L0 L1 MUL
+INSTRUMENT,svm.cpp,756,_ZN6Solver5SolveEiRK7QMatrixPKdPKaPddddPNS_12SolutionInfoEi,LOW,3,L0 L1 L2 ADD MUL
+INSTRUMENT,tridiag.c,269,gsl_linalg_solve_symm_cyc_tridiag,LOW,3,L0 L1 MUL L2 MUL
+INSTRUMENT,tridiag.c,287,gsl_linalg_solve_symm_cyc_tridiag,LOW,2,L0 L1 MUL
+INSTRUMENT,trust.c,567,trust_init,LOW,4,L0 L1 MUL L2 L3 MUL MUL
+INSTRUMENT,vegas.c,769,gsl_monte_vegas_integrate,LOW,4,L0 L1 ADD L2 ADD L3 DIV
+INSTRUMENT,zeta.c,757,gsl_sf_hzeta_e,HIGH,3,L0 L1 ADD L2 POW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_char_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_char_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_float_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_float_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_int_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_int_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_long_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_long_double_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_long_double_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_long_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_short_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_short_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_uchar_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_uchar_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_uint_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_uint_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_ulong_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_ulong_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_ushort_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,126,gsl_stats_ushort_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_char_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_char_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_float_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_float_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_int_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_int_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_long_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_long_double_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_long_double_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_long_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_short_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_short_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_uchar_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_uchar_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_uint_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_uint_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_ulong_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_ulong_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_ushort_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,127,gsl_stats_ushort_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_char_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_char_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_float_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_float_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_int_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_int_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_long_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_long_double_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_long_double_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_long_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_short_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_short_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_uchar_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_uchar_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_uint_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_uint_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_ulong_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_ulong_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_ushort_correlation,term-type-unsupported,LOW
+UNLOGIFIABLE,./covariance_source.c,128,gsl_stats_ushort_spearman,term-type-unsupported,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_backward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_float_backward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_float_forward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_float_inverse,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_float_transform,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_forward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_inverse,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,94,gsl_dft_complex_transform,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_backward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_float_backward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_float_forward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_float_inverse,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_float_transform,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_forward,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_inverse,opaque-call,LOW
+UNLOGIFIABLE,./dft_source.c,95,gsl_dft_complex_transform,opaque-call,LOW
+UNLOGIFIABLE,./hc_pass_n.c,154,gsl_fft_halfcomplex_float_transform,opaque-call,LOW
+UNLOGIFIABLE,./hc_pass_n.c,154,gsl_fft_halfcomplex_transform,opaque-call,LOW
+UNLOGIFIABLE,./hc_pass_n.c,155,gsl_fft_halfcomplex_float_transform,opaque-call,LOW
+UNLOGIFIABLE,./hc_pass_n.c,155,gsl_fft_halfcomplex_transform,opaque-call,LOW
+UNLOGIFIABLE,./lmmisc.c,105,lmniel_iterate,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,159,gsl_fft_real_float_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,159,gsl_fft_real_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,160,gsl_fft_real_float_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,160,gsl_fft_real_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,238,gsl_fft_real_float_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,238,gsl_fft_real_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,239,gsl_fft_real_float_transform,opaque-call,MED
+UNLOGIFIABLE,./real_pass_n.c,239,gsl_fft_real_transform,opaque-call,MED
+UNLOGIFIABLE,./source_dot_c.h,31,cblas_zdotc_sub,opaque-call,LOW
+UNLOGIFIABLE,./source_dot_c.h,31,cblas_zdotu_sub,opaque-call,LOW
+UNLOGIFIABLE,./source_dot_c.h,32,cblas_zdotc_sub,opaque-call,LOW
+UNLOGIFIABLE,./source_dot_c.h,32,cblas_zdotu_sub,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,160,cblas_cgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,160,cblas_zgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,161,cblas_cgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,161,cblas_zgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,91,cblas_cgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,91,cblas_zgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,92,cblas_cgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gbmv_c.h,92,cblas_zgbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemm_c.h,120,cblas_cgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,120,cblas_zgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,121,cblas_cgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,121,cblas_zgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,159,cblas_cgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,159,cblas_zgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,160,cblas_cgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemm_c.h,160,cblas_zgemm,opaque-call,MED
+UNLOGIFIABLE,./source_gemv_c.h,147,cblas_cgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,147,cblas_zgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,148,cblas_cgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,148,cblas_zgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,86,cblas_cgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,86,cblas_zgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,87,cblas_cgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_gemv_c.h,87,cblas_zgemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,126,cblas_chbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,126,cblas_zhbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,127,cblas_chbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,127,cblas_zhbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,93,cblas_chbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,93,cblas_zhbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,94,cblas_chbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hbmv.h,94,cblas_zhbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,124,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,124,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,125,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,125,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,163,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,163,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,164,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,164,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,190,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,190,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,191,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,191,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,97,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,97,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,98,cblas_chemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemm.h,98,cblas_zhemm,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,126,cblas_chemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,126,cblas_zhemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,127,cblas_chemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,127,cblas_zhemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,89,cblas_chemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,89,cblas_zhemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,90,cblas_chemv,opaque-call,LOW
+UNLOGIFIABLE,./source_hemv.h,90,cblas_zhemv,opaque-call,LOW
+UNLOGIFIABLE,./source_her2k.h,105,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,105,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,134,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,134,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,136,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,136,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,206,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,206,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,208,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,208,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,227,cblas_cher2k,opaque-call,MED
+UNLOGIFIABLE,./source_her2k.h,227,cblas_zher2k,opaque-call,MED
+UNLOGIFIABLE,./source_herk.h,114,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,114,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,115,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,115,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,133,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,133,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,134,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,134,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,152,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,152,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,153,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,153,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,95,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,95,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,96,cblas_cherk,opaque-call,LOW
+UNLOGIFIABLE,./source_herk.h,96,cblas_zherk,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,127,cblas_chpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,127,cblas_zhpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,128,cblas_chpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,128,cblas_zhpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,90,cblas_chpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,90,cblas_zhpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,91,cblas_chpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_hpmv.h,91,cblas_zhpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,123,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,123,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,124,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,124,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,162,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,162,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,163,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,163,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,189,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,189,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,190,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,190,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,96,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,96,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,97,cblas_csymm,opaque-call,LOW
+UNLOGIFIABLE,./source_symm_c.h,97,cblas_zsymm,opaque-call,LOW
+UNLOGIFIABLE,./source_syr2k_c.h,103,cblas_csyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,103,cblas_zsyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,105,cblas_csyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,105,cblas_zsyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,154,cblas_csyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,154,cblas_zsyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,156,cblas_csyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_c.h,156,cblas_zsyr2k,opaque-call,MED
+UNLOGIFIABLE,./source_syr2k_r.h,108,cblas_dsyr2k,opaque-call,LOW
+UNLOGIFIABLE,./source_syr2k_r.h,108,cblas_ssyr2k,opaque-call,LOW
+UNLOGIFIABLE,./source_syr2k_r.h,82,cblas_dsyr2k,opaque-call,LOW
+UNLOGIFIABLE,./source_syr2k_r.h,82,cblas_ssyr2k,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,100,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,100,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,118,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,118,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,119,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,119,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,137,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,137,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,138,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,138,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,156,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,156,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,157,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,157,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,99,cblas_csyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_syrk_c.h,99,cblas_zsyrk,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,116,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,116,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,117,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,117,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,150,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,150,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,151,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,151,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,45,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,45,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,46,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,46,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,80,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,80,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,81,cblas_ctbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbmv_c.h,81,cblas_ztbmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,123,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,123,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,124,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,124,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,159,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,159,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,160,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,160,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,49,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,49,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,50,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,50,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,86,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,86,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,87,cblas_ctbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tbsv_c.h,87,cblas_ztbsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,127,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,127,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,128,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,128,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,162,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,162,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,163,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,163,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,55,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,55,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,56,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,56,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,91,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,91,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,92,cblas_ctpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpmv_c.h,92,cblas_ztpmv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,110,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,110,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,111,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,111,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,159,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,159,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,160,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,160,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,207,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,207,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,208,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,208,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,61,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,61,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,62,cblas_ctpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_tpsv_c.h,62,cblas_ztpsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,133,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,133,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,134,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,134,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,182,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,182,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,183,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,183,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,205,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,205,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,206,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,206,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,252,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,252,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,253,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,253,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,287,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,287,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,288,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,288,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,310,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,310,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,311,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,311,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,74,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,74,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,75,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,75,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,97,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,97,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,98,cblas_ctrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmm_c.h,98,cblas_ztrmm,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,115,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,115,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,116,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,116,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,149,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,149,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,150,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,150,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,45,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,45,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,46,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,46,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,80,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,80,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,81,cblas_ctrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trmv_c.h,81,cblas_ztrmv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,111,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,111,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,112,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,112,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,160,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,160,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,161,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,161,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,208,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,208,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,209,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,209,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,62,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,62,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,63,cblas_ctrsv,opaque-call,LOW
+UNLOGIFIABLE,./source_trsv_c.h,63,cblas_ztrsv,opaque-call,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_char_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_char_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_float_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_float_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_int_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_int_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_long_double_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_long_double_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_long_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_long_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_short_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_short_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_uchar_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_uchar_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_uint_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_uint_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_ulong_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_ulong_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_ushort_tss,term-type-unsupported,LOW
+UNLOGIFIABLE,./variance_source.c,58,gsl_stats_ushort_tss_m,term-type-unsupported,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wsd,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wsd_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wtss,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wtss_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wvariance,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_float_wvariance_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_long_double_wtss,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_long_double_wtss_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wsd,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wsd_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wtss,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wtss_m,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wvariance,spine-not-recognized,LOW
+UNLOGIFIABLE,./wvariance_source.c,0,gsl_stats_wvariance_m,spine-not-recognized,LOW
+UNLOGIFIABLE,coupling.c,0,gsl_sf_coupling_6j_e,spine-not-recognized,MED
+UNLOGIFIABLE,dirichlet.c,147,gsl_ran_dirichlet_lnpdf,opaque-call,LOW
+UNLOGIFIABLE,dirichlet.c,147,gsl_ran_dirichlet_pdf,opaque-call,LOW
+UNLOGIFIABLE,discrete.c,0,gsl_ran_discrete_pdf,spine-not-recognized,LOW
+UNLOGIFIABLE,ellint.c,0,gsl_sf_ellint_RD_e,spine-not-recognized,MED
+UNLOGIFIABLE,ellint.c,0,gsl_sf_ellint_RJ_e,spine-not-recognized,LOW
+UNLOGIFIABLE,erfc.c,132,gsl_sf_erf,opaque-call,MED
+UNLOGIFIABLE,erfc.c,132,gsl_sf_erf_e,opaque-call,MED
+UNLOGIFIABLE,fermi_dirac.c,1180,fd_UMseries_int,opaque-call,LOW
+UNLOGIFIABLE,fermi_dirac.c,1197,fd_UMseries_int,opaque-call,LOW
+UNLOGIFIABLE,gcv.c,386,gcv_func,opaque-call,LOW
+UNLOGIFIABLE,gcv.c,386,gsl_multifit_linear_gcv_calc,opaque-call,LOW
+UNLOGIFIABLE,gcv.c,386,gsl_multifit_linear_gcv_curve,opaque-call,LOW
+UNLOGIFIABLE,hyperg_1F1.c,304,hyperg_1F1_1_series,opaque-call,MED
+UNLOGIFIABLE,hyperg_1F1.c,304,hyperg_1F1_small_a_bgt0,opaque-call,MED
+UNLOGIFIABLE,hyperg_1F1.c,304,hyperg_1F1_small_a_bgt0,opaque-call,MED
+UNLOGIFIABLE,hyperg_2F1.c,492,hyperg_2F1_reflect,opaque-call,MED
+UNLOGIFIABLE,hyperg_U.c,313,hyperg_U_series,opaque-call,MED
+UNLOGIFIABLE,legendre_H3d.c,228,legendre_H3d_CF1_ser,opaque-call,MED
+UNLOGIFIABLE,multireg.c,956,gsl_multifit_linear_lcurvature,opaque-call,MED
+UNLOGIFIABLE,multireg.c,957,gsl_multifit_linear_lcurvature,opaque-call,MED
+UNLOGIFIABLE,qng.c,101,gsl_integration_qng,opaque-call,LOW
+UNLOGIFIABLE,svm.cpp,0,_ZN6Solver13calculate_rhoEv,spine-not-recognized,LOW

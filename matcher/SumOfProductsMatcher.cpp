@@ -634,6 +634,21 @@ void buildDesc(Value *V, const Loop &L, ChainDesc &D, unsigned depth = 0) {
   case Instruction::PHI:
     D.leaf(I); // program data, and a phi is an input from the term's view
     return;
+  case Instruction::SIToFP:
+  case Instruction::UIToFP:
+  case Instruction::Select:
+    // Leaves, not interior nodes. An integer-to-float conversion produces the
+    // value whose magnitude is wanted and cannot underflow on the way; a
+    // select picks between two values rather than computing one. Recording
+    // the result is exact in both cases.
+    //
+    // walkChain traverses these because it is answering a SHAPE question.
+    // Omitting them here declined three of the five HIGH sites with
+    // `unsupported-op` — go.c:562 reads an int array, gaussian.c:205 casts a
+    // loop index, zeta.c:757 has `k + q` with integer k. The corpus census
+    // found it; the hand census over the same four source lines had missed it.
+    D.leaf(I);
+    return;
   case Instruction::Call: {
     auto *CB = cast<CallBase>(I);
     if (CB->isIndirectCall()) { D.fail("indirect-call"); return; }

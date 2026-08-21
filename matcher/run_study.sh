@@ -417,6 +417,46 @@ report)
     summarize "$raw" "$(basename "$raw" .txt | sed 's/^raw-//')"
   done
   ;;
+frame)
+  # R2 frame census (matcher/RESCUE.md, "Sampling frame"). Which of the 814
+  # hits can be decomposed symbolically, by tier. STATIC only: sop-instrument
+  # runs under -disable-output, so nothing is linked or executed.
+  #
+  # The frame is the log-ifiable population, so this number decides what the
+  # study can generalise to. RESCUE.md requires the exclusion rate PER TIER,
+  # because a frame restriction falling unevenly across tiers biases the
+  # comparison the study exists to make.
+  build_plugin
+  shift || true
+  targets="${*:-darknet gsl libsvm}"
+  all="$WORK/raw-frame-all.txt"
+  : > "$all"
+  for name in $targets; do
+    bcdir="$WORK/bc-$name"
+    [ -d "$bcdir" ] || { echo "no harvested bitcode at $bcdir; skipping" >&2; continue; }
+    scan "$bcdir" "$WORK/raw-frame-$name.txt" 'sop-instrument'
+    cat "$WORK/raw-frame-$name.txt" >> "$all"
+  done
+
+  echo
+  echo "== frame census: $targets =="
+  printf '%-6s %8s %8s %8s %10s\n' "tier" "hits" "logifiable" "excluded" "excl-rate"
+  for tier in HIGH MED LOW; do
+    inst=$(grep -c "^INSTRUMENT,.*,$tier," "$all" || true)
+    unl=$(grep -c "^UNLOGIFIABLE,.*,$tier\$" "$all" || true)
+    tot=$((inst + unl))
+    if [ "$tot" -gt 0 ]; then
+      rate=$(awk -v u="$unl" -v t="$tot" 'BEGIN{printf "%.1f%%", 100*u/t}')
+    else
+      rate="n/a"
+    fi
+    printf '%-6s %8s %8s %8s %10s\n' "$tier" "$tot" "$inst" "$unl" "$rate"
+  done
+  echo
+  echo "top decline reasons:"
+  grep '^UNLOGIFIABLE,' "$all" | awk -F, '{print $(NF-1)}' | sort | uniq -c |
+    sort -rn | head -10
+  ;;
 instrument)
   # The rescue instrument's controls, on real IR (matcher/RESCUE.md, R1).
   #
