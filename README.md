@@ -129,6 +129,7 @@ Benchmarks (Release only):
 | `matcher/` | LLVM plugin + hit-rate study | beta, gaps stated — [RESULTS.md](matcher/RESULTS.md) |
 | `matcher/logrange-scan.sh` | range lint, build dir in | beta, the front door — [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
 | `pass/` | LLVM pass prototype, opt-in | prototype, not installed — [PROTOTYPE.md](pass/PROTOTYPE.md) |
+| `pass/CHAINS.md` | why log-form propagation stops at one rule | measurement — [CHAINS.md](pass/CHAINS.md) |
 
 Matcher and pass: Linux/WSL, LLVM 21 — [SETUP.md](SETUP.md).
 Library and tests: C++17 compiler only.

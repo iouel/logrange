@@ -585,11 +585,31 @@ these out before any loop is seen).
 Propagation stops at the first use with no eligible rewrite: the
 materialization `exp(L)` is kept there and the log region ends. A consumer
 the lattice cannot rewrite is a decline with a reason token, never a
-best-effort transform. The general Linear/Log/Conflict dataflow over
-arbitrary consumers is the stretch goal's second step and is **out of
-scope** for this section; if the frontier turns out to sit immediately
-outside the first loop on real code, that is a documented result, not a
-failure to be patched over.
+best-effort transform.
+
+**The vocabulary is closed at one rule, by measurement.** `propagate=div` is
+the only consumer form there will be unless the decision below is reversed.
+`fmul -> fadd` and `fadd -> logsumexp` were measured before implementation and
+neither wins on accuracy: against plain linear the propagated form is worse by
+up to 1.52e5 on multiplicative chains and 1.43e8 on additive ones, and the gap
+**grows** with chain length rather than amortizing, because each step costs
+`u*|L|` where the linear form costs `u`. Full accounting in
+[CHAINS.md](CHAINS.md), reproducible by `ctest -R chain_search`.
+
+The general Linear/Log/Conflict dataflow is therefore **not built**. It was the
+stretch goal's second step, and its purpose was to let a log region grow past
+one operation; there is no measured reason to grow one.
+
+**What `propagate=div` is for, stated correctly.** Availability, not accuracy.
+It returns a correct finite result where the linear path returns 0.0 or NaN.
+On benign inputs it is behind the linear re-conversion, measured at 1.29x to
+9.31x, and that is the expected direction rather than a defect to fix.
+
+**Reopening requires a counterexample, not an argument.** Any extension to the
+vocabulary is gated on a measurement in `tests/chain_search.cpp` showing the
+new rule beating plain linear at every sampled trial in a declared band. A
+rule that only beats per-step materialize/reconvert does not qualify: that
+form is far worse than plain linear, so beating it establishes nothing.
 
 ## 7. Profitability gate
 

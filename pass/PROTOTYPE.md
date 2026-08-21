@@ -674,3 +674,4 @@ to the rewritten object moved the ratios was not bisected.
 | `test_softmax.c` | one-file kernel + harness, compiled three ways |
 | `run_pass_test.sh` | full build → rewrite → link → run; ends `PASS` |
 | `PROTOTYPE.md` | this file: design narrative and measured record |
+| `CHAINS.md` | why propagation stops at one rule: the chain measurement |

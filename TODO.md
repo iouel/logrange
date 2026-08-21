@@ -837,7 +837,33 @@ bound.
       trials where linear and reconvert return no number at all, and that is
       counted separately from accuracy on purpose.
       The per-step budget derived before the sweep holds at 0.984 worst.
-      *Open:* `fadd → logsumexp` is unmeasured, and cancellation is where a
-      log form could still win. Measuring it is a new question, not a second
-      attempt at this one. Building `fmul → fadd` on the strength of the
-      reconvert comparison is what this measurement rules out.
+      *`fadd → logsumexp` measured 2026-08-22, and refuted too.* One
+      independent falsification experiment, pre-registered before
+      implementation, 11520 trials over three families chosen where linear
+      addition is classically worst, with the log side scored at the better
+      of a `log_add` fold and the runtime's own accumulators. **No
+      family/band cell qualifies.** In flat/rescue, the band that motivates
+      the project, the log form wins 0 of 188 at N=3 and its best trial there
+      is 6.4x worse than linear. Worst ratio across the experiment 1.43e8.
+      Where it is competitive at all (wide/mid) it decays with N: 143 of 256
+      at N=3, 24 of 256 at N=16.
+      *The first run of that experiment reported PASS and was wrong.* The
+      reference was collapsed to a double before the subtraction, quantizing
+      every sub-ulp log-side error to exactly 0 while the linear side kept
+      its subtraction wide. Same cell reads 0 of 188 once the subtraction is
+      formed in double-double.
+- [x] **Compiler-propagation branch: stopped 2026-08-22 on the measurements
+      above.** Both vocabulary rules measured, neither wins on accuracy, so
+      the lattice, `propagate=mul` and the remaining rules are not built.
+      `propagate=div` stays as a labeled prototype covering one consumer
+      shape, and its value is restated as **availability, not accuracy**.
+      Contract in `pass/ELIGIBILITY.md` section 6, measurement in
+      `pass/CHAINS.md`, instrument `tests/chain_search.cpp` (a ctest, no
+      corpus, reproducible anywhere).
+      Nothing shipped changes: `pass/` was already outside 1.0's supported
+      surface, the header is untouched, the diagnostic is still the front
+      door.
+      *Reopening requires a counterexample*, not an argument: a new rule must
+      beat plain linear at every sampled trial in a declared band. Beating
+      per-step materialize/reconvert does not qualify, since that form is far
+      worse than plain linear.

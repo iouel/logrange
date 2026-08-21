@@ -78,6 +78,75 @@
 // speaks to it. Measuring that is a different question, not a second attempt
 // at this one.
 //
+// ===========================================================================
+// EXPERIMENT 2: fadd -> logsumexp. PRE-REGISTERED BEFORE IMPLEMENTATION.
+// ===========================================================================
+//
+// Experiment 1 above refutes the chain hypothesis for MULTIPLICATIVE chains.
+// The third vocabulary rule is untested, and it is the one with a structural
+// argument: a linear addition can cancel catastrophically, and a summation
+// can lose small terms or leave range entirely, where a log form does not.
+// This is a separate question, not a second attempt at the first one.
+//
+// H, the hypothesis under test. For ADDITIVE chains there is a declared band
+// and family where staying in log form beats materializing and adding
+// linearly, on accuracy, at every sampled trial for N >= 3.
+//
+// FALSIFICATION STANCE. H gets its best shot: the families are the ones where
+// linear addition is classically worst, and the log side is scored at the
+// better of two implementations rather than one. H then survives only if it
+// wins EVERYWHERE in some cell. A single loss in a cell kills that cell.
+//
+//   families, declared here
+//     flat    terms in a narrow +-2 window, all positive
+//     wide    terms spread across the whole band, all positive. The textbook
+//             argument for logsumexp: dynamic range a linear sum cannot hold
+//     cancel  signed, half positive, magnitudes clustered so the sum nearly
+//             cancels. Where linear summation is classically worst
+//
+//   bands: the same three as experiment 1, for the same reasons.
+//   N in {3, 4, 6, 8, 16}. A sum of one term is degenerate, so the ladder
+//   starts at 3 and reaches further than the multiplicative one: additive
+//   chains are naturally longer.
+//
+// FORMS COMPARED
+//   linear    v = sum of +-exp(l_i), in double. What code runs today.
+//   logfold   fold logrange::log_add pairwise. The straight-line model: a
+//             rewritten `fadd` chain is pairwise, not a loop reduction.
+//   logacc    pos_accum (positive families) or rp_accum (cancel), the
+//             runtime's accumulators. Included because Phase 4 makes
+//             log_math.h the semantic reference for what a lowering emits,
+//             and because scoring the log side at its best is what makes a
+//             refutation mean something.
+//   reference double-double.
+//
+// THE COMPARISON IS APPLES TO APPLES, AND THAT NEEDED AN ARGUMENT.
+// The linear form is scored by RELATIVE error of its linear value. The log
+// forms are scored by ABSOLUTE error of their log-magnitude. Those are the
+// same quantity: absolute error in the log domain IS relative error in the
+// linear domain, which is the property the intent cites in log's favour.
+// Scoring the log form by materializing it would charge propagation for the
+// exp() it exists to avoid, and scoring the linear form by taking its log
+// would charge it for a conversion it never performs. Neither side pays for
+// a step the real scenario does not contain.
+//
+// AVAILABILITY IS STILL NOT A WIN. A trial where the linear form returns 0,
+// inf, NaN, or a subnormal while the reference is finite and normal goes to
+// the unavailable bucket and can never satisfy the gate. Same rule as
+// experiment 1, for the same reason.
+//
+// THE REFERENCE NEEDED A LOG IT DID NOT HAVE. dd_exp.h's dd_log_abs computes
+// log(|hi|) + log1p(lo/hi) in plain double, so its absolute error is ~u*|log|,
+// the same order as the quantity being measured. A local Newton refinement
+// gives the reference ~1e-32 absolute instead. It is local to this file
+// rather than added to dd_exp.h, because that header is shared with
+// test_accuracy and bound_search and changing it would put their published
+// numbers back in question.
+//
+// CONTINGENCY. The compiler-propagation branch is gated on this result.
+// H refuted means the lattice, propagate=mul, and the remaining vocabulary
+// are not built, and the wall is the deliverable.
+//
 // PRNG IS HAND-ROLLED UNIFORM. std::uniform_real_distribution is not
 // reproducible across standard libraries (BENCHMARKS.md, "Second toolchain"),
 // and this file's numbers are meant to be the same on all three CI legs.
@@ -87,6 +156,7 @@
 
 #include "dd_exp.h"
 #include "dd_sum.h"
+#include <logrange/log_math.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -291,6 +361,187 @@ Cell run_cell(const Band &b, int n, std::uint64_t seed) {
   return c;
 }
 
+// ---------------------------------------------------------------------------
+// Experiment 2: fadd -> logsumexp.
+// ---------------------------------------------------------------------------
+
+// log(x) for a double-double x, refined by one Newton step against dd_exp.
+//
+//   y = y0 + (x*exp(-y0) - 1),  y0 = double log(x)
+//
+// x*exp(-y0) is 1 + delta with |delta| ~ u, and log(1+delta) = delta - delta^2/2
+// with the quadratic term ~5e-33. So one step lands near 1e-32 absolute, well
+// under the ~1e-16 quantities this experiment compares.
+dd dd_log_refined(dd x) {
+  const double y0 = std::log(dd_to_double(x));
+  const dd delta = dd_sub(dd_mul(x, dd_exp(-y0)), dd{1.0, 0.0});
+  return dd_add(dd{y0, 0.0}, delta);
+}
+
+enum class Family { Flat, Wide, Cancel };
+
+const char *family_name(Family f) {
+  switch (f) {
+  case Family::Flat: return "flat";
+  case Family::Wide: return "wide";
+  case Family::Cancel: return "cancel";
+  }
+  return "?";
+}
+
+struct AddTrial {
+  std::vector<double> l;    // per-term log-magnitudes, exact doubles
+  std::vector<double> sgn;  // +1 or -1
+};
+
+AddTrial draw_add(std::mt19937_64 &rng, const Band &b, Family f, int n) {
+  AddTrial tr;
+  // Anchor the family inside the band, then place terms relative to it.
+  const double anchor = uniform(rng, b.lo, b.hi);
+  const double base = b.signed_both ? ((rng() & 1) ? anchor : -anchor) : -anchor;
+  for (int i = 0; i < n; ++i) {
+    double li = base;
+    if (f == Family::Wide) {
+      // Spread across the band's own width: the dynamic range a linear sum
+      // is classically unable to hold.
+      li = base - uniform(rng, 0.0, (b.hi - b.lo) + 1.0);
+    } else {
+      li = base + uniform(rng, -2.0, 2.0);
+    }
+    tr.l.push_back(li);
+    if (f == Family::Cancel) {
+      // Half negative, clustered magnitudes: the sum nearly cancels and the
+      // condition number is large.
+      tr.sgn.push_back((i % 2 == 0) ? 1.0 : -1.0);
+    } else {
+      tr.sgn.push_back(1.0);
+    }
+  }
+  return tr;
+}
+
+double add_linear(const AddTrial &tr) {
+  double v = 0.0;
+  for (std::size_t i = 0; i < tr.l.size(); ++i) v += tr.sgn[i] * std::exp(tr.l[i]);
+  return v;
+}
+
+// Pairwise fold with the shipped log_add: the straight-line rewrite model.
+logrange::log_value add_logfold(const AddTrial &tr) {
+  logrange::log_value acc; // zero
+  for (std::size_t i = 0; i < tr.l.size(); ++i) {
+    logrange::log_value t;
+    t.log_abs = tr.l[i];
+    t.sign = tr.sgn[i];
+    acc = logrange::log_add(acc, t);
+  }
+  return acc;
+}
+
+// The runtime's accumulators, which is the log side at its best.
+logrange::log_value add_logacc(const AddTrial &tr, Family f) {
+  if (f == Family::Cancel) {
+    logrange::rp_accum acc;
+    for (std::size_t i = 0; i < tr.l.size(); ++i) {
+      logrange::log_value t;
+      t.log_abs = tr.l[i];
+      t.sign = tr.sgn[i];
+      acc.add(t);
+    }
+    return acc.to_log_value();
+  }
+  logrange::pos_accum acc;
+  for (double li : tr.l) acc.add_log(li);
+  return acc.to_log_value();
+}
+
+// Exact sum and its exact log-magnitude, in double-double.
+void add_reference(const AddTrial &tr, int bias, dd &sum_scaled, dd &log_exact) {
+  dd s{0.0, 0.0};
+  for (std::size_t i = 0; i < tr.l.size(); ++i) {
+    dd term = dd_exp_scaled(tr.l[i], bias);
+    if (tr.sgn[i] < 0.0) term = dd_neg(term);
+    s = dd_add(s, term);
+  }
+  sum_scaled = s;
+  // log|S| = log|S_scaled| + bias*ln2, kept wide.
+  dd labs = s;
+  if (dd_to_double(labs) < 0.0) labs = dd_neg(labs);
+  log_exact = dd_add(dd_log_refined(labs), dd_mul_d(dd_ln2(), static_cast<double>(bias)));
+}
+
+struct AddCell {
+  int trials = 0;
+  int available = 0;
+  int unavailable = 0;
+  int log_wins = 0;   // best log form strictly better than linear
+  int log_losses = 0;
+  int ties = 0;
+  double ratio_max = 0.0; // best-log error / linear error; < 1 means log wins
+  double ratio_min = std::numeric_limits<double>::infinity();
+};
+
+AddCell run_add_cell(const Band &b, Family f, int n, std::uint64_t seed) {
+  std::mt19937_64 rng(seed);
+  AddCell c;
+  for (int i = 0; i < kTrialsPerCell; ++i) {
+    const AddTrial tr = draw_add(rng, b, f, n);
+    c.trials++;
+
+    double peak = tr.l[0];
+    for (double li : tr.l) peak = (std::max)(peak, li);
+    const int bias = dd_exp_bias(peak);
+
+    dd sum_scaled{0.0, 0.0}, log_exact{0.0, 0.0};
+    add_reference(tr, bias, sum_scaled, log_exact);
+    const double sref = dd_to_double(sum_scaled);
+    if (!std::isfinite(sref) || sref == 0.0) continue; // no reference to score
+
+    const double lin = add_linear(tr);
+    const logrange::log_value lf = add_logfold(tr);
+    const logrange::log_value la = add_logacc(tr, f);
+
+    if (!usable(lin)) {
+      c.unavailable++;
+      continue;
+    }
+    c.available++;
+
+    // Linear: relative error of the linear value, scaled exactly by 2^-bias.
+    const double e_lin = dd_rel_err(std::ldexp(lin, -bias), sum_scaled);
+
+    // Log: absolute error of the log-magnitude, which is the same quantity.
+    //
+    // The subtraction is formed in double-double and only the small result is
+    // collapsed. Collapsing the reference FIRST and subtracting in double
+    // quantizes every sub-ulp error to exactly 0, which is not a measurement
+    // of accuracy but of whether two doubles happen to be the same one. The
+    // first version of this experiment did that and reported a PASS built
+    // entirely on those zeros: every winning cell recorded no ratio at all,
+    // because e_log was 0 on every trial. dd_sum.h states the rule the other
+    // way round for bound_search, and for the same reason.
+    const double e_fold =
+        std::fabs(dd_to_double(dd_sub(dd{lf.log_abs, 0.0}, log_exact)));
+    const double e_acc =
+        std::fabs(dd_to_double(dd_sub(dd{la.log_abs, 0.0}, log_exact)));
+    const double e_log = (std::min)(e_fold, e_acc); // the log side at its best
+
+    if (std::fabs(e_log - e_lin) < g_resolution) {
+      c.ties++;
+      continue;
+    }
+    if (e_log < e_lin) c.log_wins++;
+    else c.log_losses++;
+
+    if (e_log > 0.0 && e_lin > 0.0) {
+      const double ratio = e_log / e_lin;
+      c.ratio_min = (std::min)(c.ratio_min, ratio);
+      c.ratio_max = (std::max)(c.ratio_max, ratio);
+    }
+  }
+  return c;
+}
+
 } // namespace
 
 int main() {
@@ -416,6 +667,73 @@ int main() {
                 "linear's u, so the gap GROWS with chain length\n");
     std::printf("VERDICT,scope,multiplicative chains only; fadd -> logsumexp "
                 "is unmeasured\n");
+  }
+  // =========================================================================
+  // Experiment 2: fadd -> logsumexp. Gate as pre-registered in the header.
+  // =========================================================================
+  const Family kFamilies[] = {Family::Flat, Family::Wide, Family::Cancel};
+  const int kAddSteps[] = {3, 4, 6, 8, 16};
+  constexpr int kNFam = 3;
+  constexpr int kNAddSteps = 5;
+
+  std::printf("\n=== experiment 2: fadd -> logsumexp ===\n");
+  std::printf("\n%-7s %-7s %2s %6s %6s %7s %5s %5s %5s %9s %9s\n", "family",
+              "band", "N", "trials", "avail", "unavail", "win", "tie", "loss",
+              "ratio-min", "ratio-max");
+
+  AddCell agrid[kNFam][kNBands][kNAddSteps];
+  for (int fi = 0; fi < kNFam; ++fi) {
+    for (int bi = 0; bi < kNBands; ++bi) {
+      for (int si = 0; si < kNAddSteps; ++si) {
+        const std::uint64_t seed =
+            0xadd00000ULL ^ (static_cast<std::uint64_t>(fi) << 40) ^
+            (static_cast<std::uint64_t>(bi) << 32) ^
+            (static_cast<std::uint64_t>(kAddSteps[si]) * 0x9e3779b97f4a7c15ULL);
+        const AddCell c =
+            run_add_cell(kBands[bi], kFamilies[fi], kAddSteps[si], seed);
+        agrid[fi][bi][si] = c;
+        std::printf("%-7s %-7s %2d %6d %6d %7d %5d %5d %5d %9.3g %9.3g\n",
+                    family_name(kFamilies[fi]), kBands[bi].name, kAddSteps[si],
+                    c.trials, c.available, c.unavailable, c.log_wins, c.ties,
+                    c.log_losses, c.available ? c.ratio_min : 0.0,
+                    c.available ? c.ratio_max : 0.0);
+        if (c.log_wins + c.ties + c.log_losses != c.available) {
+          std::printf("FAIL,add_accounting,%s,%s,N=%d\n",
+                      family_name(kFamilies[fi]), kBands[bi].name,
+                      kAddSteps[si]);
+          harness_fail = 1;
+        }
+      }
+    }
+  }
+
+  const char *add_cell = nullptr;
+  static char add_cell_buf[64];
+  for (int fi = 0; fi < kNFam && !add_cell; ++fi) {
+    for (int bi = 0; bi < kNBands && !add_cell; ++bi) {
+      bool all = true;
+      for (int si = 0; si < kNAddSteps; ++si) {
+        const AddCell &c = agrid[fi][bi][si];
+        if (c.available == 0 || c.log_wins != c.available) all = false;
+      }
+      if (all) {
+        std::snprintf(add_cell_buf, sizeof(add_cell_buf), "%s/%s",
+                      family_name(kFamilies[fi]), kBands[bi].name);
+        add_cell = add_cell_buf;
+      }
+    }
+  }
+
+  std::printf("\n");
+  if (add_cell) {
+    std::printf("VERDICT,add_accuracy,PASS,cell=%s\n", add_cell);
+    std::printf("VERDICT,propagation_branch,PROCEEDS,H survived its "
+                "falsification\n");
+  } else {
+    std::printf("VERDICT,add_accuracy,FAIL,no family/band where the log form "
+                "beats linear at every trial for N>=3\n");
+    std::printf("VERDICT,propagation_branch,STOPS,both vocabulary rules "
+                "measured and neither wins on accuracy\n");
   }
   std::printf("VERDICT,exit_code_is_harness_health_only,not_the_verdict\n");
 

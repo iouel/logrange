@@ -16,6 +16,61 @@ That history is the reason the promise is worth making rather than assumed.
 Prototype tier only. The header is untouched, so `LOGRANGE_VERSION` does not
 move and the 1.0 error contract is unaffected.
 
+**The compiler-propagation branch is stopped, on measurement.**
+
+Both remaining vocabulary rules were measured before implementation and
+neither beats plain linear on accuracy. The `Linear`/`Log`/`Conflict` lattice,
+`propagate=mul`, and `fadd -> logsumexp` are **not built**. `propagate=div`
+stays as a labeled prototype covering one consumer shape, with its value
+restated as **availability, not accuracy**: a correct finite result where the
+linear path returns 0.0 or NaN, and 1.29x to 9.31x behind linear
+re-conversion on benign inputs, which is the expected direction.
+
+Contract in `pass/ELIGIBILITY.md` section 6, which now closes the vocabulary
+at one rule. Measurement in the new `pass/CHAINS.md`. Instrument in the new
+`tests/chain_search.cpp`, a ctest needing no LLVM and no corpus, so every
+figure reproduces anywhere via `ctest -R chain_search`.
+
+Nothing shipped changes. `pass/` was already outside 1.0's supported surface,
+the header is untouched, and the diagnostic is still the front door.
+
+**Reopening requires a counterexample, not an argument.** A new rule must beat
+plain linear at every sampled trial in a declared band. Beating per-step
+materialize/reconvert does not qualify: that form is far worse than plain
+linear, so beating it establishes nothing.
+
+**`fadd -> logsumexp` refuted, and the first run of that experiment was
+wrong.**
+
+One independent falsification experiment, pre-registered before
+implementation. 11520 trials, three families chosen where linear addition is
+classically worst (narrow window, wide dynamic range, near-cancellation), N in
+{3, 4, 6, 8, 16}, log side scored at the better of a `log_add` fold and the
+runtime's own accumulators.
+
+No family/band cell qualifies. In flat/rescue, the band that motivates the
+project, the log form wins **0 of 188** at N=3 and its best trial there is
+6.4x worse than linear. Worst ratio across the experiment 1.43e8. Where it is
+competitive at all, wide/mid, it decays with N: 143 of 256 at N=3, 24 of 256
+at N=16.
+
+**Retracted before publication: that experiment's first run reported PASS.** It
+read 188 of 188 wins in flat/rescue. Every winning cell recorded no ratio at
+all, because the log-side error was exactly 0 on every trial: the reference
+was collapsed to a double and then subtracted in double, quantizing every
+sub-ulp error to zero, while the linear side kept its subtraction wide. Two
+sides, two resolutions, and the favoured one was the side under test. With the
+subtraction formed in double-double the same cell reads 0 of 188. `dd_sum.h`
+states the rule for `bound_search` and the reason transfers exactly.
+
+**Contradiction, stated.** The intent argues that absolute error in the log
+domain is relative error in the linear domain, so a long log-space
+accumulation holds relative accuracy. True, and not a reason to propagate: it
+describes an accumulation already in log form, which is what `pos_accum` and
+`rp_accum` deliver under bounds this project searched. It does not follow that
+moving a computation linear floating point can already perform into the log
+domain improves it. Measured, that costs `u*|L|` a step.
+
 **The chain hypothesis is refuted for multiplicative chains.**
 
 The stretch goal's case for propagation is chains: following a computation
