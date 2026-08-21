@@ -243,6 +243,32 @@ struct DoubleLse {
   double log_abs() const { return m + std::log(std::fabs(s)); }
 };
 
+// ---------------------------------------------------------------------------
+// THE SENSITIVITY GRID (matcher/RESCUE.md, "Threshold sensitivity").
+//
+// The 100x rescue margin and T_default = 1e-10 are declared, not derived, and
+// both decide what counts as rescue-worthy at all. RESCUE.md requires R3 to
+// publish tier rates across the grid beside the registered point, and says
+// that costs nothing because classification is post-processing.
+//
+// That is only true if the recording keeps enough to reclassify. Aggregating
+// at one threshold would have made the requirement unsatisfiable without
+// re-running the corpus, so every execution is scored at all nine cells as it
+// happens. Still O(1) per site: nine counters, no per-execution rows.
+//
+// THE REGISTERED POINT IS CELL [1][1], and n_rescue is taken FROM the grid
+// rather than computed beside it, so the headline and the grid cannot drift.
+//
+// T_default applies ONLY to sites with no host-declared tolerance. Where the
+// host declares one (a GSL TEST_TOL* or gsl_sf_result.err), that value is used
+// in all nine cells and the T axis moves nothing for that site. R3 reports how
+// many sites fall back, so a flat grid is distinguishable from a robust one.
+// ---------------------------------------------------------------------------
+constexpr double kMargins[3] = {10.0, 100.0, 1000.0};
+constexpr double kTDefaults[3] = {1e-8, 1e-10, 1e-12};
+constexpr int kRegMargin = 1; // 100x
+constexpr int kRegT = 1;      // 1e-10
+
 struct Site {
   int id = -1;
   std::string loc;
@@ -250,6 +276,7 @@ struct Site {
   int nleaves = 0;
   int accum_bits = 64;
   double t_site = 1e-10;
+  bool t_declared = false; // host-declared tolerance, or the default
 
   std::vector<double> leaves;
 
@@ -262,6 +289,7 @@ struct Site {
 
   // aggregates
   long n_exec = 0, n_rescue = 0, n_range = 0, n_acc = 0;
+  long n_rescue_grid[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
   long n_trunc_collapse = 0, n_nan_term = 0, n_log_fallback = 0;
   double worst_err = 0.0;
   double last_term_log = 0.0; // for the pre-exp control
@@ -384,7 +412,7 @@ LogVal replay(Site &S, bool &collapsed, bool &log_fallback) {
 extern "C" {
 
 void lr_site(int id, const char *loc, const char *chain, int nleaves,
-             int accum_bits, double t_site) {
+             int accum_bits, double t_site, int t_declared) {
   if (find(id)) return;
   Site s;
   s.id = id;
@@ -393,6 +421,7 @@ void lr_site(int id, const char *loc, const char *chain, int nleaves,
   s.nleaves = nleaves;
   s.accum_bits = accum_bits;
   s.t_site = t_site;
+  s.t_declared = t_declared != 0;
   s.leaves.assign(nleaves > 0 ? nleaves : 1, 0.0);
   s.reset_exec();
   g_sites.push_back(s);
@@ -464,12 +493,26 @@ void lr_exec(int id, double linear_result) {
   const double err_shipped = std::fabs(sv.log_abs - tl);
   (void)err_shipped;
 
-  const bool acc_fail = !range_fail && err_lin > s->t_site;
+  // Score every cell of the grid on this execution. A site with a
+  // host-declared tolerance uses it in all nine, so its T axis is flat by
+  // construction rather than by accident.
+  for (int mi = 0; mi < 3; ++mi) {
+    for (int ti = 0; ti < 3; ++ti) {
+      const double T = s->t_declared ? s->t_site : kTDefaults[ti];
+      const bool afail = !range_fail && err_lin > T;
+      if ((range_fail || afail) && err_logref * kMargins[mi] <= err_lin)
+        s->n_rescue_grid[mi][ti]++;
+    }
+  }
+
+  const double T_reg = s->t_declared ? s->t_site : kTDefaults[kRegT];
+  const bool acc_fail = !range_fail && err_lin > T_reg;
   if (range_fail) s->n_range++;
   if (acc_fail) s->n_acc++;
 
-  const bool improves = err_logref * 100.0 <= err_lin;
-  if ((range_fail || acc_fail) && improves) s->n_rescue++;
+  // Taken FROM the grid, not computed beside it: the headline and the grid
+  // cannot disagree.
+  s->n_rescue = s->n_rescue_grid[kRegMargin][kRegT];
   if (std::isfinite(err_lin) && err_lin > s->worst_err) s->worst_err = err_lin;
 
   s->reset_exec();
@@ -480,10 +523,19 @@ void lr_report(void) {
     const double frac = s.n_exec ? static_cast<double>(s.n_rescue) / s.n_exec : 0.0;
     std::printf("INSTR,%s,exec=%ld,rescue=%ld,frac=%.4f,worst=%.3e,"
                 "range=%ld,acc=%ld,trunc_collapse=%ld,nan_terms=%ld,"
-                "log_fallback=%ld\n",
+                "log_fallback=%ld,t_declared=%d\n",
                 s.loc.c_str(), s.n_exec, s.n_rescue, frac, s.worst_err,
                 s.n_range, s.n_acc, s.n_trunc_collapse, s.n_nan_term,
-                s.n_log_fallback);
+                s.n_log_fallback, s.t_declared ? 1 : 0);
+    // The grid, margin-major: m10 then m100 then m1000, each over
+    // T = 1e-8, 1e-10, 1e-12. Cell [1][1] is the registered point and equals
+    // the rescue= field above by construction.
+    std::printf("INSTRGRID,%s,exec=%ld,t_declared=%d,"
+                "g=%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld:%ld\n",
+                s.loc.c_str(), s.n_exec, s.t_declared ? 1 : 0,
+                s.n_rescue_grid[0][0], s.n_rescue_grid[0][1], s.n_rescue_grid[0][2],
+                s.n_rescue_grid[1][0], s.n_rescue_grid[1][1], s.n_rescue_grid[1][2],
+                s.n_rescue_grid[2][0], s.n_rescue_grid[2][1], s.n_rescue_grid[2][2]);
   }
 }
 
@@ -495,6 +547,13 @@ double lr_last_term_log(int id) {
   return s ? s->last_term_log : 0.0;
 }
 long lr_rescue_count(int id) { Site *s = find(id); return s ? s->n_rescue : -1; }
+// Grid cell, margin index x T index, both 0..2. Lets the controls assert the
+// grid is LIVE rather than nine copies of one number.
+long lr_rescue_grid(int id, int mi, int ti) {
+  Site *s = find(id);
+  if (!s || mi < 0 || mi > 2 || ti < 0 || ti > 2) return -1;
+  return s->n_rescue_grid[mi][ti];
+}
 long lr_exec_count(int id) { Site *s = find(id); return s ? s->n_exec : -1; }
 long lr_trunc_collapse(int id) { Site *s = find(id); return s ? s->n_trunc_collapse : -1; }
 void lr_reset_all(void) { g_sites.clear(); }

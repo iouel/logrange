@@ -480,8 +480,24 @@ instrument)
   grep -qE '^INSTR,.*,ctl_softmax_f32,exec=1,rescue=0,.*,trunc_collapse=100,' "$IW/run.log" \
     || { echo "FAIL: f32 narrowing not counted as a collapse, or counted as a rescue"; fail=1; }
 
+  # The sensitivity grid must be RECORDED, not just promised. RESCUE.md
+  # requires R3 to report tier rates across margin x T_default and says that
+  # costs nothing because classification is post-processing; that is only true
+  # if the run keeps enough to reclassify. One INSTRGRID line per site, with
+  # the registered cell equal to the headline rescue count by construction.
+  for fn in ctl_mixture ctl_dot ctl_softmax_f32; do
+    grep -q "^INSTRGRID,.*,$fn,exec=1,t_declared=0,g=" "$IW/run.log" \
+      || { echo "FAIL: no grid record for $fn"; fail=1; }
+  done
+  # Cell [1][1] is the 5th of the nine, margin-major.
+  reg=$(grep '^INSTRGRID,.*,ctl_mixture,' "$IW/run.log" | sed 's/.*g=//' | cut -d: -f5)
+  head=$(grep '^INSTR,.*,ctl_mixture,' "$IW/run.log" | sed 's/.*rescue=//' | cut -d, -f1)
+  [ "$reg" = "$head" ] \
+    || { echo "FAIL: registered grid cell $reg != headline rescue $head"; fail=1; }
+
   [ "$fail" = "0" ] || { echo "INSTRUMENT CONTROLS FAILED"; exit 1; }
-  echo "INSTRUMENT OK (both directions fire; descriptors match the shim's test)"
+  echo "INSTRUMENT OK (both directions fire; descriptors match the shim's test;"
+  echo "               grid recorded, registered cell == headline)"
   ;;
 "")
   echo "usage: run_study.sh selftest | coverage | figures | instrument | weights [name...] | rejects [name...] | <codebase-name> | report" >&2

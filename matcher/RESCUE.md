@@ -135,10 +135,25 @@ Raising n is the only fix and it costs driver work, which is why the sample is
 The 100x rescue margin and `T_default = 1e-10` are **declared, not derived**.
 Both are load-bearing for what counts as rescue-worthy at all.
 
-The shim records raw quantities per trial: linear error, log-reference error,
-shipped-runtime error, `T_site`, and the non-finite flags. Classification is
-therefore **post-processing**, and re-classifying at other thresholds costs
-nothing and requires no re-run.
+**Every execution is scored at all nine cells as it happens**, so the grid is
+available without re-running the corpus. Nine counters per site, O(1) memory,
+no per-execution rows. `INSTRGRID` carries them, margin-major.
+
+*Mechanism corrected before R2, and it was not a rule change.* This section
+first said the shim "records raw quantities per trial" and that classification
+is therefore post-processing. That described something that was not built: the
+shim aggregates, and a single-threshold aggregate cannot be reclassified
+afterwards, which would have left this requirement unsatisfiable without a
+second corpus run. Scoring all nine cells inline reaches the same place. No
+threshold, margin, tier or test moved.
+
+**The registered point is cell [1][1], and the headline rescue count is taken
+FROM the grid** rather than computed beside it, so the two cannot drift.
+
+**`T_default` moves only the sites that fall back to it.** A site with a
+host-declared tolerance uses that value in all nine cells, so its T axis is
+flat by construction. `t_declared` is recorded per site and R3 reports the
+fallback count.
 
 **R3 must report the tier rates over this grid, not only at the registered
 point:**

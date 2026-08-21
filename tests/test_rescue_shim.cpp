@@ -26,12 +26,13 @@
 
 extern "C" {
 void lr_site(int id, const char *loc, const char *chain, int nleaves,
-             int accum_bits, double t_site);
+             int accum_bits, double t_site, int t_declared);
 void lr_leaf(int id, int slot, double v);
 void lr_term(int id, double linear_term);
 void lr_exec(int id, double linear_result);
 double lr_last_term_log(int id);
 long lr_rescue_count(int id);
+long lr_rescue_grid(int id, int mi, int ti);
 long lr_exec_count(int id);
 long lr_trunc_collapse(int id);
 void lr_reset_all(void);
@@ -72,7 +73,7 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(1, "control/positive.c,1,mixture", kMixtureChain, 2, 64, 1e-10);
+    lr_site(1, "control/positive.c,1,mixture", kMixtureChain, 2, 64, 1e-10, 0);
     double linear = 0.0;
     for (int i = 0; i < 100; ++i) {
       const double w = 1.0, logp = -800.0;
@@ -95,7 +96,7 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(2, "control/preexp.c,1,mixture", kMixtureChain, 2, 64, 1e-10);
+    lr_site(2, "control/preexp.c,1,mixture", kMixtureChain, 2, 64, 1e-10, 0);
     lr_leaf(2, 0, 1.0);
     lr_leaf(2, 1, -800.0);
     lr_term(2, 1.0 * std::exp(-800.0));
@@ -124,7 +125,7 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(3, "control/negative.c,1,dot", kDotChain, 2, 64, 1e-10);
+    lr_site(3, "control/negative.c,1,dot", kDotChain, 2, 64, 1e-10, 0);
     double linear = 0.0;
     for (int i = 0; i < 100; ++i) {
       const double x = 1.0 + 0.01 * i, y = 2.0 - 0.005 * i;
@@ -154,7 +155,7 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(4, "control/trunc.c,1,f32", "L0 EXP TRUNCF", 1, 32, 1e-10);
+    lr_site(4, "control/trunc.c,1,f32", "L0 EXP TRUNCF", 1, 32, 1e-10, 0);
     lr_leaf(4, 0, -110.0);
     lr_term(4, static_cast<double>(static_cast<float>(std::exp(-110.0))));
     check(lr_trunc_collapse(4) == 1, "fptrunc_collapse_is_counted");
@@ -180,7 +181,7 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(5, "control/pow.c,1,p", "L0 L1 POW", 2, 64, 1e-10);
+    lr_site(5, "control/pow.c,1,p", "L0 L1 POW", 2, 64, 1e-10, 0);
 
     lr_leaf(5, 0, 2.0); lr_leaf(5, 1, 10.0);
     lr_term(5, std::pow(2.0, 10.0));
@@ -213,12 +214,49 @@ int main() {
   // -------------------------------------------------------------------------
   {
     lr_reset_all();
-    lr_site(6, "control/cancel.c,1,c", "L0 L1 ADD", 2, 64, 1e-10);
+    lr_site(6, "control/cancel.c,1,c", "L0 L1 ADD", 2, 64, 1e-10, 0);
     const double a = 1.0, b = -1.0 + 1e-15;
     lr_leaf(6, 0, a); lr_leaf(6, 1, b);
     lr_term(6, a + b);
     check_near(lr_last_term_log(6), std::log(std::fabs(a + b)), 1e-6,
                "cancellation_preserved_in_double_double");
+  }
+
+  // -------------------------------------------------------------------------
+  // THE SENSITIVITY GRID IS LIVE. RESCUE.md requires R3 to report tier rates
+  // across margin x T_default. A grid that is nine copies of one number would
+  // satisfy "reported" while telling the reader nothing, so this constructs an
+  // execution whose verdict genuinely differs across the T axis.
+  //
+  // The linear result is placed ~1e-9 relative from the truth: above
+  // T = 1e-10 and 1e-12, below T = 1e-8. So the site is rescue-worthy in the
+  // two tighter columns and not in the loosest one.
+  // -------------------------------------------------------------------------
+  {
+    lr_reset_all();
+    lr_site(7, "control/grid.c,1,g", kDotChain, 2, 64, 1e-10, 0);
+    double truth = 0.0;
+    for (int i = 0; i < 50; ++i) {
+      const double x = 1.0 + 0.001 * i, y = 1.0;
+      lr_leaf(7, 0, x);
+      lr_leaf(7, 1, y);
+      truth += x * y;
+      lr_term(7, x * y);
+    }
+    lr_exec(7, truth * (1.0 + 1e-9)); // a deliberate 1e-9 relative error
+
+    const long loose = lr_rescue_grid(7, 1, 0);  // margin 100, T = 1e-8
+    const long reg = lr_rescue_grid(7, 1, 1);    // margin 100, T = 1e-10
+    const long tight = lr_rescue_grid(7, 1, 2);  // margin 100, T = 1e-12
+    std::printf("INFO,grid_T_axis,loose=%ld,registered=%ld,tight=%ld\n", loose,
+                reg, tight);
+
+    check(loose == 0, "grid_loose_T_does_not_flag_a_1e-9_error");
+    check(reg == 1 && tight == 1, "grid_tighter_T_flags_it");
+    check(loose != reg, "grid_is_live_not_nine_copies_of_one_number");
+    // The headline is taken FROM the grid, so the two cannot drift.
+    check(lr_rescue_count(7) == lr_rescue_grid(7, 1, 1),
+          "headline_rescue_equals_the_registered_cell");
   }
 
   std::printf("\n");
