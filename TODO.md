@@ -795,9 +795,11 @@ bound.
       *First milestone passing 2026-08-16.* `propagate=div` rewrites the
       softmax normalize divide to `exp(t - L)`, carrying the log form
       through the loop-exit merge. At inputs near −800 the linear form is
-      all NaN and the propagated form sums to 1.0000000000000262, with no
+      all NaN and the propagated form sums to 1.0000000000000087, with no
       side global read. That closes **condition 2** of the shipping posture
       for this one shape.
+      *Figure corrected 2026-08-21:* published as 1.0000000000000262 from
+      2026-08-16. See the ratio correction below; same cause, same evidence.
       *What the design still lacks:*
       — the vocabulary is one rule. `fmul → fadd` and `fadd → logsumexp`
         are unimplemented, so the log region cannot grow past a single
@@ -806,8 +808,14 @@ bound.
         analysis to refuse a materialization that would re-underflow;
         propagation simply does not happen anywhere else.
       — success criterion (2) is refuted as written. 64 of 64 swept trials
-        put propagation 1.33x to 13.9x behind the linear re-conversion,
-        long-double reference error 1.7e-18. The criterion compares one
+        put propagation 1.29x to 9.31x behind the linear re-conversion,
+        long-double reference error 1.7e-18. *Corrected 2026-08-21 from
+        1.33x to 13.9x*, the range published on 2026-08-16 and left in
+        prose after the 2026-08-21 transcript regeneration carried the new
+        one. Reproduced on a clean build. The criterion's 15x ceiling was
+        calibrated against the stale 13.9x and is left unchanged: picking a
+        new ceiling from the new worst case is fitting the rule to the
+        count. The criterion compares one
         conversion against one re-conversion, which is where propagation
         has least to offer. Chains are the claim and are unmeasured,
         because the vocabulary is one rule. Amended in the intent.
@@ -816,3 +824,20 @@ bound.
         than an assumption that log form is free.
       The diagnostic is the shipping front door either way, so nothing in
       1.0 waits on this.
+      *Chain hypothesis measured and refuted 2026-08-21, for multiplicative
+      chains.* `tests/chain_search.cpp`, 3840 trials, double-double
+      reference, no pass and no lattice involved. Against plain linear in the
+      rescue band the propagated form's worst ratio is 1.0 at N=1 and
+      **1.52e5 at N=8**: the gap grows with chain length instead of
+      amortizing, by the mechanism this item already named. It beats per-step
+      reconversion (zero losses at N=3,4,6) but that form is far worse than
+      linear, so the comparison establishes nothing. The pre-registered gate
+      fails; 89-98% of trials at N>=3 are bit-identical between the two
+      forms. The measured advantage is **availability**, 76 of 1280 rescue
+      trials where linear and reconvert return no number at all, and that is
+      counted separately from accuracy on purpose.
+      The per-step budget derived before the sweep holds at 0.984 worst.
+      *Open:* `fadd → logsumexp` is unmeasured, and cancellation is where a
+      log form could still win. Measuring it is a new question, not a second
+      attempt at this one. Building `fmul → fadd` on the strength of the
+      reconvert comparison is what this measurement rules out.

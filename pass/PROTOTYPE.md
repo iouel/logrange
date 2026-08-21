@@ -582,8 +582,13 @@ a first-order bound and that is the `n` at which "first-order" begins to bite.
 
 **What this does not close.** The bound covers the one shape the pass rewrites.
 `propagate=div` moves the log form into a consumer and carries its own error,
-measured at 1.33x-13.9x behind linear re-conversion at one conversion and
+measured at 1.29x-9.31x behind linear re-conversion at one conversion and
 unmeasured over chains; nothing here bounds a chain.
+*Corrected 2026-08-21.* This read 1.33x-13.9x, the figures published when
+`propagate=div` landed. The transcript above, regenerated the same day, already
+carried 1.29/9.31 and this sentence was not updated with it. Re-run on a clean
+build to confirm. The sweep source is unchanged since 2026-08-16; which change
+to the rewritten object moved the ratios was not bisected.
 
 ## Limitations
 

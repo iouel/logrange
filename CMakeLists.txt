@@ -130,6 +130,14 @@ add_executable(bound_search tests/bound_search.cpp)
 target_link_libraries(bound_search PRIVATE logrange logrange_build_flags)
 add_test(NAME bound_search COMMAND bound_search)
 
+# Stretch goal Phase 1a: does log-form propagation win over a CHAIN? Pure
+# arithmetic, no LLVM, so it runs on every CI leg rather than only in WSL.
+# Its exit code reports HARNESS health, not the viability verdict: a
+# refutation is a published result, not a red build. See the file header.
+add_executable(chain_search tests/chain_search.cpp)
+target_link_libraries(chain_search PRIVATE logrange logrange_build_flags)
+add_test(NAME chain_search COMMAND chain_search)
+
 # Benchmark harness (intent Deliverable 1). Not a test:
 # timing runs are manual and only meaningful in the Release config (/O2).
 # Inherits the same flags deliberately — the harness measures the library as
