@@ -605,11 +605,16 @@ It returns a correct finite result where the linear path returns 0.0 or NaN.
 On benign inputs it is behind the linear re-conversion, measured at 1.29x to
 9.31x, and that is the expected direction rather than a defect to fix.
 
-**Reopening requires a counterexample, not an argument.** Any extension to the
-vocabulary is gated on a measurement in `tests/chain_search.cpp` showing the
-new rule beating plain linear at every sampled trial in a declared band. A
-rule that only beats per-step materialize/reconvert does not qualify: that
-form is far worse than plain linear, so beating it establishes nothing.
+**Reopening requires a different hypothesis, not a better implementation.** The
+rules measured are closed. A more careful lowering, a tighter error term or a
+smarter frontier does not reopen them, because none of those touch the premise
+that was rejected: log form costs `u*|L|` a step where linear costs `u`.
+
+Any extension to the vocabulary is gated on a measurement in
+`tests/chain_search.cpp` showing the new rule beating **plain linear** at every
+sampled trial in a declared band. A rule that only beats per-step
+materialize/reconvert does not qualify: that form is far worse than plain
+linear, so beating it establishes nothing.
 
 ## 7. Profitability gate
 

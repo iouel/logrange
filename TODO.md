@@ -786,7 +786,16 @@ bound.
 - Windows-native LLVM builds of matcher/pass (WSL is the supported path).
 - The 8 GSL "unverified" precision-audit rows (inlining artifacts; sampled,
   documented, not worth chasing).
-- [ ] **Stretch goal: end-to-end log-form propagation.** Specified
+- [x] **Stretch goal: end-to-end log-form propagation. CLOSED 2026-08-22,
+      refuted.** The numerical premise was tested and rejected: neither
+      remaining vocabulary rule beats plain linear on accuracy, and the gap
+      grows with chain length. The lattice, `propagate=mul` and
+      `fadd → logsumexp` are not built and will not be. `propagate=div` stays
+      at its current scope as an availability mechanism. Measurement in
+      `pass/CHAINS.md`, contract in `pass/ELIGIBILITY.md` section 6.
+      Reopening needs a new empirical observation supporting a fundamentally
+      different hypothesis, not a further attempt at these rules.
+      *Original entry, kept for the record:* Specified
       2026-08-16 in logrange_intent.md, "Stretch Goal — End-to-End Log-Form
       Propagation": a three-point SSA lattice (Linear / Log / Conflict) that
       never hand-places a conversion, with the matcher's risk analysis as

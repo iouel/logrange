@@ -160,14 +160,37 @@ documented as such.
 This changes no shipped artifact. `pass/` was already outside 1.0's supported
 surface, the header is untouched, and the diagnostic remains the front door.
 
+## What this prevented
+
+The specification this measurement was taken against describes a
+compiler-analysis subsystem: a three-point SSA lattice, transfer functions per
+opcode, a materialization frontier, a legality oracle, and a rewrite rule per
+consumer shape. None of it is built.
+
+Refuting the premise cost two experiments in one ctest that needs no LLVM and
+no corpus. Reaching the same conclusion by implementation would have cost the
+subsystem first, and the wall would have been reported from inside it, where
+the sunk cost argues against reading it plainly.
+
+This is the falsification result, not an unfinished stretch goal. The
+distinction matters for what happens next: an unfinished goal invites another
+attempt at the same rules, and a refuted premise does not.
+
 ## What would reopen it
 
-A regime where the log form's `u*|L|` per step is not the dominant cost. The
-measurements point at one candidate and it is not a chain: inputs where the
-linear form has no answer at all. That is availability, it is already covered
-for one shape, and widening it is a question about *coverage*, not about
-propagation depth.
+**A different hypothesis, not a better implementation.** The rules measured
+here are closed. `fmul -> fadd`, `fadd -> logsumexp`, and the lattice that
+would chain them are not reopened by a more careful lowering, a better
+frontier, or a tighter error term, because none of those touch the premise the
+measurement rejected: log form costs `u*|L|` a step where linear costs `u`, and
+that is arithmetic rather than engineering.
 
-Reopening on accuracy grounds needs a counterexample to the tables above,
-produced by `ctest -R chain_search` on a machine that disagrees with both
-libms tested here.
+Reopening needs a new empirical observation that changes the premise. The
+measurements point at one candidate, and it is not a chain: inputs where the
+linear form has no answer at all. That is availability, it is already covered
+for one shape by `propagate=div`, and widening it is a question about
+*coverage* of the rescue, not about propagation depth.
+
+A disagreement with the tables above is a separate matter and is checked the
+same way anything else here is: `ctest -R chain_search` on a machine that
+disagrees with both libms tested.

@@ -16,6 +16,27 @@ That history is the reason the promise is worth making rather than assumed.
 Prototype tier only. The header is untouched, so `LOGRANGE_VERSION` does not
 move and the 1.0 error contract is unaffected.
 
+**The stretch goal is closed as refuted.**
+
+Not an unfinished goal. The numerical premise behind end-to-end log-form
+propagation was tested and rejected, and the specification it was taken
+against describes a compiler-analysis subsystem: an SSA lattice, transfer
+functions per opcode, a materialization frontier, a legality oracle, and a
+rewrite rule per consumer shape. None of it is built.
+
+`propagate=div` stays at its current scope, an availability mechanism for one
+consumer shape, and is not a first step toward the rest. Effort returns to the
+three parts with demonstrated value: the runtime (signed log accumulation,
+searched error contracts, range rescue, benchmarked), the diagnostic
+(identifying computations that actually lose representability), and the
+prototype pass (narrow, opt-in, only where the rescue is demonstrably useful).
+
+**Reopening needs a different hypothesis, not a better implementation.** A more
+careful lowering, a tighter error term or a smarter frontier does not reopen
+these rules, because none of those touch the premise that was rejected: log
+form costs `u*|L|` a step where linear costs `u`, which is arithmetic rather
+than engineering.
+
 **The compiler-propagation branch is stopped, on measurement.**
 
 Both remaining vocabulary rules were measured before implementation and

@@ -76,11 +76,17 @@ Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform 
 
 The rule has been broken in both artifacts that recognize reductions, while the boundary paragraph above was missing from the tree, and both now delegate to `AddReductionVar`. `matcher/DELTA.md` has the accounting for the first; TODO.md and CHANGELOG.md for the second. **When this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
 
-## Stretch Goal — End-to-End Log-Form Propagation
+## Stretch Goal — End-to-End Log-Form Propagation (CLOSED, refuted)
 
 *Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
 
-**Status: stopped at the first rule, on measurement. The stopping rule below fired.** Both remaining vocabulary rules were measured before implementation and neither beats plain linear on accuracy: each step costs a rounding proportional to the log-magnitude it crosses, so the gap grows with chain length instead of amortizing. The lattice is not built. What propagation buys, where it buys anything, is a correct finite answer where the linear path has none, which is availability rather than accuracy. `pass/CHAINS.md` has the accounting and `tests/chain_search.cpp` is the instrument. The rest of this section is kept as the specification the measurement was taken against, and as the record of what a reopening would have to beat.
+**Closed as refuted. The numerical premise was tested and rejected, and the stopping rule below fired at the first rule rather than at a frontier.** Both remaining vocabulary rules were measured before implementation and neither beats plain linear on accuracy: each step costs a rounding proportional to the log-magnitude it crosses, so the gap grows with chain length instead of amortizing. The lattice, the second and third rewrite rules, and the general dataflow are **not built** and will not be.
+
+**What this bought.** The specification below describes a compiler-analysis subsystem: an SSA lattice, transfer functions per opcode, a materialization frontier, and a legality oracle. Refuting the premise before building it is the result. A wall reached by implementation would have cost the subsystem and reported the same thing.
+
+**What remains, and stays narrow.** `propagate=div` covers one consumer shape and is kept at that scope. Its value is **availability, not accuracy**: a correct finite answer where the linear path returns 0.0 or NaN. It is not a first step toward the rest of this section.
+
+**Reopening needs a different hypothesis, not a better implementation.** A new empirical observation that changes the premise, not a further attempt at these rules. `pass/CHAINS.md` has the accounting, `tests/chain_search.cpp` is the instrument, and the rest of this section is kept as the specification the measurement was taken against.
 
 **The problem.** Converting the rescued log form back to linear loses the rescue at the final step: for inputs near −800, `m + log(s) ≈ −792.6` is a healthy double while `exp(m + log(s))` is 0.0. A side global is the escape hatch for a consumer the pass cannot rewrite, and it is last-rewrite-wins. The rescue requires propagating the log form into downstream consumers instead. This section states the target transformation, the legality rule, the success criteria, and the stopping conditions.
 
