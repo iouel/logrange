@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# diagnose.sh — the diagnostic lint (intent v0.3, "Fallback Product").
+# diagnose.sh — the diagnostic lint (intent v0.3, "The Diagnostic").
 #
 #   ./diagnose.sh [--all] <raw-file>...
 #

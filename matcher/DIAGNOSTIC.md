@@ -1,6 +1,6 @@
 # The diagnostic lint
 
-*Intent v0.3 "Fallback Product": a static lint that says "this reduction may
+*Intent v0.3 "The Diagnostic": a static lint that says "this reduction may
 leave representable range — consider log-domain accumulation, here is the
 header." Zero runtime overhead.*
 

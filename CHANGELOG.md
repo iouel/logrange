@@ -239,7 +239,7 @@ kernel is the half that was already satisfied. `run_pass_test.sh` now asserts
 both tiers and the clean case, mutation-tested by swapping the expected
 reasons.
 
-**`logrange_intent.md` states intent again: 282 lines to 148.** Removed a
+**`logrange_intent.md` states intent again: 282 lines to 157.** Removed a
 94-line "First Action — status" work log that indexed records living in
 `BENCHMARKS.md`, `matcher/RESULTS.md`, `pass/PROTOTYPE.md`, `matcher/DELTA.md`,
 this file and `TODO.md`. One of its hand-copied figures — "781 hits across

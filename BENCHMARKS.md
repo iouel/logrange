@@ -138,7 +138,7 @@ Pure product of lognormal factors, n = 10⁶ (ns/term, median): exponent-trackin
 (fastest, but leaves double range around n ~ 10⁵, by design). Products are
 exponent-tracking's territory; this library's case is sums.
 
-## Cost (intent: "slower-but-right versus fast-but-meaningless")
+## Cost (intent: "slower-but-right versus fast-but-wrong")
 
 Against the naive linear loop on benign inputs (uniform shape, n = 10⁶):
 linear 3.4 ns/term, pos_accum 6.5 (1.9×), rp_accum 9.6 (2.8×). That is the
