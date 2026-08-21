@@ -80,6 +80,8 @@ The rule has been broken in both artifacts that recognize reductions, while the 
 
 *Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
 
+**Status: stopped at the first rule, on measurement. The stopping rule below fired.** Both remaining vocabulary rules were measured before implementation and neither beats plain linear on accuracy: each step costs a rounding proportional to the log-magnitude it crosses, so the gap grows with chain length instead of amortizing. The lattice is not built. What propagation buys, where it buys anything, is a correct finite answer where the linear path has none, which is availability rather than accuracy. `pass/CHAINS.md` has the accounting and `tests/chain_search.cpp` is the instrument. The rest of this section is kept as the specification the measurement was taken against, and as the record of what a reopening would have to beat.
+
 **The problem.** Converting the rescued log form back to linear loses the rescue at the final step: for inputs near −800, `m + log(s) ≈ −792.6` is a healthy double while `exp(m + log(s))` is 0.0. A side global is the escape hatch for a consumer the pass cannot rewrite, and it is last-rewrite-wins. The rescue requires propagating the log form into downstream consumers instead. This section states the target transformation, the legality rule, the success criteria, and the stopping conditions.
 
 **The design.** One rule, stated once: **never hand-place a conversion.** Mark the rescued value as log-form and push the representation outward; materialize back to linear only where no rewrite applies.
