@@ -167,6 +167,25 @@ inline double dd_log_abs(dd a) {
   return std::log(std::fabs(a.hi)) + std::log1p(a.lo / a.hi);
 }
 
+// log(x) for a double-double x, refined by one Newton step against dd_exp:
+//
+//   y = y0 + (x*exp(-y0) - 1),  y0 = double log(x)
+//
+// x*exp(-y0) is 1 + delta with |delta| ~ u, and log(1+delta) = delta -
+// delta^2/2 with the quadratic term ~5e-33, so one step lands near 1e-32
+// absolute. dd_log_abs above returns a DOUBLE and carries ~u*|log| absolute
+// error, which is the same order as the quantities the chain and rescue
+// studies compare; this is the version those need.
+//
+// Added for tests/chain_search.cpp and matcher/rescue_shim.cpp, which would
+// otherwise carry one numerical routine in two places. Pure addition: no
+// existing path calls it, so test_accuracy and bound_search are unaffected.
+inline dd dd_log_refined(dd x) {
+  const double y0 = std::log(dd_to_double(x));
+  const dd delta = dd_sub(dd_mul(x, dd_exp(-y0)), dd{1.0, 0.0});
+  return dd_add(dd{y0, 0.0}, delta);
+}
+
 // Identity checks that need no external constant. Returns the worst relative
 // deviation seen; callers fail if it is not far below u.
 inline double dd_exp_selftest() {

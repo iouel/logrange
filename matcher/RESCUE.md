@@ -217,12 +217,47 @@ The chain study nearly lost this distinction and published a PASS built on it
 
 ## Sampling frame
 
-The 814 shape hits.
+**The frame is the log-ifiable population, not all 814 hits.** Amended before
+any site was measured, for a reason found by hand census rather than by
+running anything: capturing a term's VALUE cannot see the rescue case this
+project exists for. In `s += w[i] * exp(logp[i])` at `logp ~ -800`, the term is
+already `0.0` when the accumulator sees it, so linear, reference and
+log-reference all read zero and the marquee site scores as no-failure. The
+instrument must therefore capture each term's log-magnitude **symbolically**
+from its chain, and some chains cannot be decomposed that way.
 
 - **HIGH: all 5.** Census, with the limit stated above.
-- **MED: 20, LOW: 20**, fixed-seed draw from the committed `data/raw-*.txt`.
+- **MED: 20, LOW: 20**, fixed-seed draw from the **log-ifiable** members of the
+  committed `data/raw-*.txt`.
 - The 40 MED/LOW sites split **50/50 into development and held-out before any
   is looked at**. The held-out half opens only in R4.
+
+A site the instrument cannot decompose emits
+`UNLOGIFIABLE,<file>,<line>,<fn>,<reason>,<risk>` and is excluded from the
+frame. It is never scored as a non-failure. **R3 reports the exclusion rate per
+tier**, because a frame restriction that falls unevenly across tiers biases the
+comparison the study exists to make. Stated in advance as plausible: LOW is
+likelier to be plain dot products over opaque leaf factors, where HIGH's
+exp-chains are uniform in shape.
+
+### R1a census of the HIGH set, run before the instrument was built
+
+| site | term | decomposes as | needs |
+|---|---|---|---|
+| `blas.c:315` `softmax` | `exp(input[i*stride]/temp - largest/temp)` | pre-exp argument | exp, f32 |
+| `blas.c:315` `softmax_cpu` | same line, second function | same | same |
+| `go.c:562` `pick_move` | `pow(visit_count[i], 1./temp)` | `y*log|x|` | pow |
+| `gaussian.c:205` | `exp(-0.5*yi*yi)` | pre-exp argument | exp |
+| `zeta.c:757` `gsl_sf_hzeta_e` | `pow(k + q, -s)` | `y*log|x|` | pow |
+
+**All five are log-ifiable, and two instrument capabilities are load-bearing
+rather than optional.** `pow` must decompose as `y*log|x|` rather than being
+treated as an opaque leaf, which 2 of the 4 independent source lines depend on;
+and f32 accumulators must be supported, which `blas.c:315` depends on, since it
+declares `float sum` and truncates the `exp` result to float. Without both, the
+HIGH census falls from 4 independent lines to 1. The census was run first
+precisely because a HIGH site failing the predicate would have made the
+independence problem above worse rather than better.
 
 ## The change rule. All three required.
 
