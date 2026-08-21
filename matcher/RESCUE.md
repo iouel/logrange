@@ -148,9 +148,44 @@ point:**
 | rescue margin | 100x | 10x, 1000x |
 | `T_default` | 1e-10 | 1e-8, 1e-12 |
 
-The registered values are the headline. The grid is published beside them so
-the reader can see how much the verdict depends on the choice. **If the
-ordering survives only at the registered point, R3 says that in those words.**
+### The grid is descriptive. Only the registered point carries the decision.
+
+**R4's decision rule runs on the registered point (100x, 1e-10) and on nothing
+else.** The other eight cells are reported as data, computed by the same
+`rescue_power.sh`, and are never used to claim the ordering holds.
+
+**Why not test all nine.** They are not nine tests. They are the same 40 sites
+reclassified under different thresholds, so the cells are strongly correlated
+and a count of "significant in k of 9" is not k confirmations. Treating them as
+such is multiplicity-mining, and correcting for it honestly costs more than the
+study can spare: Bonferroni at 9 cells puts alpha near 0.0056, where the
+cleanest comparison needs 35 points of separation rather than 25 (0/20 against
+7/20, p = 0.0042; 0/20 against 5/20 is p = 0.0236 and no longer clears the
+bar). A grid that cannot support a conclusion should not be arranged to look as
+though it does.
+
+**The grid is used asymmetrically, and that is deliberate.** It may weaken the
+conclusion. It may never strengthen it. A robustness check that can only ever
+confirm is not a robustness check.
+
+**One pre-declared trigger, mechanical, no eyeballing.** Compute the
+adjacent-tier p-value at all nine cells with `rescue_power.sh`. Count the cells
+reaching p < 0.05. Then:
+
+| cells reaching p < 0.05 | R3 states | R4 treats the ordering as |
+|---|---|---|
+| the registered point only | "threshold-sensitive: the ordering is significant at the registered thresholds and at no other cell in the grid" | **not established** |
+| the registered point and others | the count, with the grid | established at the registered point |
+| not the registered point | the ordering is not established, whatever other cells show | **not established** |
+
+The third row follows from the first paragraph: a cell that is not the
+registered point cannot rescue a registered point that failed.
+
+**Report how much of the grid is live.** `T_default` applies only to sites with
+no host-declared tolerance. If every sampled site carries a GSL `TEST_TOL*` or
+a `gsl_sf_result.err`, that axis moves nothing and the grid collapses to the
+three margin cells. R3 reports the count of sites falling back to `T_default`,
+so a reader can tell a flat grid from a robust one.
 
 ## Ground truth is generated, not borrowed
 
