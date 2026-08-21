@@ -254,6 +254,58 @@ delta)
     exit 1; }
   echo "DELTA OK (2859 loops, 783 -> 814 hits, +$lonly/-$gonly, 0 regrades)"
   ;;
+xloop)
+  # Cross-loop feedback census, backing matcher/XLOOP.md.
+  #
+  # Counts hits whose result is stored into an object their own terms load
+  # from, across the enclosing loop — the structural precondition for the
+  # forward algorithm's decay. Measured, NOT graded: the promotion this was
+  # built to justify was declined on exactly these numbers, so the census
+  # exists and the risk rule does not read it.
+  #
+  # Carries a positive control for the same reason the weight census does: a
+  # broken probe returning zero must not read as a corpus zero. coverage.c's
+  # forward_full_flat and forward_full_swap are the two detectable forms, and
+  # the swap form is there because an identity-only rule misses it.
+  build_plugin
+  shift || true
+  targets="${*:-darknet gsl libsvm}"
+  all="$WORK/raw-xloop-all.txt"
+  : > "$all"
+  for name in $targets; do
+    bcdir="$WORK/bc-$name"
+    [ -d "$bcdir" ] || { echo "no harvested bitcode at $bcdir; skipping" >&2; continue; }
+    scan "$bcdir" "$WORK/raw-xloop-$name.txt" 'sop-matcher<xloop>'
+    cat "$WORK/raw-xloop-$name.txt" >> "$all"
+  done
+  bad=$(grep -vcE '^(LOOP|HIT|REJECT|WEIGHT|DIFF|WARN|XLOOP),' "$all" || true)
+  echo
+  echo "== cross-loop feedback census: $targets =="
+  printf 'malformed lines (interleaving check)   %s
+' "$bad"
+  printf 'hits                                   %s
+' "$(grep -c '^HIT,' "$all" || true)"
+  printf 'of those, cross-loop feedback          %s
+' "$(grep -c '^XLOOP,' "$all" || true)"
+  printf '  graded HIGH                          %s
+' "$(grep -c '^XLOOP,.*,HIGH$' "$all" || true)"
+  printf '  graded MED                           %s
+' "$(grep -c '^XLOOP,.*,MED$' "$all" || true)"
+  printf '  graded LOW                           %s
+' "$(grep -c '^XLOOP,.*,LOW$' "$all" || true)"
+  printf 'of those, transcendental               %s
+'     "$(grep '^XLOOP,' "$all" | cut -d, -f2,3 | sort -u | while IFS= read -r k; do grep -h "^HIT,$k," "$all"; done | grep -c ',transcendental,' || true)"
+  [ "$bad" = "0" ] || { echo "FAIL: interleaved output detected"; exit 1; }
+
+  # Positive control.
+  mkdir -p "$WORK/bc-coverage"
+  "$CLANG" -O1 -g -fno-vectorize -fno-slp-vectorize -fno-unroll-loops     -emit-llvm -c "$HERE/coverage.c" -o "$WORK/bc-coverage/coverage.bc"
+  scan "$WORK/bc-coverage" "$WORK/raw-xloop-coverage.txt" 'sop-matcher<xloop>'
+  for fn in forward_full_flat forward_full_swap; do
+    grep -q "^XLOOP,.*,$fn," "$WORK/raw-xloop-coverage.txt"       || { echo "FAIL: positive control $fn produced no XLOOP record";            echo "The corpus count above is not evidence; the probe is broken.";            exit 1; }
+  done
+  echo "XLOOP OK (both control forms fire; corpus count above is a measurement)"
+  ;;
 weights)
   # Weight census, backing the scope decision for the pass's shape coverage.
   # The mixture spine w * exp(t) can only be rewritten when the weight's

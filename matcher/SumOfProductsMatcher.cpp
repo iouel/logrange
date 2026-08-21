@@ -6,6 +6,8 @@
 // Emits greppable lines on stderr, one per event:
 //   LOOP,<file>,<line>,<function>                       innermost FP loop examined
 //   HIT,<file>,<line>,<function>,<trip>,<depth>,<nmul>,<transcendental|plain>,<risk>,<reasons>
+//   XLOOP,<file>,<line>,<function>,<risk>               only under
+//                                                       sop-matcher<xloop>
 //   WARN,not-simplified,<file>,<line>,<function>        pipeline is missing
 //                                                       loop-simplify; nothing
 //                                                       can match. Never gated.
@@ -28,6 +30,7 @@
 #include "llvm/Analysis/DemandedBits.h"
 #include "llvm/Analysis/IVDescriptors.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/IR/DebugInfoMetadata.h"
 #include "llvm/IR/Dominators.h"
@@ -79,6 +82,12 @@ struct ChainInfo {
   bool expChain = false;       // exp-family (exp/expm1/exp2/pow) call in chain
   bool logChain = false;       // log-family call in chain
   bool ok = true;              // chain stayed within the allowed op set
+  // Underlying objects the term chain LOADS FROM. Collected only so the
+  // cross-loop rule can ask whether this reduction consumes what an earlier
+  // outer iteration produced; nothing in the risk grading reads it. The walk
+  // treated Load as a pure leaf until 2026-08-21 and discarded the address,
+  // which was the one fact that rule needs.
+  SmallPtrSet<const Value *, 8> loadObjects;
 };
 
 // Walk the definition chain of the reduction term (the non-accumulator
@@ -116,7 +125,12 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
     for (Use &U : I->operands()) walkChain(U.get(), L, CI, Visited, Budget);
     return;
   case Instruction::Load:
-    return; // memory read: leaf (the address computation is not FP shape)
+    // Still a leaf for SHAPE purposes — the address computation is not FP
+    // shape and is deliberately not walked. The underlying object is
+    // recorded on the way past.
+    CI.loadObjects.insert(
+        getUnderlyingObject(cast<LoadInst>(I)->getPointerOperand()));
+    return;
   case Instruction::PHI:
     // A DIFFERENT loop-carried value feeding the term (e.g. a recurrence
     // variable) is just an input from the term's point of view: leaf. It
@@ -152,6 +166,103 @@ void walkChain(Value *V, const Loop &L, ChainInfo &CI,
     CI.ok = false;
     return;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-loop feedback detection.
+//
+// Risk is graded one loop at a time, which is why the forward algorithm ends
+// up LOW: each inner reduction looks unremarkable while the magnitude decays
+// across the ENCLOSING loop. This asks the one structural question that
+// distinguishes that family from a benign nested dot product: does this
+// reduction consume, on a later outer iteration, the object it produces?
+//
+//   for (t)                      <- parent loop P
+//     for (j)
+//       for (i) s += buf[i]*A[..];   <- innermost reduction, terms load buf
+//       out[j] = s;                  <- result stored ... to buf, next round
+//
+// The proxy is underlying-object identity between the reduction's store and
+// one of its term loads. Full alias/dependence analysis stays out of scope,
+// exactly as it did when the mid-loop-read guard refinement was declined.
+//
+// WHAT THIS DOES NOT ESTABLISH: that the magnitude actually decays. It
+// establishes feedback, which is the structural precondition for decay. A
+// power iteration that renormalises every step feeds back and does not decay.
+// The token is named for what is detected, not for what is feared.
+// Resolve an underlying object to the SET of buffers it can actually be.
+//
+// The textbook forward algorithm alternates two buffers:
+//     double *prev = buf0, *cur = buf1;
+//     for (t) { ...read prev, write cur...; swap(prev, cur); }
+// so getUnderlyingObject on the store gives the `cur` phi and on the load the
+// `prev` phi — two different values, and a plain identity test sees no
+// feedback at all. Resolving each phi through its incoming values gives
+// {buf0, buf1} for both, and the intersection is what the rule is really
+// asking about. `forward_full_swap` in coverage.c exists to keep an
+// identity-only rule from looking finished.
+void resolveObjects(const Value *V, SmallPtrSetImpl<const Value *> &Out,
+                    SmallPtrSetImpl<const Value *> &Seen, unsigned Depth = 6) {
+  if (!V || !Seen.insert(V).second || Depth == 0) return;
+  const Value *U = getUnderlyingObject(const_cast<Value *>(V));
+  if (const auto *P = dyn_cast<PHINode>(U)) {
+    for (const Value *In : P->incoming_values())
+      resolveObjects(In, Out, Seen, Depth - 1);
+    return;
+  }
+  if (const auto *Sel = dyn_cast<SelectInst>(U)) {
+    resolveObjects(Sel->getTrueValue(), Out, Seen, Depth - 1);
+    resolveObjects(Sel->getFalseValue(), Out, Seen, Depth - 1);
+    return;
+  }
+  Out.insert(U);
+}
+
+bool objectsOverlap(const Value *A,
+                    const SmallPtrSetImpl<const Value *> &LoadObjects) {
+  SmallPtrSet<const Value *, 8> AObjs, Seen;
+  resolveObjects(A, AObjs, Seen);
+  for (const Value *L : LoadObjects) {
+    SmallPtrSet<const Value *, 8> LObjs, LSeen;
+    resolveObjects(L, LObjs, LSeen);
+    for (const Value *O : LObjs)
+      if (AObjs.count(O)) return true;
+  }
+  return false;
+}
+
+bool storesIntoOwnInput(const Loop &L, const Instruction *Upd,
+                        const SmallPtrSetImpl<const Value *> &LoadObjects) {
+  const Loop *P = L.getParentLoop();
+  if (!P || LoadObjects.empty()) return false;
+
+  // Candidate stores of the reduction's result: anything reachable from the
+  // update that is a store, inside the parent but outside this loop (the
+  // register form, stored after the inner loop) or inside it (the
+  // memory-carried form, where RecurrenceDescriptor already accepted the
+  // store as part of the reduction).
+  SmallVector<const Value *, 8> Work{Upd};
+  SmallPtrSet<const Value *, 16> Seen{Upd};
+  while (!Work.empty()) {
+    const Value *V = Work.pop_back_val();
+    for (const User *U : V->users()) {
+      const auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || !P->contains(UI)) continue;
+      if (const auto *St = dyn_cast<StoreInst>(UI)) {
+        // Only a store OF the value counts; a store of something else that
+        // merely happens to use it as an address operand does not.
+        if (St->getValueOperand() != V) continue;
+        if (objectsOverlap(St->getPointerOperand(), LoadObjects))
+          return true;
+        continue;
+      }
+      // Follow LCSSA phis and value-preserving-ish FP ops out of the loop:
+      // `out[j] = s * B[j]` is still the reduction's result reaching memory.
+      if (!isa<PHINode>(UI) && !UI->getType()->isFloatingPointTy()) continue;
+      if (Seen.insert(UI).second) Work.push_back(UI);
+    }
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +407,7 @@ Recognition recognizeLlvm(PHINode &Phi, Loop *L, Value *Back, DominatorTree &DT,
 // meaningful. A divergence is always a recognition divergence.
 struct Verdict {
   bool hit = false;
+  bool crossLoop = false;      // reduction feeds its own input across a parent
   const char *why = "";
   ChainInfo CI;
   const char *Trip = "unknown";
@@ -303,7 +415,8 @@ struct Verdict {
   std::string Reasons;
 };
 
-Verdict evaluate(const Recognition &R, Loop *L, ScalarEvolution &SE) {
+Verdict evaluate(const Recognition &R, Loop *L, ScalarEvolution &SE,
+                 const Instruction *Upd) {
   Verdict V;
   if (!R.matched) {
     V.why = R.why;
@@ -343,7 +456,13 @@ Verdict evaluate(const Recognition &R, Loop *L, ScalarEvolution &SE) {
   V.Risk = V.CI.expChain ? "HIGH"
            : (deepChain || (V.CI.logChain && V.CI.nMul >= 2)) ? "MED"
                                                               : "LOW";
-  SmallVector<const char *, 4> Reasons;
+  // Detected but NOT graded. The tier this should map to changes the
+  // published HIGH count, so the signal is measured on the corpus first and
+  // the mapping decided from real numbers; the detection rule itself is fixed
+  // here, in advance, which is the half METHODOLOGY.md's ordering is about.
+  V.crossLoop = storesIntoOwnInput(*L, Upd, V.CI.loadObjects);
+
+  SmallVector<const char *, 5> Reasons;
   if (V.CI.expChain) Reasons.push_back("exp-chain");
   // Separately tagged so the pre-2026-08-15 counts stay recoverable: every hit
   // carrying exp-sum is one the nMul >= 1 rule used to drop.
@@ -351,6 +470,10 @@ Verdict evaluate(const Recognition &R, Loop *L, ScalarEvolution &SE) {
   if (V.CI.logChain) Reasons.push_back("log-chain");
   if (deepChain) Reasons.push_back("deep-chain");
   if (unknownTrip) Reasons.push_back("unknown-trip");
+  // crossLoop is deliberately NOT a reason token. It is measured, not
+  // graded: see the XLOOP census below and matcher/XLOOP.md for why
+  // promoting on it was declined on the evidence. Putting it here would
+  // rewrite data/raw-*.txt and would imply the grading acts on it.
   if (Reasons.empty()) {
     V.Reasons = "none";
   } else {
@@ -401,8 +524,14 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
   // weight into the reference when its magnitude is provably safe, so this
   // answers whether implementing that is worth doing at all.
   bool Weights = false;
-  explicit SopMatcherPass(bool Explain = false, bool Weights = false)
-      : Explain(Explain), Weights(Weights) {}
+  // Cross-loop feedback census. One XLOOP record per hit whose result is
+  // stored into an object its own terms load from, across the enclosing
+  // loop. Off by default and byte-silent when off, exactly like Weights:
+  // the study's raw output must not change shape because a census exists.
+  bool XLoop = false;
+  explicit SopMatcherPass(bool Explain = false, bool Weights = false,
+                          bool XLoop = false)
+      : Explain(Explain), Weights(Weights), XLoop(XLoop) {}
 
   void reject(const char *Why, const Instruction *Upd,
               const Function &F) const {
@@ -476,7 +605,7 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         if (!Upd || !L->contains(Upd)) continue;
 
         const Verdict V = evaluate(recognizeLlvm(Phi, L, Back, DT, AC, DB, SE),
-                                   L, SE);
+                                   L, SE, Upd);
         const ChainInfo &CI = V.CI;
         if (!V.hit) {
           reject(V.why, Upd, F);
@@ -486,6 +615,12 @@ struct SopMatcherPass : PassInfoMixin<SopMatcherPass> {
         errs() << "HIT,";
         printLoc(errs(), Upd, F);
         errs() << "," << payload(V) << "\n";
+
+        if (XLoop && V.crossLoop) {
+          errs() << "XLOOP,";
+          printLoc(errs(), Upd, F);
+          errs() << "," << V.Risk << "\n";
+        }
 
         // Weight census. For the mixture spine w * exp(t), the rewrite pass
         // must fold the weight's magnitude into the running reference or the
@@ -563,6 +698,12 @@ extern "C" LLVM_ATTRIBUTE_WEAK PassPluginLibraryInfo llvmGetPassPluginInfo() {
                   if (Name == "sop-matcher<weights>") {
                     FPM.addPass(SopMatcherPass(/*Explain=*/false,
                                                /*Weights=*/true));
+                    return true;
+                  }
+                  if (Name == "sop-matcher<xloop>") {
+                    FPM.addPass(SopMatcherPass(/*Explain=*/false,
+                                               /*Weights=*/false,
+                                               /*XLoop=*/true));
                     return true;
                   }
                   if (Name == "sop-matcher<explain>") {

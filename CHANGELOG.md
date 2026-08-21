@@ -11,6 +11,42 @@ is recorded here with its old and new values.
 
 ## Unreleased
 
+**A cross-loop risk signal was built, measured, and declined.** The forward
+algorithm grades LOW because risk is judged one loop at a time; the rule asked
+whether a reduction's result is stored into an object its own terms load from,
+across the enclosing loop — the structural precondition for the decay.
+
+**231 of 814 hits carry it (28%)**, 223 LOW and 8 MED, and **none is
+transcendental**. 192 are `cblas_*` triangular routines; the rest are cquad,
+FFT transforms and Householder/QR. Not one is a decaying recursion — they are
+in-place linear algebra, which reads and writes one buffer across its outer
+loop exactly as the forward algorithm does.
+
+The rule detects **feedback**, which is the precondition for decay and not
+evidence of it. Both promotions fail on those numbers: LOW→HIGH takes HIGH
+from 5 to **236** and refutes the selectivity `DIAGNOSTIC.md` advertises;
+LOW→MED takes MED from 57 to **280**, and `diagnose.sh` prints MED
+individually where LOW is a count.
+
+**What shipped is the census, not the signal.** `sop-matcher<xloop>` and
+`run_study.sh xloop`, evidence in `matcher/data/raw-xloop.txt`, reasoning in
+`matcher/XLOOP.md`. Nothing in the risk grading reads it and the `HIT` stream
+is byte-identical to the committed `data/raw-*.txt` with the census on or off,
+verified against all three codebases. **No published figure moved.** The
+census carries a positive control on both `coverage.c` forward forms, for the
+same reason the weight census does.
+
+The tier was chosen after measuring rather than before, at the maintainer's
+direction. The *detection rule* was fixed in advance and is what
+`METHODOLOGY.md`'s ordering protects; only the tier mapping was left open, and
+the measurement then closed it by refuting both options.
+
+**Posture condition 6 reworded.** It read "dead original removed **or a
+required DCE run documented**", and the second branch had been taken. Ruled a
+placeholder: a condition an artifact can satisfy by describing itself is not a
+condition. The `adce` requirement stays as the documented stopgap and stays
+gated; the condition now closes only when the pass deletes what it orphaned.
+
 **`coverage.c` gained the forward algorithm with its enclosing time-step
 loop**, in both the forms real code writes it: one buffer indexed by time
 (`forward_full_flat`) and the textbook swapped pair (`forward_full_swap`).
