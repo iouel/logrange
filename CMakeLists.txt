@@ -130,6 +130,15 @@ add_executable(bound_search tests/bound_search.cpp)
 target_link_libraries(bound_search PRIVATE logrange logrange_build_flags)
 add_test(NAME bound_search COMMAND bound_search)
 
+# Rescue study R1: the instrument's runtime half. The shim is pure numerics
+# (chain replay, double-double truth, a double-precision log-reference, the
+# shipped accumulator), so its controls run on every CI leg rather than only
+# under WSL. The instrumentation pass that feeds it is gated separately.
+add_executable(rescue_shim_test tests/test_rescue_shim.cpp matcher/rescue_shim.cpp)
+target_include_directories(rescue_shim_test PRIVATE tests)
+target_link_libraries(rescue_shim_test PRIVATE logrange logrange_build_flags)
+add_test(NAME rescue_shim COMMAND rescue_shim_test)
+
 # Stretch goal Phase 1a: does log-form propagation win over a CHAIN? Pure
 # arithmetic, no LLVM, so it runs on every CI leg rather than only in WSL.
 # Its exit code reports HARNESS health, not the viability verdict: a

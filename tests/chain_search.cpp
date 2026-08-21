@@ -365,18 +365,7 @@ Cell run_cell(const Band &b, int n, std::uint64_t seed) {
 // Experiment 2: fadd -> logsumexp.
 // ---------------------------------------------------------------------------
 
-// log(x) for a double-double x, refined by one Newton step against dd_exp.
-//
-//   y = y0 + (x*exp(-y0) - 1),  y0 = double log(x)
-//
-// x*exp(-y0) is 1 + delta with |delta| ~ u, and log(1+delta) = delta - delta^2/2
-// with the quadratic term ~5e-33. So one step lands near 1e-32 absolute, well
-// under the ~1e-16 quantities this experiment compares.
-dd dd_log_refined(dd x) {
-  const double y0 = std::log(dd_to_double(x));
-  const dd delta = dd_sub(dd_mul(x, dd_exp(-y0)), dd{1.0, 0.0});
-  return dd_add(dd{y0, 0.0}, delta);
-}
+// dd_log_refined now lives in dd_exp.h, shared with matcher/rescue_shim.cpp.
 
 enum class Family { Flat, Wide, Cancel };
 
