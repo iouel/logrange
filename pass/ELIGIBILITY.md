@@ -709,10 +709,12 @@ exactly when the limitation is fixed.
 
 **What would close it.** The gate becomes load-bearing when the rewritable
 set exceeds the HIGH set — that is, when the pass can soundly rewrite a shape
-that verdicts LOW or MED. Bounded-weight support (3.3's extension point) is
-the natural candidate: `s += 0.5*x[i]` verdicts LOW and would be rewritable,
-so the gate would refuse an actual rewrite. Adding matched-but-declined
-shapes cannot close it, however many are added.
+that verdicts LOW or MED. That needs a rewrite that does **not** require an
+`exp`, since section 3 declines a term that reaches no `exp` call and 7.1
+grades one that does HIGH. Bounded-weight support was the candidate named
+here until 3.3's extension point was taken for the constant case: it widened
+which HIGH loops are rewritable and added no LOW or MED one. Adding
+matched-but-declined shapes cannot close it either, however many are added.
 
 Both branches are gated in `run_pass_test.sh`, and the decline branch is
 negative-tested two ways: hardcoding the verdict HIGH, and reordering 3.3

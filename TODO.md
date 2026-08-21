@@ -61,7 +61,7 @@ bound.
       runner, because `pos_accum` barely moved between machines (+4%) while
       `stream_lse` slowed 49%: one `exp` per term versus `exp` + `log1p`,
       so slower transcendentals punish the textbook stream twice. The
-      durable claim is the direction and its reason, margin 1.65×–5.3×
+      durable claim is the direction and its reason, margin 1.5×–5.3×
       observed. BENCHMARKS.md says so rather than implying 3.7× travels.
 - [x] **Install/packaging story.** Done 2026-08-15. `cmake --install` rules,
       an exported `LogRange::logrange` target, and a config package, so
@@ -252,10 +252,12 @@ bound.
       defect. Condition 3's spines are matched, but the gate prevents no
       rewrite and cannot until the rewritable set exceeds the HIGH set, so
       the condition is restated rather than ticked: *it closes when the pass
-      can soundly rewrite a shape that verdicts LOW or MED.* Bounded-weight
-      support is the natural candidate (`s += 0.5*x[i]` verdicts LOW and
-      would be rewritable); adding further matched-but-declined shapes cannot
-      close it, however many are added. The inverted assertion in
+      can soundly rewrite a shape that verdicts LOW or MED.* That needs a
+      rewrite that does not require an `exp`. Bounded-weight support was the
+      candidate named here until it landed 2026-08-17 for the constant case
+      and did not close it: it widened which HIGH loops are rewritable and
+      added no LOW or MED one. Adding further matched-but-declined shapes
+      cannot close it either, however many are added. The inverted assertion in
       `run_pass_test.sh` turns red on the day this changes. None of this
       moves the posture: neither number that drove the decision (5 HIGH rows
       in 2859 loops; the rescue unobservable without the side global for

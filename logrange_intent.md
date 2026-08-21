@@ -74,13 +74,13 @@ Prior art boundary: LLVM's loop-idiom pass proves the *shape* of this transform 
 
 **The prior-art boundary is a build rule, not just a citation.** Borrow the compiler analysis that is already solved and validated; spend this project's complexity only on what is genuinely different. The one thing here that no compiler does is decide whether a reduction will *lose its answer to floating-point range* — that is the whole project, and it is worth doing carefully. Deciding whether a loop *is* a reduction is not: LLVM's `RecurrenceDescriptor` answers it, the loop vectorizer depends on it being right, and this repository has no business being its second authority.
 
-The rule has already been broken once, while the boundary paragraph above was missing from the tree: the matcher grew a hand-written spine walk, a mid-loop-read guard, and a chain-ordering scheme, all reimplementing `AddReductionVar`. Replacing them changed no risk grade and closed a documented blind spot, at the cost of one finding in a loop shape LLVM declines on purpose. `matcher/DELTA.md` has the accounting. **When this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
+The rule has been broken in both artifacts that recognize reductions, while the boundary paragraph above was missing from the tree, and both now delegate to `AddReductionVar`. `matcher/DELTA.md` has the accounting for the first; TODO.md and CHANGELOG.md for the second. **When this project reimplements compiler analysis, that is a bug in the plan, not an achievement.**
 
 ## Stretch Goal — End-to-End Log-Form Propagation
 
 *Extends Deliverable 2 and is not required by it. The runtime ships without this, and so does the first compiler release.*
 
-**The problem.** The pass prototype computes the rescued result in log form but exports it through a side global. Converting back to linear loses the rescue at the final step: for inputs near −800, `m + log(s) ≈ −792.6` is a healthy double while `exp(m + log(s))` is 0.0. The real win requires propagating the log form into downstream consumers. This section states the target transformation, the legality rule, the success criteria, and the stopping conditions before any code is written.
+**The problem.** Converting the rescued log form back to linear loses the rescue at the final step: for inputs near −800, `m + log(s) ≈ −792.6` is a healthy double while `exp(m + log(s))` is 0.0. A side global is the escape hatch for a consumer the pass cannot rewrite, and it is last-rewrite-wins. The rescue requires propagating the log form into downstream consumers instead. This section states the target transformation, the legality rule, the success criteria, and the stopping conditions.
 
 **The design.** One rule, stated once: **never hand-place a conversion.** Mark the rescued value as log-form and push the representation outward; materialize back to linear only where no rewrite applies.
 
@@ -115,15 +115,15 @@ Adjacent `exp(log(x))` pairs fold on contact. The log region grows to its natura
 
 **Explicitly out of scope.** Interprocedural propagation, arbitrary consumer shapes, and any change to the IR type system. The first milestone is intra-function. The `__logrange_logsum` global remains the escape hatch for the prototype; the milestone replaces it for one named consumer, not for the general case.
 
-## Fallback Product — The Diagnostic
+## The Diagnostic
 
-If the pass proves impractical, the same analysis supports a lint: *"this reduction will leave representable range for inputs like X — consider log-domain accumulation, here is the header."* Less glorious than a rewrite, and more honest if the rewrite does not pay.
+The same analysis supports a lint: *"this reduction will leave representable range for inputs like X — consider log-domain accumulation, here is the header."* Less glorious than a rewrite, and more honest where the rewrite does not pay. It was specified as the fallback if the pass proved impractical. It is what ships in front, and the Shipping Posture below states why.
 
 ## Shipping Posture
 
 *What ships and under what label. The conditions, their status, and the dated record of what closed them are in TODO.md, "Tooling — ships as beta, gaps stated", and CHANGELOG.md.*
 
-**Decision.** 1.0 ships four artifacts under three labels. `include/logrange/log_math.h` is **the product**: stable API, stated error contract, packaged. `matcher/diagnose.sh` is the **diagnostic, beta**: usable, gaps enumerated in its own doc, exit codes stable enough to gate CI. `matcher/` is the diagnostic's engine and the study instrument, shipped as a **research tool** at the same maturity as the diagnostic and not separately supported. `pass/` is a **labeled prototype**: opt-in, not installed, not in the package, and outside 1.0's support surface. The diagnostic is the front door.
+**Decision.** 1.0 ships four artifacts under three labels. `include/logrange/log_math.h` is **the product**: stable API, stated error contract, packaged. `matcher/logrange-scan.sh` is the **diagnostic, beta**: a build directory in, a report out, gaps enumerated in its own doc, exit codes stable enough to gate CI. `matcher/` is the diagnostic's engine, its `diagnose.sh` renderer, and the study instrument, shipped as a **research tool** at the same maturity as the diagnostic and not separately supported. `pass/` is a **labeled prototype**: opt-in, not installed, not in the package, and outside 1.0's support surface. The diagnostic is the front door.
 
 **What decides it.** Only a small fraction of the loops carrying the sum-of-products shape carry a static range signal, and the rescue-worthy set is a handful of source lines. A lint that names those and points at the header is proportionate to that; a rewrite firing on shape alone is not, because it would touch every benign-range dot product and buy each one a transcendental per term against no range problem. The measured figures behind this are in matcher/RESULTS.md, derived from committed evidence rather than restated here.
 
@@ -153,5 +153,5 @@ If the pass proves impractical, the same analysis supports a lint: *"this reduct
 - **The idiom may be rare in matchable form.** Mitigated by measuring first (criterion 4).
 - **Nobody asked for this.** True. The primitive is re-implemented everywhere it's needed, often with corner-case defects; a specified version with published error bounds has clear value.
 - **Error analysis is the hard part.** The bound under cancellation is real numerical-analysis work, not plumbing. It is also the entire difference between this and every ad hoc version, so it cannot be skipped.
-- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. *(Step 6 derived the worst-case bound, stated it as a header contract, and machine-checked it against a double-double reference. The derivation remains author-reviewed only; independent review and an attempt to falsify the bound by adversarial search are the next work item. TODO.md, "Bound review pass".)*
+- **The seed may mislead.** Inherited code arrives with inherited assumptions; the rp_accum design was kept because it is interesting and plausible, not because it was proven. A bound is a claim about every input, so it is searched for counterexamples and read by someone other than its author before it is published as a contract. TODO.md carries which passes have run and what they refuted.
 
