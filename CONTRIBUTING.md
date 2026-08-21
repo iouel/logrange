@@ -43,7 +43,15 @@ register. Read the IR, run the differential, then write the explanation.
 **A mechanism named in prose needs a gate.** `PROTOTYPE.md` and the pass source
 said the dead original chain is left for later DCE. `dce` removes nothing: the
 orphan is a loop-carried cycle and every instruction in it has a use. `adce`
-takes 26 `exp` calls to 22, and now runs in the gate.
+took 34 `exp` calls to 28, and was gated.
+
+**And a gate on a workaround is not a gate on the thing.** That `adce` step
+was then named as the supported pipeline and asserted there, which let a
+posture condition — *the pass removes what it orphaned* — be satisfied by an
+artifact describing itself. It was reopened on that ground and closed for real
+on 2026-08-21: the pass deletes the chain, and the assertion became a no-op
+check (`dce` and `adce` over its output return the IR unchanged) rather than a
+count that a wrong deletion could also satisfy.
 
 **A figure is derived or it is wrong.** `0 w*exp(t) sites in 2859 loops`
 reached four files under the weaker rule that numbers be reproducible from

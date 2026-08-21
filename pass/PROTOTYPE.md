@@ -323,7 +323,9 @@ state lives in `~/logrange-pass` (WSL `/tmp` does not persist across
 `wsl.exe` invocations). Two copies of the same kernel TU are linked under
 different names via preprocessor renaming (`-Dsoftmax_denom=..._orig` /
 `..._rw`), chosen over `objcopy --redefine-sym`: same effect, no binary
-surgery, visible in the build commands. Output, verbatim:
+surgery, visible in the build commands. Output of the run on 2026-08-21,
+verbatim but for one marked elision (section 5's search table, whose summary
+is its own section below):
 
 ```
 == 1. build plugin ==
@@ -338,11 +340,15 @@ REWRITE,pass/test_softmax.c,47,softmax_add_rw,HIGH,exp-chain;exp-sum
 CONSUMER-DECLINE,pass/test_softmax.c,49,softmax_add_rw,not-fdiv
 REWRITE,pass/test_softmax.c,57,softmax_sum_div_rw,HIGH,exp-chain;exp-sum
 CONSUMER-DECLINE,pass/test_softmax.c,59,softmax_sum_div_rw,not-the-sum
-DECLINE-WEIGHT,pass/test_softmax.c,87,weighted_sum_rw,unbounded-weight
-DECLINE-WEIGHT,pass/test_softmax.c,105,const_weight_sum_rw,unbounded-weight
-REWRITE,pass/test_softmax.c,122,expf_widened_rw,HIGH,exp-chain;exp-sum
-CONSUMER-DECLINE,pass/test_softmax.c,123,expf_widened_rw,not-fdiv
-DECLINE-RISK,pass/test_softmax.c,130,dot_sum_rw,LOW,below-min-HIGH
+DECLINE-WEIGHT,pass/test_softmax.c,89,weighted_sum_rw,non-constant-weight
+REWRITE,pass/test_softmax.c,110,const_weight_sum_rw,HIGH,exp-chain;exp-sum
+CONSUMER-DECLINE,pass/test_softmax.c,111,const_weight_sum_rw,not-fdiv
+REWRITE,pass/test_softmax.c,120,const_weight_big_rw,HIGH,exp-chain;exp-sum
+CONSUMER-DECLINE,pass/test_softmax.c,121,const_weight_big_rw,not-fdiv
+DECLINE-WEIGHT,pass/test_softmax.c,131,neg_weight_sum_rw,negative-weight
+REWRITE,pass/test_softmax.c,148,expf_widened_rw,HIGH,exp-chain;exp-sum
+CONSUMER-DECLINE,pass/test_softmax.c,149,expf_widened_rw,not-fdiv
+DECLINE-RISK,pass/test_softmax.c,156,dot_sum_rw,LOW,below-min-HIGH
 PASS,weighted_spine_matched_under_all_contract_settings
 PASS,gate_declines_above_threshold
 PASS,threshold_relation_low_and_med
@@ -350,6 +356,10 @@ PASS,gate_is_reachable_but_not_load_bearing
 PASS,unknown_parameter_refused
 == 3b. safety declines (force must NOT override any of these) ==
 PASS,decline_external_exp_call
+PASS,missing_canonicalization_is_named
+INFO,weight_fold_constants,0x402BA18A998FFFA0 0xBFE62E42FEFA39EF 
+PASS,weight_fold_is_host_log_exactly
+PASS,weight_declines_are_named
 PASS,decline_strictfp_under_force
 PASS,decline_constrained_fp_under_force
 PASS,decline_denormal_env_under_force
@@ -362,15 +372,23 @@ REWRITE,pass/test_softmax.c,47,softmax_add_prop,HIGH,exp-chain;exp-sum
 DECLINE-PROP,pass/test_softmax.c,49,softmax_add_prop,not-fdiv
 REWRITE,pass/test_softmax.c,57,softmax_sum_div_prop,HIGH,exp-chain;exp-sum
 DECLINE-PROP,pass/test_softmax.c,59,softmax_sum_div_prop,not-the-sum
-DECLINE-WEIGHT,pass/test_softmax.c,87,weighted_sum_prop,unbounded-weight
-DECLINE-RISK,pass/test_softmax.c,95,dot_sum_prop,LOW,below-min-HIGH
+DECLINE-WEIGHT,pass/test_softmax.c,89,weighted_sum_prop,non-constant-weight
+REWRITE,pass/test_softmax.c,110,const_weight_sum_prop,HIGH,exp-chain;exp-sum
+DECLINE-PROP,pass/test_softmax.c,111,const_weight_sum_prop,not-fdiv
+REWRITE,pass/test_softmax.c,120,const_weight_big,HIGH,exp-chain;exp-sum
+DECLINE-PROP,pass/test_softmax.c,121,const_weight_big,not-fdiv
+DECLINE-WEIGHT,pass/test_softmax.c,131,neg_weight_sum,negative-weight
+REWRITE,pass/test_softmax.c,148,expf_widened_prop,HIGH,exp-chain;exp-sum
+DECLINE-PROP,pass/test_softmax.c,149,expf_widened_prop,not-fdiv
+DECLINE-RISK,pass/test_softmax.c,156,dot_sum_prop,LOW,below-min-HIGH
 PASS,propagate_div_rewrites_softmax_full
 PASS,unknown_propagate_refused
 PASS,force_alone_does_not_propagate
 == 3d. matcher agreement, soundness direction only ==
 PASS,every_rewrite_is_matcher_high
-INFO,dead_chain,after_rewrite=26,after_dce=26,after_adce=22
-PASS,adce_removes_the_dead_original,26->22
+INFO,dead_chain,after_rewrite=28/1,after_adce=28/1
+PASS,pass_deletes_its_own_orphan
+PASS,no_rewrite_left_an_orphan
 == 4. codegen, link, run ==
 INFO,benign,orig=1654.7821267630925,rw=1654.7821267630948,rel=1.37e-15,logsum=7.4114246336847733,logref=7.4114246336847733
 PASS,cover_softmax_denom_rw_benign_1e-12
@@ -417,29 +435,38 @@ PASS,zerotrip_reference_neginf
 PASS,negctl_plain_sum_untouched
 PASS,negctl_dot_sum_untouched
 PASS,negctl_weighted_sum_untouched
-PASS,negctl_const_weight_untouched
+PASS,negctl_neg_weight_untouched
 PASS,negctl_invariant_exp_untouched
+INFO,const_weight,orig=852.81373600483346,rw=852.8137360048346,rel=1.33e-15
+PASS,cover_const_weight_sum_rw_agrees_1e-12
+PASS,const_weight_not_dropped
+INFO,const_weight_big,orig=1705627472.0096669,rw=1705627472.0096714,rel=2.66e-15
+PASS,cover_const_weight_big_rw_agrees_1e-12
+PASS,const_weight_big_not_dropped
+PASS,const_weight_ratio_is_the_weights
 INFO,weight_witness,orig=19719.353087519543,rw=19719.353087519543
 PASS,weight_witness_linear_is_finite
 PASS,weight_witness_rw_matches_linear
-INFO,expf_widened,orig=1705.6274770982563,rw=1705.6274777201195,rel=3.65e-10,logsum=7.4416883441373232,logref=7.4416883441373232
+INFO,expf_widened,orig=1654.6736472994089,rw=1654.6736482949937,rel=6.02e-10,logsum=7.4113590770038487,logref=7.4113590770038487
 PASS,cover_expf_widened_rw_agree_float_1e-6
 PASS,cover_expf_widened_rw_matches_double_ref
-INFO,softmax_full,max_rel=1.64e-15
+INFO,softmax_full,max_rel=1.52e-15
 PASS,cover_softmax_full_rw_agree_1e-12
-INFO,softmax_add,max_rel=1.6e-15
+INFO,softmax_add,max_rel=1.33e-15
 PASS,cover_softmax_add_rw_agree_1e-12
-INFO,softmax_sum_div,max_rel=1.65e-15
+INFO,softmax_sum_div,max_rel=1.52e-15
 PASS,cover_softmax_sum_div_rw_agree_1e-12
-INFO,prop_benign,linear=2.26e-16,reconvert=1.63e-15,propagated=2.42e-15
+INFO,prop_benign,linear=8.94e-16,reconvert=1.03e-15,propagated=1.76e-15
 PASS,prop_benign_agrees_1e-12
-INFO,prop_ranking,trials=64,prop_wins=0,ratio_min=1.33,ratio_max=13.92,ref_logL_err=1.7e-18
-INFO,prop_rescue,linear[0]=-nan,logref=-792.55102758943792,sum=0.99999999999996403
+INFO,prop_ranking,trials=64,prop_wins=0,ratio_min=1.29,ratio_max=9.31,ref_logL_err=1.7e-18
+INFO,prop_rescue,linear[0]=-nan,logref=-792.52770314532199,sum=1.0000000000000087
 PASS,prop_rescue_linear_is_broken
 PASS,prop_rescue_all_finite
 PASS,prop_rescue_sums_to_one
 OVERALL,PASS
-PASS,every_rewrite_semantically_covered,5
+PASS,every_rewrite_semantically_covered,7
+[section 5's search table elided; its summary is in "The emitted code's error bound" below]
+PASS,emitted_bound_held
 run_pass_test: PASS
 ```
 
@@ -466,8 +493,10 @@ run_pass_test: PASS
 - **Negative controls** (same module), in two kinds. *Not matched, silent:*
   plain sum (no multiply, no `exp` — the matcher's `noMulNoExp`) and
   loop-invariant-`exp` sum. *Matched and declined with a reason:* dot product
-  (`DECLINE-RISK,LOW`), weighted sum and constant-weight sum (both
-  `DECLINE-WEIGHT`). All five are asserted bit-identical orig/rw.
+  (`DECLINE-RISK,LOW`), varying weight (`DECLINE-WEIGHT,non-constant-weight`)
+  and negative constant weight (`DECLINE-WEIGHT,negative-weight`). All five
+  are asserted bit-identical orig/rw. A *positive* constant weight is no
+  longer among them — it is rewritten, with `log(w)` folded into the exponent.
 - **Semantic coverage is derived, not listed.** The script reads the set of
   rewritten functions out of the pass's own output and requires a passing
   `cover_<fn>_*` numeric assertion for each. Before 2026-08-17 the rewritten
@@ -607,17 +636,35 @@ unmeasured over chains; nothing here bounds a chain.
   MED is uncomputed and unreachable *in the verdict function*; that is not
   the same as no matched loop being MED — the matcher grades
   `s += a*b*c*d*e` MED where this pass prints LOW (ELIGIBILITY.md 7.1).
-- **The dead original is left in place, and `adce` is what removes it.** The
-  pass adds and redirects; it does not delete. The orphaned `phi`/`fadd`/`exp`
-  chain feeds only itself and computes the original 0.0/NaN alongside.
-  **`dce` will not remove it** — the orphan is a loop-carried *cycle*, so every
-  instruction in it has a use and plain DCE cannot start. Measured on the test
-  kernel: log-rewrite alone leaves 26 `llvm.exp.f64` calls, `,dce` still 26,
-  `,adce` 22 — one dead exp per rewritten f64 loop. The supported pipeline is
-  `-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`, asserted in
-  `run_pass_test.sh`. This
-  file said "later DCE/ADCE" until 2026-08-17, which was wrong about the pass
-  and unchecked by anything.
+- ~~**The dead original is left in place, and `adce` is what removes it.**~~
+  Closed 2026-08-21, and posture condition 6 with it. The pass now deletes the
+  chain it orphaned, in the same iteration that built the replacement, via
+  `RecursivelyDeleteDeadPHINode` — the utility whose contract is exactly this
+  case, a single-use def-use chain that closes into a cycle. The supported
+  pipeline lost its `adce` suffix; `loop-simplify` and `lcssa` remain, as
+  preconditions of the *recognizer* rather than of the transform.
+  *What was true, and why it needed the pass rather than a pipeline entry.*
+  `dce` could never have done it: the orphan is a loop-carried *cycle*, so
+  every instruction in it has a use and a use-count walk cannot start.
+  Measured on the test kernel before the change — log-rewrite alone left 34
+  `llvm.exp.f64` and 2 `llvm.exp.f32`, `,dce` still 34/2, `,adce` 28/1, one
+  dead exp per rewritten loop. The pass alone now emits 28/1.
+  *The assertion changed shape, not just its numbers.* A count could be met by
+  a pass that deleted the right quantity of the wrong thing, so
+  `run_pass_test.sh` asserts a no-op instead: `dce` and `adce` over the pass's
+  output must each return it unchanged, which they do (only `opt`'s ModuleID
+  comment differs). Nothing the pass emits moved — the emitted-code bound
+  search is byte-identical across the change, all 7285 trials.
+  *One shape stays out of reach and says so.* A reduction whose update is also
+  stored to a loop-invariant cell gives the update a second in-loop user, the
+  cycle walk refuses to start, and the orphan survives with its store still
+  writing the original linear value. That prints
+  `ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle`. No kernel here produces
+  it; the branch was negative-tested by forcing the deletion to fail, which
+  printed 7 `ORPHAN-KEPT` lines and turned the no-op assertion red.
+  *This file said "later DCE/ADCE" until 2026-08-17*, which was wrong about
+  the pass and unchecked by anything; then named `adce` until today, which was
+  right about the mechanism but was a description standing in for a fix.
 - ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted
   code now carries `(n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in
   ELIGIBILITY.md and searched by `emitted_bound_search.c` on every gate run.

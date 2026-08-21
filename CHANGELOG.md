@@ -11,6 +11,48 @@ has to move takes the major with it, and the package config says so
 did, three times, each refutation recorded below with its old and new values.
 That history is the reason the promise is worth making rather than assumed.
 
+## Unreleased
+
+Prototype-tier only. The header is untouched, so `LOGRANGE_VERSION` does not
+move and the 1.0 error contract is unaffected.
+
+**Posture condition 6 closed: the pass deletes the chain it orphans.** The
+rewrite adds the streaming state and redirects every consumer, which leaves
+the source accumulator's `phi`/update/`exp` chain feeding only itself.
+`log-rewrite` now removes it in the same iteration, using
+`RecursivelyDeleteDeadPHINode` — LLVM's utility for precisely this case, a
+single-use def-use chain that closes into a cycle. Same build rule as the
+recognizer: borrow the analysis LLVM has already validated.
+
+The `adce` suffix is gone from the supported pipeline, which is now
+`-passes='loop-simplify,lcssa,log-rewrite<force>'`. The prefix stays; it is a
+precondition of `RecurrenceDescriptor`, not of the transform.
+
+**The assertion changed shape, not just its numbers.** A count of surviving
+`exp` calls is satisfiable by a pass that deletes the right quantity of the
+wrong thing, so `run_pass_test.sh` now requires `dce` and `adce` over the
+pass's output to return the IR **unchanged** — anything left undeleted is by
+construction what `adce` would take. Measured: 34/2 `llvm.exp.f64`/`f32` after
+the rewrite before this change, 28/1 after it, which is exactly what `adce`
+used to produce, and `adce` now changes nothing but `opt`'s ModuleID comment.
+Nothing emitted moved: the emitted-code bound search is byte-identical across
+the change, 7285 trials, worst ratio 0.99.
+
+**The one shape the deletion cannot reach is named.** A reduction whose update
+is also stored to a loop-invariant cell — which `RecurrenceDescriptor` accepts,
+and which is what admitted the mirrored `out[j] += ...` sites — gives the
+update a second in-loop user, so the cycle walk refuses to start and the
+orphan survives with its store still writing the original linear value. That
+prints `ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle`. No kernel in the
+suite produces it; the branch was negative-tested by forcing the deletion to
+fail, which printed 7 `ORPHAN-KEPT` lines and turned the no-op check red.
+
+*Found and fixed while doing it:* `PROTOTYPE.md`'s "output, verbatim"
+transcript was stale from before the bounded-constant-weight change — it still
+showed `const_weight_sum_rw` declining as `unbounded-weight`, five covered
+rewrites instead of seven, and accuracy figures from an older corpus.
+Regenerated from the current run, with its one elision marked.
+
 ## 1.0.0 — 2026-08-21
 
 **The header is the product, and it is done.** Stable API, an error contract

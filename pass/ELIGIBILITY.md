@@ -18,7 +18,7 @@ would change or disappear if it used a different one. Do not reason from them
 about the rewrite model.
 
 Run the pass as
-`-passes='loop-simplify,lcssa,log-rewrite<force>,adce'`.
+`-passes='loop-simplify,lcssa,log-rewrite<force>'`.
 
 - **`loop-simplify` and `lcssa`** are unstated preconditions of
   `RecurrenceDescriptor::isReductionPHI`, which the pass uses to find the
@@ -28,8 +28,11 @@ Run the pass as
   were established by measurement (`matcher/DELTA.md`). They fail differently —
   bare reports `not-loop-simplified`, `loop-simplify` alone reports
   `not-lcssa` — and neither rewrites anything.
-- **`adce`** removes the dead original chain. That one *is* about the transform
-  and is section 6's business, not this section's.
+- **No cleanup pass is required.** Until 2026-08-21 an `adce` suffix was
+  normative here, because the rewrite orphaned the original chain and left it
+  live. The pass deletes what it orphans now (section 5), and
+  `run_pass_test.sh` asserts the stronger property directly: running `dce` or
+  `adce` over the pass's output returns it unchanged.
 
 The pass emits `DECLINE-PIPELINE,<file>,<line>,<fn>,<not-loop-simplified|not-lcssa>`
 when a prerequisite is missing. **That record is a configuration diagnostic, not
@@ -411,6 +414,30 @@ against an independent max-shift reference oracle.
 errno, FP exception flags, rounding-mode dependence, denormal flushing
 behaviour. Sections 2 and 4 exist so that no eligible program can observe
 any of them.
+
+### The chain the rewrite orphans is deleted by the pass
+
+Adding the streaming state and redirecting every consumer to it leaves the
+source accumulator's `phi`/update/`exp` chain feeding only itself. **The pass
+deletes that chain in the same iteration that created the replacement**, using
+`RecursivelyDeleteDeadPHINode`. No cleanup pass is required to make the output
+clean, which is why none is named in the invocation prerequisites above.
+
+Plain DCE never could have done this: the orphan is a loop-carried *cycle* —
+the phi feeds the update and the update feeds the phi — so every instruction in
+it still has a use and a use-count walk cannot get started. `adce` could, and
+was the documented stopgap until 2026-08-21.
+
+**One shape is out of reach, and is reported rather than skipped in silence.**
+A reduction whose update is also stored to a loop-invariant cell — which
+`RecurrenceDescriptor` accepts as a reduction, and which is what admitted the
+mirrored `out[j] += ...` sites — gives the update a second in-loop user. The
+cycle walk refuses to start, the orphan survives, and its store keeps writing
+the original linear value. The pass emits
+`ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle` when that happens.
+
+`run_pass_test.sh` asserts the guarantee as a no-op rather than as a count:
+`dce` and `adce` over the pass's output must each return it unchanged.
 
 ## 6. Log-form propagation into consumers (the stretch goal, first form)
 

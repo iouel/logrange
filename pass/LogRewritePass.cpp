@@ -95,10 +95,16 @@
 // DECLINE-ERRNO,<file>,<line>,<fn>,external-exp-call,
 // DECLINE-RISK,<file>,<line>,<fn>,<verdict>,below-min-<tier> and
 // DECLINE-WEIGHT,<file>,<line>,<fn>,unbounded-weight.
+// A rewrite whose orphaned chain could not be deleted says so:
+// ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle.
 //
 // Usage: opt-21 -load-pass-plugin=./LogRewrite.so \
-//               -passes='loop-simplify,lcssa,log-rewrite<force>,adce' \
+//               -passes='loop-simplify,lcssa,log-rewrite<force>' \
 //               -S in.ll -o out.ll
+//
+// The pass deletes the chain it orphans (2026-08-21); no DCE run is required
+// to make its output clean. loop-simplify and lcssa are still required, as
+// preconditions of the recognizer — see the pipeline note at the loop walk.
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/FloatingPointMode.h"
@@ -121,9 +127,11 @@
 #include "llvm/Passes/PassPlugin.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
 
 #include <cmath>
 #include <optional>
+#include <string>
 
 using namespace llvm;
 
@@ -1025,19 +1033,6 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
       Constant *G = M->getOrInsertGlobal(ExportGlobalName, DTy);
       XB.CreateStore(LogSum, G);
 
-      // The original phi/fadd/exp chain is left in place, now feeding only
-      // itself. Deliberate: this pass adds and redirects, it does not delete
-      // (prototype simplicity).
-      //
-      // Removing it requires ADCE specifically, not DCE. The orphan is a
-      // loop-carried cycle — the phi feeds the update and the update feeds the
-      // phi — so every instruction in it has a use and plain DCE cannot start.
-      // Measured on the test kernel: log-rewrite alone leaves 26 llvm.exp.f64
-      // calls, `-passes='log-rewrite<force>,dce'` still 26, and
-      // `,adce` 22, one dead exp per rewritten f64 loop. The supported
-      // pipeline is therefore log-rewrite followed by adce, asserted in
-      // run_pass_test.sh.
-
       // Verdict is part of the record: a rewrite that fired should say what
       // profitability signal let it through, not just that it happened.
       errs() << "REWRITE,";
@@ -1173,6 +1168,46 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
           FDiv->eraseFromParent();
         }
       }
+
+      // ---- Delete the chain this rewrite orphaned. ----------------------
+      // Every consumer now reads ReplFinal/ReplRunning, so the original
+      // phi/update/exp chain feeds nothing but itself. Removing it is this
+      // pass's job. Until 2026-08-21 it was left to a documented `adce` run
+      // in the supported pipeline, which is not a closure of posture
+      // condition 6: a condition an artifact can satisfy by describing
+      // itself is not a condition.
+      //
+      // Ordered LAST in the iteration, after the consumer loop, and that is
+      // load-bearing: `Upd` and `Acc` are dangling the instant the delete
+      // returns, and both the REWRITE record and propagate=div's logForm()
+      // read them. Hence the location string, captured before the erase.
+      //
+      // Plain DCE still could not do this — the orphan is a loop-carried
+      // CYCLE, phi feeding update feeding phi, so every instruction in it has
+      // a use and the walk cannot start from a use count. LLVM already owns
+      // the cycle-breaking version: RecursivelyDeleteDeadPHINode follows the
+      // single-use def-use chain, recognises that it closes on the phi,
+      // breaks it with poison, and then deletes what falls dead behind it —
+      // the update, the fmul, the llvm.exp call, any fp casts. The exp
+      // ARGUMENT survives, correctly: the emitted state reads it, so it is
+      // not dead. Same build rule as the recognizer (logrange_intent.md):
+      // borrow the analysis LLVM has already validated.
+      //
+      // Not every rewrite can be followed by a delete, and the miss is named
+      // rather than left to be inferred from an instruction count. A
+      // reduction whose update is ALSO stored to a loop-invariant cell is one
+      // RecurrenceDescriptor accepts (that is what admitted the mirrored
+      // `out[j] += ...` sites, matcher/DELTA.md), and its update has a second
+      // in-loop user, so the walk refuses to start. The orphan then stays
+      // live with its store still writing the original linear value.
+      std::string OrphanLoc;
+      {
+        raw_string_ostream OS(OrphanLoc);
+        printLoc(OS, Upd, F);
+      }
+      if (!RecursivelyDeleteDeadPHINode(Acc))
+        errs() << "ORPHAN-KEPT," << OrphanLoc << ",not-a-dead-cycle\n";
+
       Changed = true;
     }
 
