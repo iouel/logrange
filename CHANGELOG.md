@@ -16,6 +16,82 @@ That history is the reason the promise is worth making rather than assumed.
 Prototype tier only. The header is untouched, so `LOGRANGE_VERSION` does not
 move and the 1.0 error contract is unaffected.
 
+**The chain hypothesis is refuted for multiplicative chains.**
+
+The stretch goal's case for propagation is chains: following a computation
+across operations that would otherwise materialize and re-convert at each
+step. `tests/chain_search.cpp` measures that by hand, in C++, with no pass and
+no lattice, against a double-double reference. 3840 trials, three magnitude
+bands, N in {1, 3, 4, 6, 8}.
+
+**Against the baseline real code runs, propagation gets worse as the chain
+grows.** Rescue band (log-magnitude 600-750), worst observed ratio of
+propagated error to plain linear error:
+
+| N | 1 | 3 | 4 | 6 | 8 |
+|---|---|---|---|---|---|
+| worst ratio | 1.0 | 747 | 1.15e4 | 1.51e4 | 1.52e5 |
+
+That is the hypothesis inverted. The mechanism is the one the intent already
+states: each step adds a term proportional to the log-magnitude it crosses, so
+the propagated form pays `u*|L|` per step where the linear form pays `u`. At
+|L| ~ 700 that is ~700u a step, and the gap compounds with N rather than
+amortizing.
+
+**Propagation does beat per-step materialize/reconvert, and that comparison is
+not worth much.** Rescue band, zero losses at N = 3, 4, 6 and ratios as low as
+3.6e-16. The reconvert form is a strawman: it is far worse than plain linear,
+so beating it establishes nothing about whether to build a lattice.
+
+**The pre-registered accuracy gate FAILS.** No band where propagation beats
+reconversion at every sampled trial for N >= 3. The deciding factor is ties:
+89-98% of trials at N >= 3 produce results that are **bit-identical** between
+the two forms, measured rather than inferred (the `bitsame` column equals the
+`tie` column in all 15 cells).
+
+**The one real advantage is availability, not accuracy.** 76 of 1280 rescue
+trials have no comparison at all because linear and reconvert return no
+number. Those are counted in their own bucket and can never satisfy the
+accuracy gate, deliberately: conflating "the other path has no answer" with
+"propagation is more accurate" would make the gate a test that cannot fail.
+
+**The per-step budget, derived before the sweep, holds.** `u*(|L1| + sum_k
+|L_{k+1}|) + u`, worst observed/bound **0.984** across all 3840 trials, never
+exceeded. Written into the harness header before the first run.
+
+**Scope, stated.** Multiplicative chains only: one `fdiv` then `fmul`s, which
+is the vocabulary Phase 2 was to implement first. `fadd -> logsumexp` is
+unmeasured, and a linear addition can cancel where a log form cannot, so a win
+could still live there. That is a different question.
+
+**Retracted: `propagate=div`'s accuracy figures.**
+
+Old: 1.33x to 13.9x behind linear re-conversion, rescue sum
+1.0000000000000262.
+New: **1.29x to 9.31x**, rescue sum **1.0000000000000087**.
+
+Reproduced on a clean build: `INFO,prop_ranking,trials=64,prop_wins=0,`
+`ratio_min=1.29,ratio_max=9.31,ref_logL_err=1.7e-18`. The verdict does not
+move. 64 of 64 trials still lose, so criterion 2 stays refuted at one
+conversion for the reason it was refuted: `t - L` carries `u*|t - L|` where
+re-conversion carries one rounding.
+
+**The prose was stale against this repository's own transcript.** The figures
+were published 2026-08-16. `PROTOTYPE.md`'s "output, verbatim" block was
+regenerated 2026-08-21 and already carried 1.29/9.31; the four prose sites
+citing the old range were not updated with it. Corrected in `PROTOTYPE.md`,
+`TODO.md` (two sites) and the 0.3.0 entry above.
+
+**Cause not established.** The sweep source in `pass/test_softmax.c` is
+unchanged since 2026-08-16, so the ratios moved because the rewritten object
+did, between then and the regeneration. Which change is not bisected, and no
+mechanism is named here rather than guessing at one.
+
+**The stretch goal's 15x ceiling is left unchanged.** It was calibrated
+against the stale 13.9x. Setting a new ceiling from the new worst case is
+fitting the rule to the count, which is what METHODOLOGY.md's ordering rule
+exists to prevent. The criterion needs a decision, not an adjustment.
+
 **Posture condition 6 closed: the pass deletes the chain it orphans.** The
 rewrite adds the streaming state and redirects every consumer, leaving the
 source accumulator's `phi`/update/`exp` chain feeding only itself.
@@ -678,6 +754,7 @@ refused rather than ignored.
 `fdiv(llvm.exp(t), sum)` becomes `exp(t - L)`. Measured at inputs near −800,
 where the linear form computes `0.0/0.0` and every output is NaN: the
 propagated form returns probabilities summing to 1.0000000000000262.
+*Corrected under Unreleased: 1.0000000000000087.*
 
 - **The divisor's log form travels through the loop-exit merge.** clang
   guards the accumulation loop, so the consumer divides by an LCSSA phi
@@ -694,7 +771,9 @@ propagated form returns probabilities summing to 1.0000000000000262.
   `t` is used directly, so correctness does not rest on a later InstCombine
   fold of `log(exp(t)) → t`.
 - **Accuracy at one conversion: 1.33x to 13.9x behind the linear
-  re-conversion, 64 of 64 swept trials.** Sweep: spreads 0.5/1/3/8, lengths
+  re-conversion, 64 of 64 swept trials.** *Corrected under Unreleased: the
+  current figures are 1.29x to 9.31x. The ranking and the refutation are
+  unchanged; 64 of 64 still lose.* Sweep: spreads 0.5/1/3/8, lengths
   100 and 1000, eight seeds each, long-double reference with error 1.7e-18.
   `t - L` carries `u·|t - L|`; re-conversion carries one rounding. This is
   the case where propagation has least to offer, and it measures one
