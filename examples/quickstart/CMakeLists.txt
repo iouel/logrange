@@ -10,7 +10,7 @@ project(logrange_quickstart LANGUAGES CXX)
 # The version request is deliberately exact-minor — pre-1.0 the error
 # contract can move between minor versions, and the package's
 # SameMinorVersion compatibility rule will reject a mismatch here.
-find_package(LogRange 0.3 CONFIG REQUIRED)
+find_package(LogRange 1.0 CONFIG REQUIRED)
 
 add_executable(quickstart quickstart.cpp)
 target_link_libraries(quickstart PRIVATE LogRange::logrange)

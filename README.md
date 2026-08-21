@@ -1,12 +1,13 @@
 # LogRange
 
-WIP
 Correct sums when terms underflow or overflow in linear floating point.
 
 **Status**
 
-v0.3, pre-1.0. The header is complete and benchmarked; the compiler tooling is
-a working prototype. Gaps are tracked in [TODO.md](TODO.md).
+v1.0. The header is the product: stable API, stated error contract, packaged.
+The diagnostic ships as beta with its coverage gaps enumerated, the matcher as
+a research tool at the same maturity, and `pass/` as a labeled prototype
+outside the supported surface. Gaps are tracked in [TODO.md](TODO.md).
 
 ## What it is
 
@@ -63,7 +64,7 @@ cmake --install build --config Release
 Then, from a consuming project:
 
 ```cmake
-find_package(LogRange 0.3 CONFIG REQUIRED)
+find_package(LogRange 1.0 CONFIG REQUIRED)
 target_link_libraries(your_target PRIVATE LogRange::logrange)
 ```
 

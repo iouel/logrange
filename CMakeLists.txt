@@ -73,13 +73,17 @@ configure_package_config_file(
   "${CMAKE_CURRENT_BINARY_DIR}/LogRangeConfig.cmake"
   INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/LogRange")
 
-# SameMinorVersion, not SameMajorVersion: pre-1.0 the error contract can move
-# between minor versions and has (CHANGELOG.md). Treating 0.2 and 0.9 as
-# interchangeable would be exactly the wrong promise.
+# SameMajorVersion as of 1.0, and the change is the point of the release.
+# Pre-1.0 this was SameMinorVersion because the error contract could move
+# between minors and did (CHANGELOG.md), so treating 0.2 and 0.9 as
+# interchangeable would have been exactly the wrong promise. 1.0 makes the
+# opposite promise: the contract is stable across 1.x, so a consumer asking
+# for 1.0 must accept 1.1. If a bound ever has to move again it takes the
+# major with it.
 write_basic_package_version_file(
   "${CMAKE_CURRENT_BINARY_DIR}/LogRangeConfigVersion.cmake"
   VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMinorVersion)
+  COMPATIBILITY SameMajorVersion)
 
 install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/LogRangeConfig.cmake"

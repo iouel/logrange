@@ -5,12 +5,18 @@ It must be trustworthy on a machine we've never seen. The tooling (matcher,
 diagnostic, pass) ships alongside at whatever maturity it honestly has, each
 labeled. Items ordered roughly by how much they'd embarrass us if skipped.
 
+**1.0 shipped 2026-08-21.** Every item marked blocking it is closed, and the
+last one that blocked calling the diagnostic shippable closed on 2026-08-17.
+What remains below is the tooling tier, which ships as beta with its gaps
+stated, plus post-1.0 work that was never a release blocker. Nothing here is
+outstanding against 1.0; the file is kept as the record of how it was reached
+and as the tracker for what comes after.
+
 Sections are not strictly in execution order. The bound review ran first, on
 the reasoning that it could move the error contract and the rest of 1.0 is
 written on top of it. **It did move the contract.** The float decision
 followed it, since that is a statement about the scope of the corrected
-bound. Every item marked blocking 1.0 is now closed. What remains is the
-tooling tier, which ships as beta with its gaps stated.
+bound.
 
 ## Blocking 1.0 — library
 
