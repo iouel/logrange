@@ -13,45 +13,44 @@ That history is the reason the promise is worth making rather than assumed.
 
 ## Unreleased
 
-Prototype-tier only. The header is untouched, so `LOGRANGE_VERSION` does not
+Prototype tier only. The header is untouched, so `LOGRANGE_VERSION` does not
 move and the 1.0 error contract is unaffected.
 
 **Posture condition 6 closed: the pass deletes the chain it orphans.** The
-rewrite adds the streaming state and redirects every consumer, which leaves
-the source accumulator's `phi`/update/`exp` chain feeding only itself.
-`log-rewrite` now removes it in the same iteration, using
-`RecursivelyDeleteDeadPHINode` — LLVM's utility for precisely this case, a
+rewrite adds the streaming state and redirects every consumer, leaving the
+source accumulator's `phi`/update/`exp` chain feeding only itself.
+`log-rewrite` now removes it in the same iteration, via
+`RecursivelyDeleteDeadPHINode`. That utility's stated case is this one: a
 single-use def-use chain that closes into a cycle. Same build rule as the
 recognizer: borrow the analysis LLVM has already validated.
 
-The `adce` suffix is gone from the supported pipeline, which is now
-`-passes='loop-simplify,lcssa,log-rewrite<force>'`. The prefix stays; it is a
+**The supported pipeline lost its `adce` suffix**, and is now
+`-passes='loop-simplify,lcssa,log-rewrite<force>'`. The prefix stays. It is a
 precondition of `RecurrenceDescriptor`, not of the transform.
 
-**The assertion changed shape, not just its numbers.** A count of surviving
-`exp` calls is satisfiable by a pass that deletes the right quantity of the
-wrong thing, so `run_pass_test.sh` now requires `dce` and `adce` over the
-pass's output to return the IR **unchanged** — anything left undeleted is by
-construction what `adce` would take. Measured: 34/2 `llvm.exp.f64`/`f32` after
-the rewrite before this change, 28/1 after it, which is exactly what `adce`
-used to produce, and `adce` now changes nothing but `opt`'s ModuleID comment.
-Nothing emitted moved: the emitted-code bound search is byte-identical across
-the change, 7285 trials, worst ratio 0.99.
+**34/2 `llvm.exp.f64`/`f32` before, 28/1 after**, which is what `adce` used to
+produce. `adce` over the new output changes nothing but `opt`'s ModuleID
+comment. The emitted-code bound search is byte-identical across the change,
+7285 trials, worst ratio 0.99.
 
-**The one shape the deletion cannot reach is named.** A reduction whose update
-is also stored to a loop-invariant cell — which `RecurrenceDescriptor` accepts,
-and which is what admitted the mirrored `out[j] += ...` sites — gives the
-update a second in-loop user, so the cycle walk refuses to start and the
-orphan survives with its store still writing the original linear value. That
-prints `ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle`. No kernel in the
-suite produces it; the branch was negative-tested by forcing the deletion to
-fail, which printed 7 `ORPHAN-KEPT` lines and turned the no-op check red.
+**The gate asserts a no-op, not a count.** A count of surviving `exp` calls is
+satisfiable by deleting the right quantity of the wrong thing.
+`run_pass_test.sh` requires `dce` and `adce` over the pass's output to return
+the IR unchanged, since anything left undeleted is what `adce` would take.
 
-*Found and fixed while doing it:* `PROTOTYPE.md`'s "output, verbatim"
-transcript was stale from before the bounded-constant-weight change — it still
-showed `const_weight_sum_rw` declining as `unbounded-weight`, five covered
-rewrites instead of seven, and accuracy figures from an older corpus.
-Regenerated from the current run, with its one elision marked.
+**One shape is out of reach, and is named.** A reduction whose update is also
+stored to a loop-invariant cell gives that update a second in-loop user, so
+the cycle walk refuses to start and the orphan survives with its store still
+writing the original linear value. It prints
+`ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle`. No kernel in the suite
+produces it. Forcing the deletion to fail printed 7 such lines and turned the
+no-op check red.
+
+**Corrected: `PROTOTYPE.md`'s "output, verbatim" transcript was stale** from
+before the bounded-constant-weight change. It showed `const_weight_sum_rw`
+declining as `unbounded-weight`, 5 covered rewrites against 7, and accuracy
+figures from an older corpus. Regenerated from the current run, one elision
+marked, verified to reproduce byte-for-byte on a clean build.
 
 ## 1.0.0 — 2026-08-21
 

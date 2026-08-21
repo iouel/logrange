@@ -323,9 +323,8 @@ state lives in `~/logrange-pass` (WSL `/tmp` does not persist across
 `wsl.exe` invocations). Two copies of the same kernel TU are linked under
 different names via preprocessor renaming (`-Dsoftmax_denom=..._orig` /
 `..._rw`), chosen over `objcopy --redefine-sym`: same effect, no binary
-surgery, visible in the build commands. Output of the run on 2026-08-21,
-verbatim but for one marked elision (section 5's search table, whose summary
-is its own section below):
+surgery, visible in the build commands. Output of the 2026-08-21 run, verbatim
+except for one marked elision, section 5's search table:
 
 ```
 == 1. build plugin ==
@@ -495,8 +494,8 @@ run_pass_test: PASS
   loop-invariant-`exp` sum. *Matched and declined with a reason:* dot product
   (`DECLINE-RISK,LOW`), varying weight (`DECLINE-WEIGHT,non-constant-weight`)
   and negative constant weight (`DECLINE-WEIGHT,negative-weight`). All five
-  are asserted bit-identical orig/rw. A *positive* constant weight is no
-  longer among them — it is rewritten, with `log(w)` folded into the exponent.
+  are asserted bit-identical orig/rw. A *positive* constant weight is not among
+  them: it is rewritten, with `log(w)` folded into the exponent.
 - **Semantic coverage is derived, not listed.** The script reads the set of
   rewritten functions out of the pass's own output and requires a passing
   `cover_<fn>_*` numeric assertion for each. Before 2026-08-17 the rewritten
@@ -637,34 +636,23 @@ unmeasured over chains; nothing here bounds a chain.
   the same as no matched loop being MED — the matcher grades
   `s += a*b*c*d*e` MED where this pass prints LOW (ELIGIBILITY.md 7.1).
 - ~~**The dead original is left in place, and `adce` is what removes it.**~~
-  Closed 2026-08-21, and posture condition 6 with it. The pass now deletes the
-  chain it orphaned, in the same iteration that built the replacement, via
-  `RecursivelyDeleteDeadPHINode` — the utility whose contract is exactly this
-  case, a single-use def-use chain that closes into a cycle. The supported
-  pipeline lost its `adce` suffix; `loop-simplify` and `lcssa` remain, as
-  preconditions of the *recognizer* rather than of the transform.
-  *What was true, and why it needed the pass rather than a pipeline entry.*
-  `dce` could never have done it: the orphan is a loop-carried *cycle*, so
-  every instruction in it has a use and a use-count walk cannot start.
-  Measured on the test kernel before the change — log-rewrite alone left 34
-  `llvm.exp.f64` and 2 `llvm.exp.f32`, `,dce` still 34/2, `,adce` 28/1, one
-  dead exp per rewritten loop. The pass alone now emits 28/1.
-  *The assertion changed shape, not just its numbers.* A count could be met by
-  a pass that deleted the right quantity of the wrong thing, so
-  `run_pass_test.sh` asserts a no-op instead: `dce` and `adce` over the pass's
-  output must each return it unchanged, which they do (only `opt`'s ModuleID
-  comment differs). Nothing the pass emits moved — the emitted-code bound
-  search is byte-identical across the change, all 7285 trials.
-  *One shape stays out of reach and says so.* A reduction whose update is also
-  stored to a loop-invariant cell gives the update a second in-loop user, the
-  cycle walk refuses to start, and the orphan survives with its store still
-  writing the original linear value. That prints
-  `ORPHAN-KEPT,<file>,<line>,<fn>,not-a-dead-cycle`. No kernel here produces
-  it; the branch was negative-tested by forcing the deletion to fail, which
-  printed 7 `ORPHAN-KEPT` lines and turned the no-op assertion red.
-  *This file said "later DCE/ADCE" until 2026-08-17*, which was wrong about
-  the pass and unchecked by anything; then named `adce` until today, which was
-  right about the mechanism but was a description standing in for a fix.
+  Closed 2026-08-21, and posture condition 6 with it. The pass deletes the
+  chain it orphaned, via `RecursivelyDeleteDeadPHINode`. The supported pipeline
+  lost its `adce` suffix; `loop-simplify` and `lcssa` remain, as preconditions
+  of the recognizer rather than of the transform. Contract in ELIGIBILITY.md 5.
+  Measured before the change: log-rewrite alone left 34 `llvm.exp.f64` and 2
+  `llvm.exp.f32`, `,dce` still 34/2, `,adce` 28/1. The pass alone now emits
+  28/1, and `adce` over that changes nothing but `opt`'s ModuleID comment. The
+  emitted-code bound search is byte-identical across the change, all 7285
+  trials.
+  The gate is a no-op check, not a count, because a count is satisfiable by
+  deleting the right quantity of the wrong thing. An update also stored to a
+  loop-invariant cell keeps its orphan and prints `ORPHAN-KEPT`. No kernel here
+  produces that; forcing the deletion to fail printed 7 such lines and turned
+  the no-op check red.
+  *Corrected twice.* This file said "later DCE/ADCE" until 2026-08-17, wrong
+  about the pass and unchecked by anything; then named `adce`, right about the
+  mechanism but a description standing in for a fix.
 - ~~**Accuracy is measured, not bounded.**~~ Closed 2026-08-16. The emitted
   code now carries `(n + 3k + 4 + D)*u + (|log|S|| + |log|net||)*u`, normative in
   ELIGIBILITY.md and searched by `emitted_bound_search.c` on every gate run.

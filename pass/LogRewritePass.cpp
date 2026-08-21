@@ -102,9 +102,10 @@
 //               -passes='loop-simplify,lcssa,log-rewrite<force>' \
 //               -S in.ll -o out.ll
 //
-// The pass deletes the chain it orphans (2026-08-21); no DCE run is required
-// to make its output clean. loop-simplify and lcssa are still required, as
-// preconditions of the recognizer — see the pipeline note at the loop walk.
+// The pass deletes the chain it orphans (2026-08-21), so no DCE run is
+// required to make its output clean. loop-simplify and lcssa are still
+// required, as preconditions of the recognizer. See the pipeline note at the
+// loop walk.
 
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/FloatingPointMode.h"
@@ -1171,35 +1172,32 @@ struct LogRewritePass : PassInfoMixin<LogRewritePass> {
 
       // ---- Delete the chain this rewrite orphaned. ----------------------
       // Every consumer now reads ReplFinal/ReplRunning, so the original
-      // phi/update/exp chain feeds nothing but itself. Removing it is this
-      // pass's job. Until 2026-08-21 it was left to a documented `adce` run
-      // in the supported pipeline, which is not a closure of posture
-      // condition 6: a condition an artifact can satisfy by describing
-      // itself is not a condition.
+      // phi/update/exp chain feeds nothing but itself. Until 2026-08-21 it was
+      // left to a documented `adce` run in the supported pipeline, which did
+      // not close posture condition 6: a condition an artifact can satisfy by
+      // describing itself is not a condition.
       //
-      // Ordered LAST in the iteration, after the consumer loop, and that is
-      // load-bearing: `Upd` and `Acc` are dangling the instant the delete
-      // returns, and both the REWRITE record and propagate=div's logForm()
-      // read them. Hence the location string, captured before the erase.
+      // Plain DCE could not do this. The orphan is a loop-carried CYCLE, phi
+      // feeding update feeding phi, so every instruction in it has a use and a
+      // use-count walk cannot start. RecursivelyDeleteDeadPHINode is LLVM's
+      // cycle-breaking version: it follows the single-use def-use chain, finds
+      // that it closes on the phi, breaks it with poison, then deletes what
+      // falls dead behind it, meaning the update, the fmul, the llvm.exp call
+      // and any fp casts. The exp ARGUMENT survives, correctly: the emitted
+      // state reads it. Same build rule as the recognizer
+      // (logrange_intent.md), borrow the analysis LLVM has already validated.
       //
-      // Plain DCE still could not do this — the orphan is a loop-carried
-      // CYCLE, phi feeding update feeding phi, so every instruction in it has
-      // a use and the walk cannot start from a use count. LLVM already owns
-      // the cycle-breaking version: RecursivelyDeleteDeadPHINode follows the
-      // single-use def-use chain, recognises that it closes on the phi,
-      // breaks it with poison, and then deletes what falls dead behind it —
-      // the update, the fmul, the llvm.exp call, any fp casts. The exp
-      // ARGUMENT survives, correctly: the emitted state reads it, so it is
-      // not dead. Same build rule as the recognizer (logrange_intent.md):
-      // borrow the analysis LLVM has already validated.
+      // ORDERED LAST in the iteration, after the consumer loop. `Upd` and
+      // `Acc` dangle the instant the delete returns, and both the REWRITE
+      // record and propagate=div's logForm() read them. Hence the location
+      // string, captured before the erase.
       //
-      // Not every rewrite can be followed by a delete, and the miss is named
-      // rather than left to be inferred from an instruction count. A
+      // The miss is named rather than inferred from an instruction count. A
       // reduction whose update is ALSO stored to a loop-invariant cell is one
-      // RecurrenceDescriptor accepts (that is what admitted the mirrored
-      // `out[j] += ...` sites, matcher/DELTA.md), and its update has a second
-      // in-loop user, so the walk refuses to start. The orphan then stays
-      // live with its store still writing the original linear value.
+      // RecurrenceDescriptor accepts, which is what admitted the mirrored
+      // `out[j] += ...` sites (matcher/DELTA.md). Its update has a second
+      // in-loop user, so the walk refuses to start and the orphan stays live
+      // with its store still writing the original linear value.
       std::string OrphanLoc;
       {
         raw_string_ostream OS(OrphanLoc);
