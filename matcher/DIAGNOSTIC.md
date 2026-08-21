@@ -109,7 +109,11 @@ dropped; `test_scan.sh` case 11 fails when the matcher emits a token
 - **A genuinely memory-carried accumulator is still not covered** — one that
   is never promoted to a register at all, e.g. because its address escapes.
   It does not reach the matcher.
-- **Risk is judged one loop at a time.** A reduction whose magnitude decays
+- **Risk is judged one loop at a time.** A signal for the cross-loop case was
+  built and measured in 2026-08: it fires on 28% of corpus hits, almost all
+  in-place linear algebra with no underflow tendency, so promoting on it would
+  cost the selectivity above for no gain. Declined on the evidence
+  ([XLOOP.md](XLOOP.md)); the limit below stands. A reduction whose magnitude decays
   across an *enclosing* loop (the forward algorithm again, probabilities
   shrinking over time steps) has unremarkable inner iterations and grades
   LOW. This lint will not flag it even when the matcher can see it.

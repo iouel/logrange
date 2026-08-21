@@ -167,6 +167,12 @@ Two forms because they are different detection problems: one buffer indexed
 by time step shares an underlying object between the store and the load; the
 textbook swapped pair does not, and reaches it through a rotating pointer.
 
+A cross-loop signal was built and measured against these fixtures, and
+declined: 231 of 814 corpus hits carry the feedback it detects, none
+transcendental, 83% of them in-place BLAS triangular routines. The rule finds
+feedback, which is the precondition for decay rather than evidence of it. Full
+accounting in [XLOOP.md](XLOOP.md); both rows stay LOW.
+
 One gap remains, and it is the correct one: a pure product belongs to
 exponent-tracking, not here. `RecurKind::FMul` is filtered out deliberately.
 

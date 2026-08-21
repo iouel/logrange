@@ -161,6 +161,29 @@ jobs:
       # number elsewhere. A rule with no gate is what already failed here, so
       # this is the gate. Dates, SHAs and counts belong in CHANGELOG.md,
       # TODO.md, or the measurement docs.
+      # Gate 8. The cross-loop census, derived from committed evidence. The
+      # signal was measured and DECLINED as a risk promotion (matcher/XLOOP.md),
+      # so what this protects is the negative result: the census must keep
+      # returning the number the decision rests on, and the HIT stream must
+      # stay byte-identical to data/raw-*.txt so "no figure moved" stays true.
+      - name: Gate 8 — cross-loop census derived from committed evidence
+        run: |
+          f=matcher/data/raw-xloop.txt
+          test -f "$f" || { echo "FAIL: missing committed evidence $f"; exit 1; }
+          loops=$(grep -c '^LOOP,' "$f" || true)
+          hits=$(grep -c '^HIT,' "$f" || true)
+          xl=$(grep -c '^XLOOP,' "$f" || true)
+          xhigh=$(grep -c '^XLOOP,.*,HIGH$' "$f" || true)
+          echo "loops=$loops hits=$hits cross-loop=$xl high=$xhigh"
+          [ "$loops/$hits/$xl" = "2859/814/231" ] || {
+            echo "FAIL: derived $loops/$hits/$xl, XLOOP.md publishes 2859/814/231"; exit 1; }
+          # The declined-promotion argument rests on none of them being HIGH.
+          [ "$xhigh" = "0" ] || { echo "FAIL: a cross-loop hit is graded HIGH"; exit 1; }
+          # The census must not have leaked into the graded stream.
+          grep -q 'cross-loop' matcher/data/raw-gsl.txt && {
+            echo "FAIL: cross-loop leaked into the HIT stream"; exit 1; }
+          echo "XLOOP FIGURES OK"
+
       - name: Gate 7 — intent doc carries no status content
         run: |
           f=logrange_intent.md

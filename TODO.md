@@ -217,11 +217,21 @@ tooling tier, which ships as beta with its gaps stated.
       the risk gate cannot decline anything; (4) a stated error bound for
       the emitted streaming state; (5) the pass runs in CI on push, not as
       a manual WSL script (`.github/workflows/llvm-tooling.yml` was landing
-      as this was written); (6) dead original removed or a required DCE run
-      documented. 1 and 2 are correctness/interface blockers, 3–6 are label
-      blockers.
+      as this was written); (6) **the dead original chain is removed by the
+      pass itself.** 1 and 2 are correctness/interface blockers, 3–6 are
+      label blockers.
+      *Condition 6 reworded 2026-08-21.* It previously read "dead original
+      removed **or a required DCE run documented**", and the second branch was
+      taken: `PROTOTYPE.md` names `-passes='...,adce'` as the supported
+      pipeline and `run_pass_test.sh` asserts
+      `PASS,adce_removes_the_dead_original`. Ruled a placeholder, not a
+      closure — a condition an artifact can satisfy by describing itself is
+      not a condition. The `adce` requirement stays as the documented stopgap
+      and stays gated; the condition now closes only when the pass deletes
+      what it orphaned.
       *Status 2026-08-17: 1, 4 and 5 closed; 2 closed for one consumer shape
-      only; 3 literal-text-met but property open; 6 open.* Condition 2 is
+      only; 3 literal-text-met but property open; 6 open, and reworded so the
+      documentation branch no longer satisfies it.* Condition 2 is
       closed only where `propagate=div` applies; every other consumer still
       exits through the side global, and last-rewrite-wins remains its stated
       defect. Condition 3's spines are matched, but the gate prevents no
@@ -709,6 +719,27 @@ tooling tier, which ships as beta with its gaps stated.
       threading, then the evidence ceremony. Half a day for the code; the
       tier decision and the delta are the larger half.
 
+      *Measured and declined 2026-08-21. See `matcher/XLOOP.md`.* The rule
+      was built and fixed in advance, then run: **231 of 814 hits (28%) carry
+      cross-loop feedback**, 223 LOW and 8 MED, and **none is
+      transcendental**. 192 of the 231 are `cblas_*` triangular routines; the
+      rest are cquad, FFT transforms and Householder/QR. Not one is a decaying
+      recursion — they are in-place linear algebra, which reads and writes one
+      buffer across its outer loop exactly as the forward algorithm does.
+      The rule detects **feedback**, which is the precondition for decay and
+      not evidence of it. Both promotions fail on those numbers: LOW→HIGH
+      takes HIGH from 5 to 236 and refutes the selectivity `DIAGNOSTIC.md`
+      advertises; LOW→MED takes MED from 57 to 280, and `diagnose.sh` prints
+      MED individually where LOW is a count. A narrowing was looked for and
+      needs SCEV analysis of access ranges — outside this cost tier, the same
+      boundary the guard-refinement decision set.
+      **What shipped is the census, not the signal:** `run_study.sh xloop`,
+      evidence in `data/raw-xloop.txt`, `HIT` stream byte-identical with the
+      census on or off, no published figure moved. The detection code and both
+      fixtures stay, so revisiting costs a rule change rather than a rebuild.
+      *Revisit condition:* a signal that separates decay from feedback — a
+      magnitude-trend argument over the parent's induction, which is a much
+      larger analysis than the one measured.
       *Not blocking 1.0 either way* — the diagnostic ships with the gap
       stated, which is the branch the posture already took.
 
