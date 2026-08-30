@@ -1,35 +1,38 @@
 ### Repo Project Outcome
 
-1.0 shipped 2026-08-21: four artifacts under three labels (see
-"Shipping Posture" in `logrange_intent.md`). What actually closed:
+1.0 shipped 2026-08-21. Four artifacts, three labels (Shipping Posture,
+`logrange_intent.md`).
 
-**The runtime is the product.** `include/logrange/log_math.h` — signed
-log-domain accumulation with a stable API and a stated, adversarially-tested
-error contract: `cond·(3k+4+D)·u + (|log|S|| + |log|net||)·u` for `rp_accum`,
-`(n+3k+3+D)·u + (|log|S|| + |log|net||)·u` for `pos_accum`. Both forms were
-refuted twice by `tests/bound_search.cpp` before landing here — worst
-observed/bound 0.85 and 0.80 respectively, across 400+ adversarially-targeted
-random inputs each, checked against a self-verified double-double reference —
-and read by someone other than the author without a counterexample. All four
-intent-doc success criteria are met and published: exact recovery at the
-underflow boundary, 1.5×–5.3× over hand-rolled streaming logsumexp across two
-machines, exponent-tracking still winning on pure products as it should, and
-the matcher's hit rate on real codebases measured before any rewrite code
-existed (BENCHMARKS.md, matcher/RESULTS.md).
+**Runtime — product.** `include/logrange/log_math.h`. Stable API. Error
+contract: `cond·(3k+4+D)·u + (|log|S|| + |log|net||)·u` (`rp_accum`);
+`(n+3k+3+D)·u + (|log|S|| + |log|net||)·u` (`pos_accum`). Both forms refuted
+twice by `tests/bound_search.cpp` before reaching this version. Worst
+observed/bound: 0.85 (`rp_accum`), 0.80 (`pos_accum`), across 400+
+adversarial random inputs each, against a double-double reference. Read by
+a second party. No counterexample found. Four success criteria met and
+published: exact recovery at the underflow boundary; 1.5×–5.3× over
+hand-rolled streaming logsumexp, two machines; exponent-tracking wins on
+pure products; matcher hit rate on real codebases measured before any
+rewrite code existed (BENCHMARKS.md, matcher/RESULTS.md).
 
-**The diagnostic is the front door**, shipped as beta, because the runtime's
-rescue is invisible to a caller who doesn't already know which loop is in
-trouble — matcher/RESULTS.md is what makes that claim rather than assuming it.
+**Diagnostic — beta, front door.** Runtime's rescue is invisible to a caller
+who doesn't know which loop is failing. matcher/RESULTS.md measures this.
 
-**The pass is a labeled prototype**, narrow and opt-in, because only a
-fraction of sum-of-products loops carry a static range signal; firing on
-shape alone would tax every benign dot product for no reason.
+**Pass — labeled prototype.** Opt-in, narrow. Most sum-of-products loops
+carry no static range signal. Firing on shape alone taxes every benign dot
+product.
 
-**The stretch goal — end-to-end log-form propagation — is closed, refuted.**
-The numerical premise (log form costs `u·|L|` a step where linear costs `u`)
-was tested before the lattice and legality-oracle machinery was built, and it
-doesn't clear plain linear at a single conversion. Stating a stopping rule in
-advance and having it fire is the intended outcome, not a shortfall.
+**Stretch goal (end-to-end log-form propagation) — closed, refuted.** Log
+form costs `u·|L|` per step; linear costs `u`. Tested before the lattice and
+legality oracle were built. Fails at a single conversion. Stopping rule
+fired as specified.
+
+**Error bound — not novel.** Reference-exponent accumulation: known
+streaming-logsumexp pattern. Condition-number forward-error method: standard
+for log-sum-exp/softmax. A machine-verified log-sum-exp rounding bound
+already exists elsewhere and is stronger than this one. This bound applies
+that method to one accumulator design: sign-splitting, Neumaier
+compensation, cancellation reset. Contract, not publication.
 
 ---
 
