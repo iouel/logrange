@@ -2,6 +2,17 @@
 
 We investigated whether logarithmic dynamic-range rescue can be automated as a compiler transformation over conventional floating-point reductions. We developed and experimentally characterised the numerical boundary of that approach, finding that log-domain accumulation is useful for representability rescue, while general downstream log-form propagation introduces magnitude-dependent error that can overwhelm the conversion savings. Project is considered complete.
 
+#### Potentially New Information
+
+Candidate results requiring prior-art verification:
+
+* A specific first-order error bound for LogRange's signed `rp_accum` reference-exponent accumulator.
+* The mass-weighted insertion-depth term `D` for `exp(Lᵢ − mᵢ)` argument rounding.
+* A separate `|log|net||·u` final-reconstruction term.
+* A bound showing the deliberate cancellation-reset loss is absorbed by the conditioning term.
+
+These are **potentially original**, not novelty claims. The underlying principles of LNS/LSE error analysis are established.
+
 ---
 
 # LogRange
