@@ -1,3 +1,9 @@
+### Repo Project Outcome
+
+We investigated whether logarithmic dynamic-range rescue can be automated as a compiler transformation over conventional floating-point reductions. We developed and experimentally characterised the numerical boundary of that approach, finding that log-domain accumulation is useful for representability rescue, while general downstream log-form propagation introduces magnitude-dependent error that can overwhelm the conversion savings. Project is considered complete.
+
+---
+
 # LogRange
 
 Correct sums when terms underflow or overflow in linear floating point.
