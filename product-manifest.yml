@@ -8,7 +8,7 @@
 #   ship            - appropriate for iouel/logrange-runtime (the public,
 #                     user-facing runtime product repository)
 #   research-only   - must stay only in this repository
-#   reference-link  - should be cited/linked from the product repo, not
+#   reference/link  - should be cited/linked from the product repo, not
 #                     copied wholesale
 #
 # See PRODUCT_SCOPE.md for the full narrative and rationale behind each
@@ -119,7 +119,7 @@ entries:
     note: Internal roadmap/process record, not user-facing.
 
   - path: logrange_intent.md
-    classification: reference-link
+    classification: reference/link
     note: Aims, cost model, and deliverables; link to it, do not duplicate.
 
   - path: BASELINE.md
@@ -127,7 +127,7 @@ entries:
     note: Predecessor-project historical record, explicitly "do not cite".
 
   - path: BENCHMARKS.md
-    classification: reference-link
+    classification: reference/link
     note: >
       Product repo README states the headline cost and links here for the
       full study.
