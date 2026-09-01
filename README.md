@@ -1,3 +1,13 @@
+> **This is the research, validation, and prototype/audit-trail repository
+> for LogRange.** It is not the recommended place to consume the library.
+> The supported, user-facing runtime is
+> **[`iouel/logrange-runtime`](https://github.com/iouel/logrange-runtime)** —
+> start there to install and use the header. This repository keeps the
+> derivations, adversarial validation, benchmark methodology, diagnostics,
+> matcher research, and LLVM pass prototypes behind it. See
+> [PRODUCT_REPO.md](PRODUCT_REPO.md) for how the two repositories relate and
+> [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) for what belongs where.
+
 ### Repo Project Outcome
 
 1.0 shipped 2026-08-21. Four artifacts, three labels (Shipping Posture,
@@ -159,10 +169,18 @@ Benchmarks (Release only):
 
 ## Repository map
 
+This tree is the research/audit-trail copy. The header here is kept in sync
+as the reference implementation behind the published error contract, but the
+packaged, installable copy consumers should depend on lives in
+[`iouel/logrange-runtime`](https://github.com/iouel/logrange-runtime). See
+[PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) for the full path-by-path breakdown of
+what ships there, what stays research-only, and what is linked rather than
+copied.
+
 | path | what | maturity |
 |---|---|---|
-| `include/logrange/log_math.h` | library (the product) | benchmarked, formal error bound |
-| `tests/` | unit, contract, accuracy suites | run in CI |
+| `include/logrange/log_math.h` | library (reference copy; product ships from `iouel/logrange-runtime`) | benchmarked, formal error bound |
+| `tests/` | unit, contract, accuracy suites, plus adversarial search tools | run in CI; see PRODUCT_SCOPE.md for which suites are the public contract |
 | `bench/` | benchmark harness | see BENCHMARKS.md |
 | `matcher/` | LLVM plugin + hit-rate study | beta, gaps stated — [RESULTS.md](matcher/RESULTS.md) |
 | `matcher/logrange-scan.sh` | range lint, build dir in | beta, the front door — [DIAGNOSTIC.md](matcher/DIAGNOSTIC.md) |
@@ -174,7 +192,9 @@ Library and tests: C++17 compiler only.
 
 ## Documents
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — evidence and writing conventions, read first
+- [PRODUCT_REPO.md](PRODUCT_REPO.md) — relationship to `iouel/logrange-runtime`, ownership, sync policy — read first if you're deciding where to make a change
+- [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) / [product-manifest.yml](product-manifest.yml) — extraction contract: what ships, what's research-only, what's linked
+- [CONTRIBUTING.md](CONTRIBUTING.md) — evidence and writing conventions for this repo
 - [logrange_intent.md](logrange_intent.md) — aims, cost model, deliverables
 - [BENCHMARKS.md](BENCHMARKS.md) — results
 - [SETUP.md](SETUP.md) — WSL and LLVM 21, for the tooling only

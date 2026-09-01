@@ -1,0 +1,143 @@
+# Machine-readable companion to PRODUCT_SCOPE.md.
+#
+# This is an extraction contract / provenance record, not a request to
+# delete or move anything out of this repository. Every path below stays in
+# iouel/logrange in full, regardless of its classification.
+#
+# classification values:
+#   ship            - appropriate for iouel/logrange-runtime (the public,
+#                     user-facing runtime product repository)
+#   research-only   - must stay only in this repository
+#   reference-link  - should be cited/linked from the product repo, not
+#                     copied wholesale
+#
+# See PRODUCT_SCOPE.md for the full narrative and rationale behind each
+# entry.
+
+schema_version: 1
+source_repository: iouel/logrange
+product_repository: iouel/logrange-runtime
+extraction_source_branch: projectsummary
+
+entries:
+  - path: include/logrange/log_math.h
+    classification: ship
+    note: >
+      The product itself: pos_accum, rp_accum, pairwise log-domain ops.
+      Copy verbatim.
+
+  - path: CMakeLists.txt
+    classification: ship
+    note: >
+      Re-derive rather than copy verbatim: keep install/package-config/
+      version-parsing rules, drop matcher/pass/bench subdirectory wiring.
+
+  - path: cmake/
+    classification: ship
+    note: LogRangeConfig.cmake.in package-config template.
+
+  - path: examples/quickstart/
+    classification: ship
+    note: >
+      Canonical consumer smoke test, built against the installed package.
+
+  - path: LICENSE
+    classification: ship
+
+  - path: CHANGELOG.md
+    classification: research-only
+    ships_as: curated-excerpt
+    note: >
+      Full file mixes user-visible header changes with matcher/pass/
+      bound-search research history. Product repo ships a short changelog
+      containing only entries that changed the header's public API,
+      behavior, or error contract.
+
+  - path: tests/test_log_math.cpp
+    classification: ship
+    essential_to_public_contract: true
+
+  - path: tests/test_pos_accum.cpp
+    classification: ship
+    essential_to_public_contract: true
+
+  - path: tests/test_rp_accum.cpp
+    classification: ship
+    essential_to_public_contract: true
+
+  - path: tests/test_accuracy.cpp
+    classification: ship
+    essential_to_public_contract: true
+
+  - path: tests/test_common.h
+    classification: ship
+    note: Shared test helper, needed to build the four suites above.
+
+  - path: tests/dd_exp.h
+    classification: ship
+    note: Double-double reference arithmetic used as the accuracy oracle.
+
+  - path: tests/dd_sum.h
+    classification: ship
+    note: Double-double reference arithmetic used as the accuracy oracle.
+
+  - path: tests/bound_search.cpp
+    classification: research-only
+    note: >
+      Adversarial counterexample search against stated error bounds;
+      exploration infrastructure, not a fixed regression test.
+
+  - path: tests/chain_search.cpp
+    classification: research-only
+    note: Adversarial search over log-domain propagation chains.
+
+  - path: tests/test_rescue_shim.cpp
+    classification: research-only
+    note: Tests matcher/rescue_shim.cpp, part of the diagnostic research path.
+
+  - path: matcher/
+    classification: research-only
+    note: >
+      LLVM-based static diagnostic: plugin, scan scripts, methodology,
+      results, raw study data. Beta maturity; not part of the product
+      repo unless independently adopted there later.
+
+  - path: pass/
+    classification: research-only
+    note: >
+      LLVM rewrite pass prototype; narrow, opt-in, outside the supported
+      surface per pass/PROTOTYPE.md.
+
+  - path: bench/
+    classification: research-only
+    note: >
+      Benchmark harness and methodology. Product repo may add its own
+      small curated smoke benchmark later; this full harness stays here.
+
+  - path: TODO.md
+    classification: research-only
+    note: Internal roadmap/process record, not user-facing.
+
+  - path: logrange_intent.md
+    classification: reference-link
+    note: Aims, cost model, and deliverables; link to it, do not duplicate.
+
+  - path: BASELINE.md
+    classification: research-only
+    note: Predecessor-project historical record, explicitly "do not cite".
+
+  - path: BENCHMARKS.md
+    classification: reference-link
+    note: >
+      Product repo README states the headline cost and links here for the
+      full study.
+
+  - path: CONTRIBUTING.md
+    classification: research-only
+    note: >
+      Evidence/writing conventions for this repo's research process.
+      Product repo should have its own, shorter contribution guide.
+
+  - path: SETUP.md
+    classification: research-only
+    note: WSL/LLVM 21 setup needed only for matcher/pass tooling.
