@@ -131,8 +131,10 @@ FMA contraction (`-ffp-contract=fast`) is a *different* flag and is fine: the
 compensation path contains no multiply-add pair to fuse, and results are
 bit-identical with it on.
 
-Version compatibility is `SameMinorVersion`. Pre-1.0 the error contract can
-move between minor versions, and it has.
+Version compatibility is `SameMajorVersion`, per the package config
+(`CMakeLists.txt`). Pre-1.0 this was `SameMinorVersion`, because the error
+contract could (and did) move between minor versions; 1.0 makes the opposite
+promise, that the contract is stable across the 1.x line.
 
 Header-only, so vendoring the single header by hand also works. The flag above
 is then your responsibility.

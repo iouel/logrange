@@ -83,6 +83,15 @@ To pin the extraction precisely:
    determined, state that explicitly and re-pin it once the two
    repositories agree on a starting commit.
 
+`iouel/logrange-runtime`'s source metadata (e.g. `LOGRANGE_VERSION_*`,
+`project(... VERSION 1.0.0 ...)`) may already read `1.0.0` because that is
+the version the extracted header carries in this repository. That source
+version number is **not** the same claim as a published release: do not
+assume `iouel/logrange-runtime` has a `v1.0.0` (or any) Git tag or GitHub
+Release just because its source says `1.0.0`. Check that repository's own
+tags/releases directly before citing one; if none exist, say so rather than
+inferring a release from source metadata.
+
 ## Synchronization policy
 
 - **Public runtime bug fixes** (anything affecting the header's documented
